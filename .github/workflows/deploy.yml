@@ -56,6 +56,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Prepare deployment archive
+        shell: bash
+        run: |
+          tar \
+            --warning=no-file-changed \
+            --ignore-failed-read \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.env' \
+            --exclude='vendor' \
+            --exclude='node_modules' \
+            --exclude='storage/logs/*' \
+            -czf backend-kt-release.tar.gz .
+
+      - name: Check release archive
+        shell: bash
+        run: |
+          ls -lh backend-kt-release.tar.gz
+
       - name: Prepare SSH
         shell: bash
         run: |
@@ -71,24 +90,25 @@ jobs:
 
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Prepare deployment archive
+      - name: Test SSH connection
         shell: bash
         run: |
-          tar \
-            --warning=no-file-changed \
-            --ignore-failed-read \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.env' \
-            --exclude='vendor' \
-            --exclude='node_modules' \
-            --exclude='storage/logs/*' \
-            -czf backend-kt-release.tar.gz .
+          ssh \
+            -i ~/.ssh/backend_kt_deploy \
+            -p "${{ secrets.SSH_PORT }}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "echo 'SSH authentication successful'"
 
       - name: Upload release to server
         shell: bash
         run: |
           scp \
+            -v \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
+            -o ConnectTimeout=30 \
             -i ~/.ssh/backend_kt_deploy \
             -P "${{ secrets.SSH_PORT }}" \
             backend-kt-release.tar.gz \
