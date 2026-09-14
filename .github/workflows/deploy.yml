@@ -32,11 +32,12 @@ jobs:
         run: composer validate --strict
 
       - name: Install Composer dependencies
-        run: composer install \
-          --no-interaction \
-          --prefer-dist \
-          --no-progress \
-          --optimize-autoloader
+        run: |
+          composer install \
+            --no-interaction \
+            --prefer-dist \
+            --no-progress \
+            --optimize-autoloader
 
       - name: Run Laravel tests
         run: php artisan test
