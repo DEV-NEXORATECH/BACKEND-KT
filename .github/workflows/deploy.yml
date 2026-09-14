@@ -1,0 +1,208 @@
+name: Deploy BACKEND-KT Staging
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+  workflow_dispatch:
+
+concurrency:
+  group: backend-kt-staging
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test Laravel Application
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, zip
+          coverage: none
+
+      - name: Validate Composer
+        run: composer validate --strict
+
+      - name: Install Composer dependencies
+        run: composer install \
+          --no-interaction \
+          --prefer-dist \
+          --no-progress \
+          --optimize-autoloader
+
+      - name: Run Laravel tests
+        run: php artisan test
+
+  deploy:
+    name: Deploy to Staging Server
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/backend_kt_deploy
+          chmod 600 ~/.ssh/backend_kt_deploy
+
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" \
+            "${{ secrets.SSH_HOST }}" \
+            >> ~/.ssh/known_hosts
+
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Prepare deployment archive
+        shell: bash
+        run: |
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.env' \
+            --exclude='vendor' \
+            --exclude='node_modules' \
+            --exclude='storage/logs/*' \
+            -czf backend-kt-release.tar.gz .
+
+      - name: Upload release to server
+        shell: bash
+        run: |
+          scp \
+            -i ~/.ssh/backend_kt_deploy \
+            -P "${{ secrets.SSH_PORT }}" \
+            backend-kt-release.tar.gz \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/backend-kt-release.tar.gz"
+
+      - name: Deploy application
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_SUDO_PASSWORD: ${{ secrets.SSH_SUDO_PASSWORD }}
+          STAGING_ENV: ${{ secrets.STAGING_ENV }}
+        run: |
+          printf '%s' "$STAGING_ENV" > staging.env
+
+          scp \
+            -i ~/.ssh/backend_kt_deploy \
+            -P "$SSH_PORT" \
+            staging.env \
+            "$SSH_USER@$SSH_HOST:/tmp/backend-kt-staging.env"
+
+          ssh \
+            -i ~/.ssh/backend_kt_deploy \
+            -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "SSH_SUDO_PASSWORD='${SSH_SUDO_PASSWORD}' bash -s" <<'REMOTE_SCRIPT'
+          set -e
+
+          APP_DIR="/var/www/html/BE-KT"
+
+          echo "==> Preparing application directory"
+
+          echo "$SSH_SUDO_PASSWORD" | sudo -S mkdir -p "$APP_DIR"
+
+          echo "==> Extracting release"
+
+          echo "$SSH_SUDO_PASSWORD" | sudo -S tar \
+            -xzf /tmp/backend-kt-release.tar.gz \
+            -C "$APP_DIR"
+
+          echo "==> Installing staging environment"
+
+          echo "$SSH_SUDO_PASSWORD" | sudo -S cp \
+            /tmp/backend-kt-staging.env \
+            "$APP_DIR/.env"
+
+          echo "$SSH_SUDO_PASSWORD" | sudo -S chown \
+            -R "$USER:$USER" \
+            "$APP_DIR"
+
+          echo "==> Cleaning temporary files"
+
+          rm -f /tmp/backend-kt-release.tar.gz
+          rm -f /tmp/backend-kt-staging.env
+
+          cd "$APP_DIR"
+
+          echo "==> Building Docker image"
+
+          docker compose \
+            -f docker-compose.staging.yml \
+            build
+
+          echo "==> Starting container"
+
+          docker compose \
+            -f docker-compose.staging.yml \
+            up -d \
+            --remove-orphans
+
+          echo "==> Waiting for container"
+
+          sleep 10
+
+          echo "==> Container status"
+
+          docker compose \
+            -f docker-compose.staging.yml \
+            ps
+
+          echo "==> Running database migrations"
+
+          docker compose \
+            -f docker-compose.staging.yml \
+            exec -T \
+            be-kt \
+            php artisan migrate --force
+
+          echo "==> Running database seeders"
+
+          docker compose \
+            -f docker-compose.staging.yml \
+            exec -T \
+            be-kt \
+            php artisan db:seed --force
+
+          echo "==> Laravel health check"
+
+          for i in {1..12}; do
+            if curl \
+              --fail \
+              --silent \
+              --show-error \
+              http://127.0.0.1:91/up \
+              > /dev/null; then
+              echo "Laravel /up is healthy"
+              break
+            fi
+
+            echo "Waiting for Laravel... attempt $i/12"
+            sleep 5
+          done
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            http://127.0.0.1:91/api/health
+
+          echo
+
+          echo "==> Deployment completed successfully"
+
+          REMOTE_SCRIPT
