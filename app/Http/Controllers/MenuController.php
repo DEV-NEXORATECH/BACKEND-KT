@@ -27,8 +27,9 @@ class MenuController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validatedData($request);
-        $data['slug'] = $data['slug'] ?: Str::slug($data['title']);
-        $data['path'] = $data['path'] ?: '/'.Str::slug($data['title']);
+        $slug = ! empty($data['slug']) ? $data['slug'] : $this->uniqueSlug(Str::slug($data['title']));
+        $data['slug'] = $slug;
+        $data['path'] = ! empty($data['path']) ? $data['path'] : '/'.$slug;
 
         $menu = Menu::create($data);
 
@@ -41,8 +42,9 @@ class MenuController extends Controller
     public function update(Request $request, Menu $menu): JsonResponse
     {
         $data = $this->validatedData($request, $menu);
-        $data['slug'] = $data['slug'] ?: Str::slug($data['title']);
-        $data['path'] = $data['path'] ?: '/'.Str::slug($data['title']);
+        $slug = ! empty($data['slug']) ? $data['slug'] : $this->uniqueSlug(Str::slug($data['title']), $menu->id);
+        $data['slug'] = $slug;
+        $data['path'] = ! empty($data['path']) ? $data['path'] : '/'.$slug;
 
         $menu->update($data);
 
@@ -77,6 +79,22 @@ class MenuController extends Controller
             'sort_order' => ['required', 'integer', 'min:0'],
             'is_active' => ['required', 'boolean'],
         ]);
+    }
+
+    private function uniqueSlug(string $slug, ?int $ignoreId = null): string
+    {
+        $base = $slug;
+        $suffix = 2;
+
+        while (Menu::query()
+            ->where('slug', $slug)
+            ->when($ignoreId, fn ($query) => $query->where('id', '!=', $ignoreId))
+            ->exists()
+        ) {
+            $slug = $base.'-'.$suffix++;
+        }
+
+        return $slug;
     }
 
     private function formatMenu(Menu $menu): array
