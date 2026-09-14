@@ -6,6 +6,23 @@ use App\Http\Controllers\RbacController;
 use App\Http\Controllers\RoleMenuController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/health', function () {
+    $dbStatus = 'ok';
+    try {
+        \Illuminate\Support\Facades\DB::connection()->getPdo();
+    } catch (\Throwable $e) {
+        $dbStatus = 'unreachable: ' . $e->getMessage();
+    }
+
+    return response()->json([
+        'status' => 'healthy',
+        'app' => config('app.name'),
+        'environment' => config('app.env'),
+        'database' => $dbStatus,
+        'timestamp' => now()->toIso8601String(),
+    ]);
+});
+
 Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {
