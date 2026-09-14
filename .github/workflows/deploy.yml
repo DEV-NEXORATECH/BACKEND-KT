@@ -75,7 +75,7 @@ jobs:
         run: |
           ls -lh backend-kt-release.tar.gz
 
-      - name: Prepare SSH
+      - name: Prepare SSH configuration
         shell: bash
         run: |
           mkdir -p ~/.ssh
@@ -84,69 +84,52 @@ jobs:
           printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/backend_kt_deploy
           chmod 600 ~/.ssh/backend_kt_deploy
 
-          ssh-keyscan -p "${{ secrets.SSH_PORT }}" \
-            "${{ secrets.SSH_HOST }}" \
-            >> ~/.ssh/known_hosts
-
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
           chmod 644 ~/.ssh/known_hosts
+
+          cat << 'EOF' > ~/.ssh/config
+          Host staging-server
+            HostName ${{ secrets.SSH_HOST }}
+            Port ${{ secrets.SSH_PORT }}
+            User ${{ secrets.SSH_USER }}
+            IdentityFile ~/.ssh/backend_kt_deploy
+            StrictHostKeyChecking no
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+            ConnectTimeout 30
+            ControlMaster auto
+            ControlPath ~/.ssh/cm-%C
+            ControlPersist 10m
+            IPQoS throughput
+          EOF
+          chmod 600 ~/.ssh/config
 
       - name: Test SSH connection
         shell: bash
         run: |
-          ssh \
-            -i ~/.ssh/backend_kt_deploy \
-            -p "${{ secrets.SSH_PORT }}" \
-            -o BatchMode=yes \
-            -o ConnectTimeout=10 \
-            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
-            "echo 'SSH authentication successful'"
+          ssh -o BatchMode=yes staging-server "echo 'SSH authentication successful'"
 
-      - name: Upload release via SSH
+      - name: Upload release files via SCP
         shell: bash
+        env:
+          STAGING_ENV: ${{ secrets.STAGING_ENV }}
         run: |
-          cat backend-kt-release.tar.gz | ssh \
-            -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=10 \
-            -o ConnectTimeout=30 \
-            -i ~/.ssh/backend_kt_deploy \
-            -p "${{ secrets.SSH_PORT }}" \
-            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
-            "cat > /tmp/backend-kt-release.tar.gz"
+          printf '%s' "$STAGING_ENV" > staging.env
+          scp backend-kt-release.tar.gz staging-server:/tmp/backend-kt-release.tar.gz
+          scp staging.env staging-server:/tmp/backend-kt-staging.env
 
       - name: Verify uploaded release
         shell: bash
         run: |
-          ssh \
-            -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=10 \
-            -o ConnectTimeout=30 \
-            -i ~/.ssh/backend_kt_deploy \
-            -p "${{ secrets.SSH_PORT }}" \
-            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
-            "ls -lh /tmp/backend-kt-release.tar.gz && wc -c /tmp/backend-kt-release.tar.gz"
+          ssh staging-server "ls -lh /tmp/backend-kt-release.tar.gz /tmp/backend-kt-staging.env && wc -c /tmp/backend-kt-release.tar.gz"
 
       - name: Deploy application
         shell: bash
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-          SSH_USER: ${{ secrets.SSH_USER }}
           SSH_SUDO_PASSWORD: ${{ secrets.SSH_SUDO_PASSWORD }}
-          STAGING_ENV: ${{ secrets.STAGING_ENV }}
         run: |
-          printf '%s' "$STAGING_ENV" > staging.env
-
-          scp \
-            -i ~/.ssh/backend_kt_deploy \
-            -P "$SSH_PORT" \
-            staging.env \
-            "$SSH_USER@$SSH_HOST:/tmp/backend-kt-staging.env"
-
-          ssh \
-            -i ~/.ssh/backend_kt_deploy \
-            -p "$SSH_PORT" \
-            "$SSH_USER@$SSH_HOST" \
-            "SSH_SUDO_PASSWORD='${SSH_SUDO_PASSWORD}' bash -s" <<'REMOTE_SCRIPT'
+          ssh staging-server "SSH_SUDO_PASSWORD='${SSH_SUDO_PASSWORD}' bash -s" <<'REMOTE_SCRIPT'
           set -e
 
           APP_DIR="/var/www/html/BE-KT"
@@ -245,3 +228,9 @@ jobs:
           echo "==> Deployment completed successfully"
 
           REMOTE_SCRIPT
+
+      - name: Cleanup SSH master connection
+        if: always()
+        shell: bash
+        run: |
+          ssh -O exit staging-server 2>/dev/null || true
