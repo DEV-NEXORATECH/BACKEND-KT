@@ -101,19 +101,29 @@ jobs:
             "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
             "echo 'SSH authentication successful'"
 
-      - name: Upload release to server
+      - name: Upload release via SSH
         shell: bash
         run: |
-          scp \
-            -O \
-            -v \
+          cat backend-kt-release.tar.gz | ssh \
             -o ServerAliveInterval=30 \
             -o ServerAliveCountMax=10 \
             -o ConnectTimeout=30 \
             -i ~/.ssh/backend_kt_deploy \
-            -P "${{ secrets.SSH_PORT }}" \
-            backend-kt-release.tar.gz \
-            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/backend-kt-release.tar.gz"
+            -p "${{ secrets.SSH_PORT }}" \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "cat > /tmp/backend-kt-release.tar.gz"
+
+      - name: Verify uploaded release
+        shell: bash
+        run: |
+          ssh \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
+            -o ConnectTimeout=30 \
+            -i ~/.ssh/backend_kt_deploy \
+            -p "${{ secrets.SSH_PORT }}" \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "ls -lh /tmp/backend-kt-release.tar.gz && wc -c /tmp/backend-kt-release.tar.gz"
 
       - name: Deploy application
         shell: bash
