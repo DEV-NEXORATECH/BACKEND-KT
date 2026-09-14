@@ -75,6 +75,8 @@ jobs:
         shell: bash
         run: |
           tar \
+            --warning=no-file-changed \
+            --ignore-failed-read \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='.env' \
