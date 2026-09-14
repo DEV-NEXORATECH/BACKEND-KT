@@ -39,6 +39,11 @@ jobs:
             --no-progress \
             --optimize-autoloader
 
+      - name: Prepare testing environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+          
       - name: Run Laravel tests
         run: php artisan test
 
