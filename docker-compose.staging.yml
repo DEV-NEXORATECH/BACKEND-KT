@@ -1,0 +1,24 @@
+services:
+  be-kt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: be-kt:staging
+
+    container_name: be-kt-staging
+
+    restart: unless-stopped
+
+    ports:
+      - "91:80"
+
+    env_file:
+      - .env
+
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://127.0.0.1/up" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
