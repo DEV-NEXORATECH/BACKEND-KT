@@ -5,12 +5,10 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [
-        'https://red-lyrebird-398503.hostingersite.com',
-        'http://103.103.193.161:90',
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-    ],
+    'allowed_origins' => array_filter(array_map('trim', explode(',', env(
+        'CORS_ALLOWED_ORIGINS',
+        'https://red-lyrebird-398503.hostingersite.com,http://103.103.193.161:90,http://localhost:5173,http://127.0.0.1:5173'
+    )))),
 
     'allowed_origins_patterns' => [],
 
