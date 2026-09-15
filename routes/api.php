@@ -25,6 +25,10 @@ Route::get('/health', function () {
 
 Route::post('/login', [AuthController::class, 'login']);
 
+Route::options('/{any}', function () {
+    return response()->noContent();
+})->where('any', '.*');
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/rbac/me', [RbacController::class, 'me']);
