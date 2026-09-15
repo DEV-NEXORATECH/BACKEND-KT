@@ -1,0 +1,28 @@
+<?php
+
+namespace App\Http\Requests\Master;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class StoreOrganizationRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'code' => 'required|string|max:30|unique:organizations,code',
+            'name' => 'required|string|max:150',
+            'legal_name' => 'nullable|string|max:150',
+            'npwp' => 'nullable|string|max:50',
+            'address' => 'nullable|string',
+            'base_currency_id' => 'nullable|integer',
+            'fiscal_year_start_month' => 'nullable|integer|between:1,12',
+            'logo_url' => 'nullable|string|max:255',
+            'is_active' => 'boolean',
+        ];
+    }
+}
