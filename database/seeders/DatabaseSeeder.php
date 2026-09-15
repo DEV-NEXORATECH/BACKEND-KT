@@ -31,6 +31,10 @@ class DatabaseSeeder extends Seeder
             ['name' => 'View accounting', 'slug' => 'accounting.view'],
             ['name' => 'View reports', 'slug' => 'reports.view'],
             ['name' => 'Manage administration', 'slug' => 'administration.manage'],
+            ['name' => 'View master menu', 'slug' => 'master-menu.view'],
+            ['name' => 'Manage master menu', 'slug' => 'master-menu.manage'],
+            ['name' => 'View role access', 'slug' => 'role-access.view'],
+            ['name' => 'Manage role access', 'slug' => 'role-access.manage'],
             ['name' => 'Manage settings', 'slug' => 'settings.manage'],
         ])->map(fn ($permission) => Permission::updateOrCreate(
             ['slug' => $permission['slug']],
@@ -40,7 +44,7 @@ class DatabaseSeeder extends Seeder
         $role->permissions()->sync($permissions->pluck('id'));
 
         $menuDefinitions = [
-            ['title' => 'Dashboard', 'slug' => 'dashboard', 'path' => '/dashboard', 'icon' => 'layout-dashboard', 'sort_order' => 10],
+            ['title' => 'Dashboard', 'slug' => 'dashboard', 'path' => '/dashboard', 'icon' => 'dashboard', 'sort_order' => 10],
             ['title' => 'Funding & Projects', 'slug' => 'funding-projects', 'path' => '/funding-projects', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
                 ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/funding-projects/donor-grant', 'sort_order' => 21],
                 ['title' => 'Program/Project', 'slug' => 'program-project', 'path' => '/funding-projects/program-project', 'sort_order' => 22],
@@ -52,7 +56,7 @@ class DatabaseSeeder extends Seeder
                 ['title' => 'Reimbursement', 'slug' => 'reimbursement', 'path' => '/expenses-approvals/reimbursement', 'sort_order' => 33],
                 ['title' => 'Approvals', 'slug' => 'approvals', 'path' => '/expenses-approvals/approvals', 'sort_order' => 34],
             ]],
-            ['title' => 'Accounting', 'slug' => 'accounting', 'path' => '/accounting', 'icon' => 'landmark', 'sort_order' => 40, 'children' => [
+            ['title' => 'Accounting', 'slug' => 'accounting', 'path' => '/accounting', 'icon' => 'accounting', 'sort_order' => 40, 'children' => [
                 ['title' => 'Journal', 'slug' => 'journal', 'path' => '/accounting/journal', 'sort_order' => 41],
                 ['title' => 'Chart of Accounts', 'slug' => 'chart-of-accounts', 'path' => '/accounting/chart-of-accounts', 'sort_order' => 42],
                 ['title' => 'Accounts Payable', 'slug' => 'accounts-payable', 'path' => '/accounting/accounts-payable', 'sort_order' => 43],
@@ -60,7 +64,7 @@ class DatabaseSeeder extends Seeder
                 ['title' => 'Bank Reconciliation', 'slug' => 'bank-reconciliation', 'path' => '/accounting/bank-reconciliation', 'sort_order' => 45],
                 ['title' => 'Tax', 'slug' => 'tax', 'path' => '/accounting/tax', 'sort_order' => 46],
             ]],
-            ['title' => 'Reports', 'slug' => 'reports', 'path' => '/reports', 'icon' => 'bar-chart', 'sort_order' => 50],
+            ['title' => 'Reports', 'slug' => 'reports', 'path' => '/reports', 'icon' => 'reports', 'sort_order' => 50],
             ['title' => 'Administration', 'slug' => 'administration', 'path' => '/administration', 'icon' => 'admin', 'sort_order' => 60, 'children' => [
                 ['title' => 'Master Menu', 'slug' => 'master-menu', 'path' => '/administration/master-menu', 'sort_order' => 61],
                 ['title' => 'Role Access', 'slug' => 'role-access', 'path' => '/administration/role-access', 'sort_order' => 62],
