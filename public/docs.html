@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kaoem Telapak - Master Data API Documentation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.11.0/swagger-ui.css" />
+    <style>
+        body { margin: 0; padding: 0; background: #fafafa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .topbar { background: #004d40; color: white; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .topbar h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+        .topbar a { background: #00796b; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; transition: background 0.2s; }
+        .topbar a:hover { background: #004d40; }
+        .swagger-ui .topbar { display: none; }
+        .swagger-ui .info { margin: 25px 0; }
+        .swagger-ui .info .title { color: #004d40; }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <h1>KAOEM TELAPAK - ERP & FUND ACCOUNTING (30 MASTER DATA APIs)</h1>
+        <a href="/Kaoem_Telapak_Master_Data_API.postman_collection.json" download>⬇ Download Postman Collection</a>
+    </div>
+    <div id="swagger-ui"></div>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
+    <script>
+        window.onload = () => {
+            window.ui = SwaggerUIBundle({
+                url: '/api-docs.json',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIBundle.SwaggerUIStandalonePreset
+                ],
+                layout: "BaseLayout"
+            });
+        };
+    </script>
+</body>
+</html>

@@ -6,7 +6,6 @@ use App\Models\Menu;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -22,7 +21,7 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Finance Manager'],
         );
 
-        $permissions = collect([
+        $permissionsList = [
             ['name' => 'View dashboard', 'slug' => 'dashboard.view'],
             ['name' => 'View funding and projects', 'slug' => 'funding-projects.view'],
             ['name' => 'Manage funding and projects', 'slug' => 'funding-projects.manage'],
@@ -36,7 +35,14 @@ class DatabaseSeeder extends Seeder
             ['name' => 'View role access', 'slug' => 'role-access.view'],
             ['name' => 'Manage role access', 'slug' => 'role-access.manage'],
             ['name' => 'Manage settings', 'slug' => 'settings.manage'],
-        ])->map(fn ($permission) => Permission::updateOrCreate(
+
+            // Master Data Granular Permissions
+            ['name' => 'View Master Data', 'slug' => 'master-data.view'],
+            ['name' => 'Manage Master Data', 'slug' => 'master-data.manage'],
+            ['name' => 'Export Master Data', 'slug' => 'master-data.export'],
+        ];
+
+        $permissions = collect($permissionsList)->map(fn ($permission) => Permission::updateOrCreate(
             ['slug' => $permission['slug']],
             ['name' => $permission['name']],
         ));
@@ -103,5 +109,8 @@ class DatabaseSeeder extends Seeder
                 'password' => Hash::make('password123'),
             ],
         );
+
+        // Run Master Data Seeder
+        $this->call(MasterDataSeeder::class);
     }
 }
