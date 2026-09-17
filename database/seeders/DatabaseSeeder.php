@@ -51,7 +51,7 @@ class DatabaseSeeder extends Seeder
 
         $menuDefinitions = [
             ['title' => 'Dashboard', 'slug' => 'dashboard', 'path' => '/dashboard', 'icon' => 'dashboard', 'sort_order' => 10],
-            ['title' => 'Master Data', 'slug' => 'master-data', 'path' => '/master-data', 'icon' => 'card-bank', 'sort_order' => 15, 'children' => [
+            ['title' => 'Master Data', 'slug' => 'master-data', 'path' => '/master-data', 'icon' => 'database', 'sort_order' => 15, 'children' => [
                 ['title' => 'Organizations', 'slug' => 'organizations', 'path' => '/master-data/organizations', 'sort_order' => 16],
                 ['title' => 'Office Locations', 'slug' => 'office-locations', 'path' => '/master-data/office-locations', 'sort_order' => 17],
                 ['title' => 'Departments', 'slug' => 'departments', 'path' => '/master-data/departments', 'sort_order' => 18],
