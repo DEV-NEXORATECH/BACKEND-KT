@@ -51,6 +51,12 @@ class DatabaseSeeder extends Seeder
 
         $menuDefinitions = [
             ['title' => 'Dashboard', 'slug' => 'dashboard', 'path' => '/dashboard', 'icon' => 'dashboard', 'sort_order' => 10],
+            ['title' => 'Master Data', 'slug' => 'master-data', 'path' => '/master-data', 'icon' => 'card-bank', 'sort_order' => 15, 'children' => [
+                ['title' => 'Chart of Accounts (COA)', 'slug' => 'coa', 'path' => '/master-data/coa', 'sort_order' => 16],
+                ['title' => 'Fiscal Year & Period', 'slug' => 'fiscal', 'path' => '/master-data/fiscal', 'sort_order' => 17],
+                ['title' => 'Currency', 'slug' => 'currency', 'path' => '/master-data/currency', 'sort_order' => 18],
+                ['title' => 'Tax', 'slug' => 'tax', 'path' => '/master-data/tax', 'sort_order' => 19],
+            ]],
             ['title' => 'Funding & Projects', 'slug' => 'funding-projects', 'path' => '/funding-projects', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
                 ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/funding-projects/donor-grant', 'sort_order' => 21],
                 ['title' => 'Program/Project', 'slug' => 'program-project', 'path' => '/funding-projects/program-project', 'sort_order' => 22],
