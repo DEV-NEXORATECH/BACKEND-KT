@@ -25,4 +25,18 @@ class OfficeLocation extends Model
         return $this->belongsTo(\App\Models\Master\Organization::class, 'organization_id');
     }
 
+    public function updatedByUser()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'updated_by');
+    }
+
+    public function employees()
+    {
+        return $this->hasMany(\App\Models\Master\Employee::class);
+    }
+
+    public function getRelatedRecordsCountAttribute(): int
+    {
+        return (int) $this->employees()->count();
+    }
 }

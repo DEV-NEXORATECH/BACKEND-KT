@@ -45,4 +45,13 @@ class Department extends Model
         return $this->hasMany(\App\Models\Master\Employee::class);
     }
 
+    public function updatedByUser()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'updated_by');
+    }
+
+    public function getRelatedRecordsCountAttribute(): int
+    {
+        return (int) ($this->children()->count() + $this->costCenters()->count() + $this->employees()->count());
+    }
 }

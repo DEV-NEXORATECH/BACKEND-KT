@@ -91,6 +91,26 @@ abstract class BaseMasterController extends Controller
     public function destroy($id): JsonResponse
     {
         $record = $this->modelClass::findOrFail($id);
+
+        // Check if model defines related records check or has common relations
+        $relatedCount = 0;
+        if (method_exists($record, 'getRelatedRecordsCountAttribute')) {
+            $relatedCount = $record->related_records_count;
+        }
+
+        if ($relatedCount > 0 && !request()->boolean('force')) {
+            $name = $record->name ?? $record->title ?? $record->code ?? "#{$record->id}";
+            $code = $record->code ?? $record->year ?? '';
+            $title = $code ? "“{$code} - {$name}”" : "“{$name}”";
+
+            return response()->json([
+                'success' => false,
+                'cannot_delete' => true,
+                'related_count' => $relatedCount,
+                'message' => "{$title} cannot be deleted because it is still used in {$relatedCount} records.",
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
         $record->delete();
 
         return $this->successResponse(

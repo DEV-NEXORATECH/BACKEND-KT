@@ -30,4 +30,18 @@ class Organization extends Model
         return $this->hasMany(\App\Models\Master\Department::class);
     }
 
+    public function baseCurrency()
+    {
+        return $this->belongsTo(\App\Models\Master\Currency::class, 'base_currency_id');
+    }
+
+    public function updatedByUser()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'updated_by');
+    }
+
+    public function getRelatedRecordsCountAttribute(): int
+    {
+        return (int) ($this->officeLocations()->count() + $this->departments()->count());
+    }
 }
