@@ -101,8 +101,8 @@ class DatabaseSeeder extends Seeder
                 ['title' => 'Accounts Receivable', 'slug' => 'accounts-receivable', 'path' => '/accounting/accounts-receivable', 'sort_order' => 44],
                 ['title' => 'Bank Reconciliation', 'slug' => 'bank-reconciliation', 'path' => '/accounting/bank-reconciliation', 'sort_order' => 45],
                 ['title' => 'Tax', 'slug' => 'tax', 'path' => '/accounting/tax', 'sort_order' => 46],
-                ['title' => 'Tax Calculator', 'slug' => 'tax-calculator', 'path' => '/accounting/tax-calculator', 'sort_order' => 47],
             ]],
+            ['title' => 'Tax Calculator', 'slug' => 'tax-calculator', 'path' => '/tax-calculator', 'icon' => 'calculator', 'sort_order' => 48],
             ['title' => 'Reports', 'slug' => 'reports', 'path' => '/reports', 'icon' => 'reports', 'sort_order' => 50],
             ['title' => 'Administration', 'slug' => 'administration', 'path' => '/administration', 'icon' => 'admin', 'sort_order' => 60, 'children' => [
                 ['title' => 'Master Menu', 'slug' => 'master-menu', 'path' => '/administration/master-menu', 'sort_order' => 61],
