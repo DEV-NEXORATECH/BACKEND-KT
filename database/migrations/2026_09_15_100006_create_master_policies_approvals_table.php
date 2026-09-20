@@ -58,12 +58,17 @@ return new class extends Migration
 
         Schema::create('approval_matrices', function (Blueprint $table) {
             $table->id();
-            $table->string('module', 50); // expense, cash_advance, reimbursement, po, budget_reallocation
+            $table->string('module', 50); // expense, cash_advance, reimbursement, procurement, budget_reallocation
             $table->decimal('min_amount', 18, 2)->default(0);
             $table->decimal('max_amount', 18, 2)->nullable();
             $table->unsignedTinyInteger('level')->default(1);
             $table->foreignId('role_id')->nullable()->constrained('roles')->nullOnDelete();
+            $table->foreignId('project_id')->nullable()->constrained('projects')->nullOnDelete();
+            $table->foreignId('donor_id')->nullable()->constrained('donors')->nullOnDelete();
+            $table->foreignId('department_id')->nullable()->constrained('departments')->nullOnDelete();
+            $table->string('approver_title', 100)->nullable();
             $table->boolean('is_conditional_project_manager')->default(false);
+            $table->text('description')->nullable();
             $table->boolean('is_active')->default(true);
             $table->unsignedBigInteger('created_by')->nullable();
             $table->unsignedBigInteger('updated_by')->nullable();

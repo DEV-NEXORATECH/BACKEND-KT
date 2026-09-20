@@ -35,4 +35,9 @@ class BankAccount extends Model
         return $this->belongsTo(\App\Models\Master\ChartOfAccount::class, 'gl_account_id');
     }
 
+    public function transactions()
+    {
+        return $this->hasMany(\App\Models\Finance\BankTransaction::class, 'bank_account_id');
+    }
+
 }

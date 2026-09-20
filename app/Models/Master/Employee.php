@@ -30,4 +30,8 @@ class Employee extends Model
         return $this->belongsTo(\App\Models\Master\OfficeLocation::class, 'office_location_id');
     }
 
+    public function user()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'email', 'email');
+    }
 }

@@ -52,4 +52,19 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Role::class);
     }
+
+    public function employee()
+    {
+        return $this->hasOne(\App\Models\Master\Employee::class, 'email', 'email');
+    }
+
+    public function hasPermission(string $permission): bool
+    {
+        return (bool) $this->role?->permissions()->where('slug', $permission)->exists();
+    }
+
+    public function hasAnyPermission(array $permissions): bool
+    {
+        return (bool) $this->role?->permissions()->whereIn('slug', $permissions)->exists();
+    }
 }

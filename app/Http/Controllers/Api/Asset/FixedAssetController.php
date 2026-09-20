@@ -1,0 +1,212 @@
+<?php
+
+namespace App\Http\Controllers\Api\Asset;
+
+use App\Http\Controllers\Controller;
+use App\Models\Accounting\Journal;
+use App\Models\Asset\FixedAsset;
+use App\Models\Master\AssetCategory;
+use App\Models\Master\ChartOfAccount;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\Response;
+
+class FixedAssetController extends Controller
+{
+    private array $with = ['category:id,code,name,useful_life_months,depreciation_method,asset_gl_account_id,depreciation_gl_account_id,accumulated_gl_account_id', 'vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'supplierInvoice:id,invoice_number', 'donor:id,code,name', 'program:id,code,name', 'project:id,code,name', 'custodian:id,employee_id_number,name', 'depreciations'];
+
+    public function index(Request $request): JsonResponse
+    {
+        $assets = FixedAsset::query()
+            ->with($this->with)
+            ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
+            ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', $request->integer('project_id')))
+            ->latest('id')
+            ->get();
+
+        $totals = [
+            'acquisition_cost' => round((float) $assets->sum('acquisition_cost'), 2),
+            'accumulated_depreciation' => round((float) $assets->sum('accumulated_depreciation'), 2),
+            'net_book_value' => round((float) $assets->sum('net_book_value'), 2),
+            'assets' => $assets->count(),
+        ];
+
+        return response()->json(['success' => true, 'totals' => $totals, 'data' => $assets->map(fn (FixedAsset $asset) => $this->format($asset))]);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $payload = $this->validatePayload($request);
+        $category = isset($payload['asset_category_id']) ? AssetCategory::find($payload['asset_category_id']) : null;
+        $cost = round((float) $payload['acquisition_cost'], 2);
+
+        $asset = FixedAsset::create([
+            ...$payload,
+            'asset_code' => $payload['asset_code'] ?? $this->nextAssetCode(),
+            'useful_life_months' => $payload['useful_life_months'] ?? $category?->useful_life_months ?? 60,
+            'depreciation_method' => $payload['depreciation_method'] ?? $category?->depreciation_method ?? 'straight_line',
+            'accumulated_depreciation' => 0,
+            'net_book_value' => $cost,
+            'status' => 'draft',
+        ])->load($this->with);
+
+        return response()->json(['success' => true, 'message' => 'Fixed asset berhasil dibuat.', 'data' => $this->format($asset)], Response::HTTP_CREATED);
+    }
+
+    public function capitalize(FixedAsset $fixedAsset): JsonResponse
+    {
+        if ($fixedAsset->status !== 'draft') {
+            throw ValidationException::withMessages(['status' => 'Asset hanya dapat dikapitalisasi dari draft.']);
+        }
+
+        $category = $fixedAsset->category;
+        $assetAccount = $category?->assetGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('is_header', false)->first();
+        $clearingAccount = ChartOfAccount::query()->where('account_type', 'liability')->where('is_header', false)->first()
+            ?: ChartOfAccount::query()->where('account_type', 'equity')->where('is_header', false)->first();
+        if (! $assetAccount || ! $clearingAccount) {
+            throw ValidationException::withMessages(['account' => 'COA asset dan clearing/liability harus tersedia.']);
+        }
+
+        $asset = DB::transaction(function () use ($fixedAsset, $assetAccount, $clearingAccount) {
+            $journal = Journal::create([
+                'journal_number' => 'FA-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                'journal_date' => $fixedAsset->acquisition_date,
+                'journal_type' => 'manual',
+                'reference' => $fixedAsset->asset_code,
+                'description' => 'Asset capitalization '.$fixedAsset->asset_name,
+                'status' => 'posted',
+                'posted_by' => request()->user()->id,
+                'posted_at' => now(),
+            ]);
+            $journal->lines()->create(['account_id' => $assetAccount->id, 'project_id' => $fixedAsset->project_id, 'donor_id' => $fixedAsset->donor_id, 'program_id' => $fixedAsset->program_id, 'line_description' => 'Capitalized asset', 'debit' => $fixedAsset->acquisition_cost, 'credit' => 0, 'line_order' => 1]);
+            $journal->lines()->create(['account_id' => $clearingAccount->id, 'line_description' => 'Asset clearing/source', 'debit' => 0, 'credit' => $fixedAsset->acquisition_cost, 'line_order' => 2]);
+
+            $fixedAsset->update(['status' => 'active', 'journal_id' => $journal->id, 'capitalized_by' => request()->user()->id, 'capitalized_at' => now()]);
+
+            return $fixedAsset->fresh($this->with);
+        });
+
+        return response()->json(['success' => true, 'message' => 'Asset berhasil dikapitalisasi.', 'data' => $this->format($asset)]);
+    }
+
+    public function depreciate(Request $request, FixedAsset $fixedAsset): JsonResponse
+    {
+        if (! in_array($fixedAsset->status, ['active', 'transferred'], true)) {
+            throw ValidationException::withMessages(['status' => 'Asset harus active/transferred untuk depresiasi.']);
+        }
+        if ($fixedAsset->depreciation_method === 'none') {
+            throw ValidationException::withMessages(['depreciation_method' => 'Asset category tidak menggunakan depresiasi.']);
+        }
+        $data = $request->validate(['depreciation_date' => ['required', 'date'], 'amount' => ['nullable', 'numeric', 'min:0.01']]);
+        $category = $fixedAsset->category;
+        $depreciationAccount = $category?->depreciationGlAccount ?: ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
+        $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
+        if (! $depreciationAccount || ! $accumulatedAccount) {
+            throw ValidationException::withMessages(['account' => 'COA depreciation dan accumulated depreciation harus tersedia.']);
+        }
+
+        $monthly = $data['amount'] ?? round((float) $fixedAsset->acquisition_cost / max(1, (int) $fixedAsset->useful_life_months), 2);
+        $remaining = round((float) $fixedAsset->net_book_value, 2);
+        $amount = min($monthly, $remaining);
+        if ($amount <= 0) {
+            throw ValidationException::withMessages(['amount' => 'Net book value sudah habis.']);
+        }
+
+        $asset = DB::transaction(function () use ($fixedAsset, $data, $amount, $depreciationAccount, $accumulatedAccount) {
+            $journal = Journal::create([
+                'journal_number' => 'DEP-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                'journal_date' => $data['depreciation_date'],
+                'journal_type' => 'adjustment',
+                'reference' => $fixedAsset->asset_code,
+                'description' => 'Depreciation '.$fixedAsset->asset_name,
+                'status' => 'posted',
+                'posted_by' => request()->user()->id,
+                'posted_at' => now(),
+            ]);
+            $journal->lines()->create(['account_id' => $depreciationAccount->id, 'project_id' => $fixedAsset->project_id, 'donor_id' => $fixedAsset->donor_id, 'program_id' => $fixedAsset->program_id, 'line_description' => 'Depreciation expense', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
+            $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Accumulated depreciation', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
+
+            $accumulated = round((float) $fixedAsset->accumulated_depreciation + $amount, 2);
+            $nbv = max(0, round((float) $fixedAsset->acquisition_cost - $accumulated, 2));
+            $fixedAsset->depreciations()->create(['depreciation_date' => $data['depreciation_date'], 'amount' => $amount, 'accumulated_depreciation' => $accumulated, 'net_book_value' => $nbv, 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
+            $fixedAsset->update(['accumulated_depreciation' => $accumulated, 'net_book_value' => $nbv]);
+
+            return $fixedAsset->fresh($this->with);
+        });
+
+        return response()->json(['success' => true, 'message' => 'Depresiasi asset berhasil diposting.', 'data' => $this->format($asset)]);
+    }
+
+    public function transfer(Request $request, FixedAsset $fixedAsset): JsonResponse
+    {
+        $data = $request->validate(['location' => ['nullable', 'string', 'max:150'], 'custodian_id' => ['nullable', 'integer', 'exists:employees,id']]);
+        $fixedAsset->update([...$data, 'status' => 'transferred']);
+
+        return response()->json(['success' => true, 'message' => 'Asset berhasil ditransfer.', 'data' => $this->format($fixedAsset->fresh($this->with))]);
+    }
+
+    public function dispose(Request $request, FixedAsset $fixedAsset): JsonResponse
+    {
+        if ($fixedAsset->status === 'disposed') {
+            throw ValidationException::withMessages(['status' => 'Asset sudah disposed.']);
+        }
+        $data = $request->validate(['disposed_date' => ['required', 'date'], 'disposal_reason' => ['required', 'string']]);
+        $fixedAsset->update([...$data, 'status' => 'disposed']);
+
+        return response()->json(['success' => true, 'message' => 'Asset berhasil disposed.', 'data' => $this->format($fixedAsset->fresh($this->with))]);
+    }
+
+    private function validatePayload(Request $request): array
+    {
+        return $request->validate([
+            'asset_code' => ['nullable', 'string', 'max:50', 'unique:fixed_assets,asset_code'],
+            'asset_name' => ['required', 'string', 'max:160'],
+            'asset_category_id' => ['nullable', 'integer', 'exists:asset_categories,id'],
+            'acquisition_date' => ['required', 'date'],
+            'acquisition_cost' => ['required', 'numeric', 'min:0.01'],
+            'vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
+            'purchase_order_id' => ['nullable', 'integer', 'exists:purchase_orders,id'],
+            'goods_receipt_id' => ['nullable', 'integer', 'exists:goods_receipts,id'],
+            'supplier_invoice_id' => ['nullable', 'integer', 'exists:supplier_invoices,id'],
+            'donor_id' => ['nullable', 'integer', 'exists:donors,id'],
+            'program_id' => ['nullable', 'integer', 'exists:programs,id'],
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'location' => ['nullable', 'string', 'max:150'],
+            'custodian_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'useful_life_months' => ['nullable', 'integer', 'min:1'],
+            'depreciation_method' => ['nullable', 'in:straight_line,declining_balance,none'],
+            'notes' => ['nullable', 'string'],
+        ]);
+    }
+
+    private function nextAssetCode(): string
+    {
+        return 'FA-'.now()->format('YmdHis').'-'.random_int(100, 999);
+    }
+
+    private function format(FixedAsset $asset): array
+    {
+        return [
+            'id' => $asset->id,
+            'asset_code' => $asset->asset_code,
+            'asset_name' => $asset->asset_name,
+            'category' => $asset->category ? ['id' => $asset->category->id, 'code' => $asset->category->code, 'name' => $asset->category->name] : null,
+            'acquisition_date' => $asset->acquisition_date?->toDateString(),
+            'acquisition_cost' => $asset->acquisition_cost,
+            'accumulated_depreciation' => $asset->accumulated_depreciation,
+            'net_book_value' => $asset->net_book_value,
+            'depreciation_method' => $asset->depreciation_method,
+            'useful_life_months' => $asset->useful_life_months,
+            'location' => $asset->location,
+            'custodian' => $asset->custodian ? ['id' => $asset->custodian->id, 'name' => $asset->custodian->name] : null,
+            'project' => $asset->project ? ['id' => $asset->project->id, 'code' => $asset->project->code, 'name' => $asset->project->name] : null,
+            'vendor' => $asset->vendor ? ['id' => $asset->vendor->id, 'code' => $asset->vendor->code, 'name' => $asset->vendor->name] : null,
+            'status' => $asset->status,
+            'notes' => $asset->notes,
+            'depreciations' => $asset->depreciations->map(fn ($row) => ['id' => $row->id, 'depreciation_date' => $row->depreciation_date?->toDateString(), 'amount' => $row->amount, 'accumulated_depreciation' => $row->accumulated_depreciation, 'net_book_value' => $row->net_book_value])->values(),
+        ];
+    }
+}

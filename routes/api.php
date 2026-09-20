@@ -1,10 +1,24 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\RbacController;
 use App\Http\Controllers\RoleMenuController;
 use Illuminate\Support\Facades\Route;
+
+use App\Http\Controllers\Api\Accounting\JournalController;
+use App\Http\Controllers\Api\Budget\BudgetMonitoringController;
+use App\Http\Controllers\Api\Procurement\PurchaseRequestController;
+use App\Http\Controllers\Api\Procurement\ProcurementFulfillmentController;
+use App\Http\Controllers\Api\Procurement\AdvancedProcurementController;
+use App\Http\Controllers\Api\Finance\AccountsPayableController;
+use App\Http\Controllers\Api\Finance\AccountsReceivableController;
+use App\Http\Controllers\Api\Finance\TaxTransactionController;
+use App\Http\Controllers\Api\Expense\ExpenseRequestController;
+use App\Http\Controllers\Api\Timesheet\TimesheetEntryController;
+use App\Http\Controllers\Api\Asset\FixedAssetController;
+use App\Http\Controllers\Api\ReportsDashboardController;
 
 // Master Controllers
 use App\Http\Controllers\Api\Master\OrganizationController;
@@ -64,15 +78,115 @@ Route::options('/{any}', function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/rbac/me', [RbacController::class, 'me']);
-    Route::apiResource('/menus', MenuController::class)->except(['show']);
-    Route::get('/roles/menus', [RoleMenuController::class, 'index']);
-    Route::put('/roles/{role}/menus', [RoleMenuController::class, 'sync']);
+    Route::get('/menus', [MenuController::class, 'index'])->middleware('permission:master-menu.view');
+    Route::apiResource('/menus', MenuController::class)->except(['show'])->middleware('permission:master-menu.manage');
+    Route::get('/roles', [RoleMenuController::class, 'options'])->middleware('permission:master-data.view');
+    Route::get('/permissions', [RoleMenuController::class, 'permissionOptions'])->middleware('permission:role-access.view');
+    Route::get('/roles/menus', [RoleMenuController::class, 'index'])->middleware('permission:role-access.view');
+    Route::put('/roles/{role}/menus', [RoleMenuController::class, 'sync'])->middleware('permission:role-access.manage');
+    Route::put('/roles/{role}/permissions', [RoleMenuController::class, 'syncPermissions'])->middleware('permission:role-access.manage');
+    Route::get('/audit-logs', [AuditLogController::class, 'index'])->middleware('permission:audit.view');
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    Route::get('/v1/dashboard/overview', [ReportsDashboardController::class, 'dashboard'])->middleware('permission:dashboard.view');
+    Route::get('/v1/reports/summary', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
+
+    Route::prefix('v1/accounting')->group(function () {
+        Route::get('journals', [JournalController::class, 'index'])->middleware('permission:accounting.journal.view');
+        Route::post('journals', [JournalController::class, 'store'])->middleware('permission:accounting.journal.create');
+        Route::get('journals/{journal}', [JournalController::class, 'show'])->middleware('permission:accounting.journal.view');
+        Route::put('journals/{journal}', [JournalController::class, 'update'])->middleware('permission:accounting.journal.update');
+        Route::delete('journals/{journal}', [JournalController::class, 'destroy'])->middleware('permission:accounting.journal.delete');
+        Route::post('journals/{journal}/submit', [JournalController::class, 'submit'])->middleware('permission:accounting.journal.submit');
+        Route::post('journals/{journal}/review', [JournalController::class, 'review'])->middleware('permission:accounting.journal.review');
+        Route::post('journals/{journal}/post', [JournalController::class, 'post'])->middleware('permission:accounting.journal.post');
+        Route::post('journals/{journal}/reverse', [JournalController::class, 'reverse'])->middleware('permission:accounting.journal.reverse');
+    });
+
+    Route::prefix('v1/budget')->group(function () {
+        Route::get('monitoring', [BudgetMonitoringController::class, 'index'])->middleware('permission:budget.view');
+        Route::post('validate', [BudgetMonitoringController::class, 'validateBudget'])->middleware('permission:budget.validate');
+    });
+
+    Route::prefix('v1/procurement')->group(function () {
+        Route::get('purchase-requests', [PurchaseRequestController::class, 'index'])->middleware('permission:procurement.pr.view');
+        Route::post('purchase-requests', [PurchaseRequestController::class, 'store'])->middleware('permission:procurement.pr.create');
+        Route::get('purchase-requests/{purchaseRequest}', [PurchaseRequestController::class, 'show'])->middleware('permission:procurement.pr.view');
+        Route::put('purchase-requests/{purchaseRequest}', [PurchaseRequestController::class, 'update'])->middleware('permission:procurement.pr.update');
+        Route::delete('purchase-requests/{purchaseRequest}', [PurchaseRequestController::class, 'destroy'])->middleware('permission:procurement.pr.delete');
+        Route::post('purchase-requests/{purchaseRequest}/submit', [PurchaseRequestController::class, 'submit'])->middleware('permission:procurement.pr.submit');
+        Route::post('purchase-requests/{purchaseRequest}/approve', [PurchaseRequestController::class, 'approve'])->middleware('permission:procurement.pr.approve');
+        Route::post('purchase-requests/{purchaseRequest}/reject', [PurchaseRequestController::class, 'reject'])->middleware('permission:procurement.pr.approve');
+        Route::post('purchase-requests/{purchaseRequest}/cancel', [PurchaseRequestController::class, 'cancel'])->middleware('permission:procurement.pr.update');
+        Route::get('purchase-orders', [ProcurementFulfillmentController::class, 'purchaseOrders'])->middleware('permission:procurement.po.view');
+        Route::post('purchase-requests/{purchaseRequest}/purchase-orders', [ProcurementFulfillmentController::class, 'createPoFromPr'])->middleware('permission:procurement.po.create');
+        Route::post('purchase-orders/{purchaseOrder}/approve', [ProcurementFulfillmentController::class, 'approvePo'])->middleware('permission:procurement.po.approve');
+        Route::post('purchase-orders/{purchaseOrder}/goods-receipts', [ProcurementFulfillmentController::class, 'createGrn'])->middleware('permission:procurement.grn.create');
+        Route::post('purchase-orders/{purchaseOrder}/supplier-invoices', [ProcurementFulfillmentController::class, 'createInvoice'])->middleware('permission:procurement.invoice.create');
+        Route::post('supplier-invoices/{supplierInvoice}/three-way-match', [ProcurementFulfillmentController::class, 'threeWayMatch'])->middleware('permission:procurement.invoice.match');
+        Route::get('rfqs', [AdvancedProcurementController::class, 'rfqs'])->middleware('permission:procurement.rfq.view');
+        Route::post('purchase-requests/{purchaseRequest}/rfqs', [AdvancedProcurementController::class, 'createRfq'])->middleware('permission:procurement.rfq.create');
+        Route::post('rfqs/{rfq}/quotations', [AdvancedProcurementController::class, 'submitQuotation'])->middleware('permission:procurement.rfq.create');
+        Route::post('rfqs/{rfq}/cba', [AdvancedProcurementController::class, 'createCba'])->middleware('permission:procurement.cba.create');
+        Route::post('cba/{cba}/approve', [AdvancedProcurementController::class, 'approveCba'])->middleware('permission:procurement.cba.approve');
+        Route::post('cba/{cba}/purchase-orders', [AdvancedProcurementController::class, 'createPoFromCba'])->middleware('permission:procurement.po.create');
+    });
+
+    Route::prefix('v1/finance')->group(function () {
+        Route::get('ap/invoices', [AccountsPayableController::class, 'invoices'])->middleware('permission:ap.view');
+        Route::post('ap/invoices/{supplierInvoice}/post', [AccountsPayableController::class, 'postInvoice'])->middleware('permission:ap.post');
+        Route::post('ap/invoices/{supplierInvoice}/payments', [AccountsPayableController::class, 'payInvoice'])->middleware('permission:ap.pay');
+        Route::get('ar/customers', [AccountsReceivableController::class, 'customers'])->middleware('permission:ar.view');
+        Route::post('ar/customers', [AccountsReceivableController::class, 'storeCustomer'])->middleware('permission:ar.create');
+        Route::get('ar/invoices', [AccountsReceivableController::class, 'invoices'])->middleware('permission:ar.view');
+        Route::post('ar/invoices', [AccountsReceivableController::class, 'storeInvoice'])->middleware('permission:ar.create');
+        Route::post('ar/invoices/{customerInvoice}/post', [AccountsReceivableController::class, 'postInvoice'])->middleware('permission:ar.post');
+        Route::post('ar/invoices/{customerInvoice}/receipts', [AccountsReceivableController::class, 'receivePayment'])->middleware('permission:ar.receive');
+        Route::get('payments', [AccountsPayableController::class, 'payments'])->middleware('permission:payments.view');
+        Route::get('bank-transactions', [AccountsPayableController::class, 'bankTransactions'])->middleware('permission:banking.view');
+    });
+
+    Route::prefix('v1/tax')->group(function () {
+        Route::get('taxes', [TaxTransactionController::class, 'taxes'])->middleware('permission:tax.view');
+        Route::post('calculate', [TaxTransactionController::class, 'calculate'])->middleware('permission:tax.view');
+        Route::get('transactions', [TaxTransactionController::class, 'index'])->middleware('permission:tax.view');
+        Route::post('transactions', [TaxTransactionController::class, 'store'])->middleware('permission:tax.manage');
+        Route::get('report', [TaxTransactionController::class, 'report'])->middleware('permission:tax.view');
+    });
+
+    Route::prefix('v1/timesheets')->group(function () {
+        Route::get('entries', [TimesheetEntryController::class, 'index'])->middleware('permission:timesheet.view');
+        Route::post('entries', [TimesheetEntryController::class, 'store'])->middleware('permission:timesheet.create');
+        Route::put('entries/{timesheetEntry}', [TimesheetEntryController::class, 'update'])->middleware('permission:timesheet.update');
+        Route::post('entries/{timesheetEntry}/submit', [TimesheetEntryController::class, 'submit'])->middleware('permission:timesheet.submit');
+        Route::post('entries/{timesheetEntry}/approve', [TimesheetEntryController::class, 'approve'])->middleware('permission:timesheet.approve');
+        Route::post('entries/{timesheetEntry}/reject', [TimesheetEntryController::class, 'reject'])->middleware('permission:timesheet.approve');
+    });
+
+    Route::prefix('v1/assets')->group(function () {
+        Route::get('fixed-assets', [FixedAssetController::class, 'index'])->middleware('permission:asset.view');
+        Route::post('fixed-assets', [FixedAssetController::class, 'store'])->middleware('permission:asset.create');
+        Route::post('fixed-assets/{fixedAsset}/capitalize', [FixedAssetController::class, 'capitalize'])->middleware('permission:asset.capitalize');
+        Route::post('fixed-assets/{fixedAsset}/depreciate', [FixedAssetController::class, 'depreciate'])->middleware('permission:asset.depreciate');
+        Route::post('fixed-assets/{fixedAsset}/transfer', [FixedAssetController::class, 'transfer'])->middleware('permission:asset.transfer');
+        Route::post('fixed-assets/{fixedAsset}/dispose', [FixedAssetController::class, 'dispose'])->middleware('permission:asset.dispose');
+    });
+
+    Route::prefix('v1/expenses')->group(function () {
+        Route::get('requests', [ExpenseRequestController::class, 'index'])->middleware('permission:expense.view');
+        Route::post('requests', [ExpenseRequestController::class, 'store'])->middleware('permission:expense.create');
+        Route::post('requests/{expenseRequest}/submit', [ExpenseRequestController::class, 'submit'])->middleware('permission:expense.submit');
+        Route::post('requests/{expenseRequest}/approve', [ExpenseRequestController::class, 'approve'])->middleware('permission:expense.approve');
+        Route::post('requests/{expenseRequest}/reject', [ExpenseRequestController::class, 'reject'])->middleware('permission:expense.approve');
+        Route::post('requests/{expenseRequest}/post', [ExpenseRequestController::class, 'post'])->middleware('permission:expense.post');
+        Route::post('requests/{expenseRequest}/pay', [ExpenseRequestController::class, 'pay'])->middleware('permission:expense.pay');
+    });
 
     // -------------------------------------------------------------
     // V1 MASTER DATA ROUTES (30 Entities + Export + Toggle Status)
     // -------------------------------------------------------------
     Route::prefix('v1/master')->group(function () {
+        Route::get('roles', [RoleMenuController::class, 'options'])->middleware('permission:master-data.view');
         $masterResources = [
             'organizations' => OrganizationController::class,
             'office-locations' => OfficeLocationController::class,
@@ -107,9 +221,11 @@ Route::middleware('auth:sanctum')->group(function () {
         ];
 
         foreach ($masterResources as $uri => $controller) {
-            Route::get("{$uri}/export", [$controller, 'export']);
-            Route::patch("{$uri}/{id}/toggle-status", [$controller, 'toggleStatus']);
-            Route::apiResource($uri, $controller)->parameters([$uri => 'id']);
+            Route::get("{$uri}/export", [$controller, 'export'])->middleware('permission:master-data.export');
+            Route::patch("{$uri}/{id}/toggle-status", [$controller, 'toggleStatus'])->middleware('permission:master-data.manage');
+            Route::apiResource($uri, $controller)
+                ->parameters([$uri => 'id'])
+                ->middleware('permission:master-data');
         }
     });
 });

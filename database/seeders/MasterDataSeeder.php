@@ -889,40 +889,181 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        // 17. Approval Matrix
-        $roleManager = Role::firstOrCreate(['slug' => 'finance-manager'], ['name' => 'Finance Manager']);
+        // 17. Approval Matrices (Tiered Multi-Level & Dynamic Rules)
+        $roleDirector = Role::firstOrCreate(['slug' => 'executive-director'], ['name' => 'Executive Director']);
+        $roleBoard = Role::firstOrCreate(['slug' => 'board-director'], ['name' => 'Board of Trustees']);
+        $roleFinanceManager = Role::firstOrCreate(['slug' => 'finance-manager'], ['name' => 'Finance Manager']);
+        $roleProjectManager = Role::firstOrCreate(['slug' => 'project-manager'], ['name' => 'Project Manager']);
+        $roleFinanceOfficer = Role::firstOrCreate(['slug' => 'finance-officer'], ['name' => 'Finance Officer']);
 
+        // EXPENSE: Tier 1 (Rp 0 - Rp 5 Jt) -> Level 1: Project Manager
         ApprovalMatrix::updateOrCreate([
             'module' => 'expense',
             'level' => 1,
-        ], [
             'min_amount' => 0,
             'max_amount' => 5000000,
-            'role_id' => $roleManager->id,
+        ], [
+            'role_id' => $roleProjectManager->id,
+            'approver_title' => 'Project Manager / Supervisor',
             'is_conditional_project_manager' => true,
+            'description' => 'Biaya operasional & kegiatan lapangan rutin s.d Rp 5.000.000',
             'is_active' => true,
         ]);
 
+        // EXPENSE: Tier 2 (Rp 5 Jt - Rp 25 Jt) -> Level 1: Project Manager, Level 2: Finance Manager
         ApprovalMatrix::updateOrCreate([
             'module' => 'expense',
             'level' => 2,
-        ], [
             'min_amount' => 5000001,
-            'max_amount' => 50000000,
-            'role_id' => $roleManager->id,
+            'max_amount' => 25000000,
+        ], [
+            'role_id' => $roleFinanceManager->id,
+            'approver_title' => 'Finance Manager',
             'is_conditional_project_manager' => false,
+            'description' => 'Verifikasi kepatuhan anggaran dan cash flow oleh Finance Manager',
             'is_active' => true,
         ]);
 
+        // EXPENSE: Tier 3 (Rp 25 Jt - Rp 100 Jt) -> Level 3: Executive Director
+        ApprovalMatrix::updateOrCreate([
+            'module' => 'expense',
+            'level' => 3,
+            'min_amount' => 25000001,
+            'max_amount' => 100000000,
+        ], [
+            'role_id' => $roleDirector->id,
+            'approver_title' => 'Executive Director',
+            'is_conditional_project_manager' => false,
+            'description' => 'Persetujuan pimpinan eksekutif untuk pengeluaran di atas Rp 25 Juta',
+            'is_active' => true,
+        ]);
+
+        // EXPENSE: Tier 4 (> Rp 100 Jt) -> Level 4: Board of Trustees
+        ApprovalMatrix::updateOrCreate([
+            'module' => 'expense',
+            'level' => 4,
+            'min_amount' => 100000001,
+            'max_amount' => null,
+        ], [
+            'role_id' => $roleBoard->id,
+            'approver_title' => 'Board of Trustees / Dewan Pengawas',
+            'is_conditional_project_manager' => false,
+            'description' => 'Persetujuan Dewan Pengawas untuk pengeluaran strategis di atas Rp 100 Juta',
+            'is_active' => true,
+        ]);
+
+        // CASH ADVANCE: Tier 1 (Rp 0 - Rp 10 Jt) -> Level 1: Project Manager
         ApprovalMatrix::updateOrCreate([
             'module' => 'cash_advance',
             'level' => 1,
-        ], [
             'min_amount' => 0,
-            'max_amount' => 25000000,
-            'role_id' => $roleManager->id,
+            'max_amount' => 10000000,
+        ], [
+            'role_id' => $roleProjectManager->id,
+            'approver_title' => 'Project Manager',
             'is_conditional_project_manager' => true,
+            'description' => 'Uang muka kerja lapangan rutin s.d Rp 10 Juta',
             'is_active' => true,
         ]);
+
+        // CASH ADVANCE: Tier 2 (Rp 10 Jt - Rp 50 Jt) -> Level 2: Finance Manager
+        ApprovalMatrix::updateOrCreate([
+            'module' => 'cash_advance',
+            'level' => 2,
+            'min_amount' => 10000001,
+            'max_amount' => 50000000,
+        ], [
+            'role_id' => $roleFinanceManager->id,
+            'approver_title' => 'Finance Manager',
+            'is_conditional_project_manager' => false,
+            'description' => 'Verifikasi likuiditas uang muka kerja oleh Finance Manager',
+            'is_active' => true,
+        ]);
+
+        // CASH ADVANCE: Tier 3 (> Rp 50 Jt) -> Level 3: Executive Director
+        ApprovalMatrix::updateOrCreate([
+            'module' => 'cash_advance',
+            'level' => 3,
+            'min_amount' => 50000001,
+            'max_amount' => null,
+        ], [
+            'role_id' => $roleDirector->id,
+            'approver_title' => 'Executive Director',
+            'is_conditional_project_manager' => false,
+            'description' => 'Otorisasi direktur eksekutif untuk advance skala besar > Rp 50 Juta',
+            'is_active' => true,
+        ]);
+
+        // PROCUREMENT: Tier 1 (Rp 0 - Rp 20 Jt) -> Level 1: Project Manager
+        ApprovalMatrix::updateOrCreate([
+            'module' => 'procurement',
+            'level' => 1,
+            'min_amount' => 0,
+            'max_amount' => 20000000,
+        ], [
+            'role_id' => $roleProjectManager->id,
+            'approver_title' => 'Procurement Officer & PM',
+            'is_conditional_project_manager' => true,
+            'description' => 'Pengadaan barang/jasa operasional kantor & logistik kegiatan',
+            'is_active' => true,
+        ]);
+
+        // PROCUREMENT: Tier 2 (Rp 20 Jt - Rp 100 Jt) -> Level 2: Finance Manager
+        ApprovalMatrix::updateOrCreate([
+            'module' => 'procurement',
+            'level' => 2,
+            'min_amount' => 20000001,
+            'max_amount' => 100000000,
+        ], [
+            'role_id' => $roleFinanceManager->id,
+            'approver_title' => 'Finance Manager',
+            'is_conditional_project_manager' => false,
+            'description' => 'Evaluasi 3 perbandingan penawaran vendor & persetujuan PO',
+            'is_active' => true,
+        ]);
+
+        // PROCUREMENT: Tier 3 (> Rp 100 Jt) -> Level 3: Executive Director
+        ApprovalMatrix::updateOrCreate([
+            'module' => 'procurement',
+            'level' => 3,
+            'min_amount' => 100000001,
+            'max_amount' => null,
+        ], [
+            'role_id' => $roleDirector->id,
+            'approver_title' => 'Executive Director',
+            'is_conditional_project_manager' => false,
+            'description' => 'Persetujuan kontrak pengadaan besar oleh Executive Director',
+            'is_active' => true,
+        ]);
+
+        // DYNAMIC DONOR SPECIFIC RULE: Global Environment Facility (GEF)
+        if (isset($donor1)) {
+            ApprovalMatrix::updateOrCreate([
+                'module' => 'expense',
+                'donor_id' => $donor1->id,
+                'level' => 2,
+                'min_amount' => 50000000,
+            ], [
+                'role_id' => $roleDirector->id,
+                'approver_title' => 'Executive Director & Donor Compliance Officer',
+                'description' => 'Ketentuan khusus Donor GEF: Pengeluaran > Rp 50 Juta wajib audit kepatuhan donor',
+                'is_active' => true,
+            ]);
+        }
+
+        // DYNAMIC PROJECT SPECIFIC RULE: Community Forest Monitoring (PRJ-PTK-01)
+        if (isset($prj1)) {
+            ApprovalMatrix::updateOrCreate([
+                'module' => 'budget_reallocation',
+                'project_id' => $prj1->id,
+                'level' => 1,
+                'min_amount' => 0,
+            ], [
+                'role_id' => $roleProjectManager->id,
+                'approver_title' => 'Project Manager (Community Forest)',
+                'description' => 'Realokasi anggaran antar pos biaya Project Community Forest Monitoring',
+                'is_active' => true,
+            ]);
+        }
     }
 }

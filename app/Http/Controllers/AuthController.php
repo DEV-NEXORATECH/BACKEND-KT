@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
+use App\Services\Rbac\RbacPayloadBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -10,7 +10,7 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    public function login(Request $request): JsonResponse
+    public function login(Request $request, RbacPayloadBuilder $rbacPayload): JsonResponse
     {
         $credentials = $request->validate([
             'email' => ['required', 'email'],
@@ -18,7 +18,7 @@ class AuthController extends Controller
             'remember' => ['sometimes', 'boolean'],
         ]);
 
-        $user = User::with(['role.permissions', 'role.menus'])
+        $user = \App\Models\User::with(['role.permissions', 'role.menus'])
             ->where('email', $credentials['email'])
             ->first();
 
@@ -38,31 +38,13 @@ class AuthController extends Controller
             'message' => 'Login berhasil.',
             'token' => $token,
             'token_type' => 'Bearer',
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role ? [
-                    'id' => $user->role->id,
-                    'name' => $user->role->name,
-                    'slug' => $user->role->slug,
-                ] : null,
-            ],
-            'permissions' => $user->role?->permissions
-                ->map(fn ($permission) => [
-                    'name' => $permission->name,
-                    'slug' => $permission->slug,
-                ])
-                ->values()
-                ->all() ?? [],
+            ...$rbacPayload->build($user),
         ]);
     }
 
-    public function me(Request $request): JsonResponse
+    public function me(Request $request, RbacPayloadBuilder $rbacPayload): JsonResponse
     {
-        return response()->json([
-            'user' => $request->user(),
-        ]);
+        return response()->json($rbacPayload->build($request->user()));
     }
 
     public function logout(Request $request): JsonResponse
