@@ -1110,7 +1110,7 @@ class MasterDataSeeder extends Seeder
 
         if ($blFord2) {
             BudgetCommitment::updateOrCreate([
-                'commitment_number' => 'PO-2026-SEED-02',
+                'reference' => 'PO-2026-SEED-02',
                 'budget_line_id' => $blFord2->id,
             ], [
                 'source_type' => 'purchase_order',
