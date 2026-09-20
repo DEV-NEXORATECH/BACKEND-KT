@@ -141,8 +141,9 @@ class ReportsDashboardController extends Controller
     public function reports(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
         $period = $this->period($request);
+        $projectId = $request->input('project_id');
         $budgetRows = $budgetService->summary($request->only(['project_id', 'grant_agreement_id', 'budget_category_id']));
-        $postedLines = $this->postedLines($period['start'], $period['end']);
+        $postedLines = $this->postedLines($period['start'], $period['end'], $projectId);
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
 
         return response()->json([
@@ -190,7 +191,7 @@ class ReportsDashboardController extends Controller
         ];
     }
 
-    private function postedLines(?CarbonInterface $start, ?CarbonInterface $end)
+    private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null)
     {
         return JournalLine::query()
             ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'project:id,code,name'])
@@ -199,6 +200,7 @@ class ReportsDashboardController extends Controller
                     ->when($start, fn (Builder $inner) => $inner->whereDate('journal_date', '>=', $start))
                     ->when($end, fn (Builder $inner) => $inner->whereDate('journal_date', '<=', $end));
             })
+            ->when($projectId, fn (Builder $query) => $query->where('project_id', $projectId))
             ->get();
     }
 
