@@ -25,4 +25,13 @@ class Program extends Model
         return $this->hasMany(\App\Models\Master\Project::class);
     }
 
+    public function grantAgreement()
+    {
+        return $this->belongsTo(\App\Models\Master\GrantAgreement::class, 'grant_agreement_id');
+    }
+
+    public function grantAgreements()
+    {
+        return $this->hasManyThrough(\App\Models\Master\GrantAgreement::class, \App\Models\Master\Project::class, 'program_id', 'id', 'id', 'grant_agreement_id');
+    }
 }
