@@ -288,6 +288,7 @@ class DatabaseSeeder extends Seeder
             ['title' => 'Administration', 'slug' => 'administration', 'path' => '/administration', 'icon' => 'admin', 'sort_order' => 60, 'children' => [
                 ['title' => 'Master Menu', 'slug' => 'master-menu', 'path' => '/administration/master-menu', 'sort_order' => 61],
                 ['title' => 'Role Access', 'slug' => 'role-access', 'path' => '/administration/role-access', 'sort_order' => 62],
+                ['title' => 'Approval Matrix', 'slug' => 'administration-approval-matrix', 'path' => '/administration/approval-matrix', 'sort_order' => 63],
             ]],
             ['title' => 'Settings', 'slug' => 'settings', 'path' => '/settings', 'icon' => 'settings', 'sort_order' => 70],
         ];
