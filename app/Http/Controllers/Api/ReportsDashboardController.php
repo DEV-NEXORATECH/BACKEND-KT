@@ -16,6 +16,7 @@ use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
 use App\Services\Budget\BudgetMonitoringService;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -102,7 +103,7 @@ class ReportsDashboardController extends Controller
     private function period(Request $request): array
     {
         $start = $request->filled('start_date') ? CarbonImmutable::parse($request->string('start_date'))->startOfDay() : null;
-        $end = $request->filled('end_date') ? CarbonImmutable::parse($request->string('end_date'))->endOfDay() : now()->endOfDay();
+        $end = $request->filled('end_date') ? CarbonImmutable::parse($request->string('end_date'))->endOfDay() : CarbonImmutable::now()->endOfDay();
 
         return [
             'start' => $start,
@@ -114,7 +115,7 @@ class ReportsDashboardController extends Controller
         ];
     }
 
-    private function postedLines(?CarbonImmutable $start, ?CarbonImmutable $end)
+    private function postedLines(?CarbonInterface $start, ?CarbonInterface $end)
     {
         return JournalLine::query()
             ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'project:id,code,name'])
@@ -164,7 +165,7 @@ class ReportsDashboardController extends Controller
         })->all();
     }
 
-    private function cashPosition(?CarbonImmutable $start, ?CarbonImmutable $end): float
+    private function cashPosition(?CarbonInterface $start, ?CarbonInterface $end): float
     {
         return (float) BankTransaction::query()
             ->when($start, fn (Builder $query) => $query->whereDate('transaction_date', '>=', $start))
@@ -191,7 +192,7 @@ class ReportsDashboardController extends Controller
 
     private function monthlyBudgetVsActual(float $approvedBudget, $postedLines): array
     {
-        $months = collect(range(5, 0))->map(fn (int $monthsAgo) => now()->subMonths($monthsAgo)->startOfMonth());
+        $months = collect(range(5, 0))->map(fn (int $monthsAgo) => CarbonImmutable::now()->subMonths($monthsAgo)->startOfMonth());
         $monthlyBudget = $approvedBudget > 0 ? round($approvedBudget / 12, 2) : 0;
 
         return $months->map(function ($month) use ($monthlyBudget, $postedLines) {
@@ -239,7 +240,7 @@ class ReportsDashboardController extends Controller
         ];
     }
 
-    private function recentTransactions(?CarbonImmutable $start, ?CarbonImmutable $end): array
+    private function recentTransactions(?CarbonInterface $start, ?CarbonInterface $end): array
     {
         return Journal::query()
             ->with('lines.account:id,code,name,account_type')
@@ -296,9 +297,9 @@ class ReportsDashboardController extends Controller
         ];
     }
 
-    private function apAging(?CarbonImmutable $end): array
+    private function apAging(?CarbonInterface $end): array
     {
-        $asOf = $end ?: now();
+        $asOf = $end ?: CarbonImmutable::now();
         $buckets = ['current' => 0.0, '1_30' => 0.0, '31_60' => 0.0, '61_90' => 0.0, 'over_90' => 0.0];
         $rows = SupplierInvoice::query()->with('vendor:id,code,name')->whereNotIn('status', ['paid', 'cancelled'])->get()->map(function (SupplierInvoice $invoice) use (&$buckets, $asOf) {
             $outstanding = max(0, (float) $invoice->total_amount - (float) $invoice->paid_amount);
@@ -319,9 +320,9 @@ class ReportsDashboardController extends Controller
         return ['buckets' => array_map(fn ($value) => round($value, 2), $buckets), 'rows' => $rows->values()->all()];
     }
 
-    private function arAging(?CarbonImmutable $end): array
+    private function arAging(?CarbonInterface $end): array
     {
-        $asOf = $end ?: now();
+        $asOf = $end ?: CarbonImmutable::now();
         $buckets = ['current' => 0.0, '1_30' => 0.0, '31_60' => 0.0, '61_90' => 0.0, 'over_90' => 0.0];
         $rows = CustomerInvoice::query()->with('customer:id,code,name')->whereNotIn('status', ['received', 'void'])->get()->map(function (CustomerInvoice $invoice) use (&$buckets, $asOf) {
             $outstanding = max(0, (float) $invoice->total_amount - (float) $invoice->received_amount);
@@ -342,7 +343,7 @@ class ReportsDashboardController extends Controller
         return ['buckets' => array_map(fn ($value) => round($value, 2), $buckets), 'rows' => $rows->values()->all()];
     }
 
-    private function cashBank(?CarbonImmutable $start, ?CarbonImmutable $end): array
+    private function cashBank(?CarbonInterface $start, ?CarbonInterface $end): array
     {
         $rows = BankTransaction::query()
             ->with('bankAccount:id,bank_name,account_number,account_name')
