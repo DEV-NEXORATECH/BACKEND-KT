@@ -1,5 +1,5 @@
 <IfModule mod_headers.c>
-    Header always set Access-Control-Allow-Origin "https://red-lyrebird-398503.hostingersite.com"
+    Header always set Access-Control-Allow-Origin "https://red-lyrebird-398503.hostingersite.com,https://lawngreen-mosquito-967832.hostingersite.com/"
     Header always set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin"
 </IfModule>
