@@ -1063,6 +1063,12 @@ class MasterDataSeeder extends Seeder
                 'min_amount' => 0,
             ], [
                 'role_id' => $roleProjectManager->id,
+                'approver_title' => 'Project Manager (Community Forest)',
+                'description' => 'Realokasi anggaran antar pos biaya Project Community Forest Monitoring',
+                'is_active' => true,
+            ]);
+        }
+
         // 18. Real Database Transactions for Over-Budget & Warning Alerts
         $blFord1 = BudgetLine::where('line_code', 'BL-FORD-2.1')->first();
         $blFord2 = BudgetLine::where('line_code', 'BL-FORD-3.1')->first();
