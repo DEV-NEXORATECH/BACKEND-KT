@@ -63,6 +63,8 @@ return new class extends Migration
             $table->decimal('max_amount', 18, 2)->nullable();
             $table->unsignedTinyInteger('level')->default(1);
             $table->foreignId('role_id')->nullable()->constrained('roles')->nullOnDelete();
+            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('employee_id')->nullable()->constrained('employees')->nullOnDelete();
             $table->foreignId('project_id')->nullable()->constrained('projects')->nullOnDelete();
             $table->foreignId('donor_id')->nullable()->constrained('donors')->nullOnDelete();
             $table->foreignId('department_id')->nullable()->constrained('departments')->nullOnDelete();

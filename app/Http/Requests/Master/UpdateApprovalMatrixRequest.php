@@ -19,6 +19,8 @@ class UpdateApprovalMatrixRequest extends FormRequest
             'min_amount' => 'required|numeric|min:0',
             'max_amount' => 'nullable|numeric|gte:min_amount',
             'role_id' => 'nullable|integer|exists:roles,id',
+            'user_id' => 'nullable|integer|exists:users,id',
+            'employee_id' => 'nullable|integer|exists:employees,id',
             'project_id' => 'nullable|integer|exists:projects,id',
             'donor_id' => 'nullable|integer|exists:donors,id',
             'department_id' => 'nullable|integer|exists:departments,id',

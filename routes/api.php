@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\Expense\ExpenseRequestController;
 use App\Http\Controllers\Api\Timesheet\TimesheetEntryController;
 use App\Http\Controllers\Api\Asset\FixedAssetController;
 use App\Http\Controllers\Api\ReportsDashboardController;
+use App\Http\Controllers\Api\NotificationController;
 
 // Master Controllers
 use App\Http\Controllers\Api\Master\OrganizationController;
@@ -91,6 +92,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/dashboard/overview', [ReportsDashboardController::class, 'dashboard'])->middleware('permission:dashboard.view');
     Route::get('/v1/reports/summary', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/donors/dashboard', [ReportsDashboardController::class, 'donorDashboard'])->middleware('permission:reports.view');
+
+    Route::prefix('v1/notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+        Route::post('/{notification}/read', [NotificationController::class, 'markAsRead']);
+        Route::post('/read-all', [NotificationController::class, 'markAllAsRead']);
+        Route::delete('/{notification}', [NotificationController::class, 'destroy']);
+    });
 
     Route::prefix('v1/accounting')->group(function () {
         Route::get('journals', [JournalController::class, 'index'])->middleware('permission:accounting.journal.view');

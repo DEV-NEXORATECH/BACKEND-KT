@@ -19,7 +19,10 @@ class ApprovalMatrixResource extends JsonResource
             ? 'Rp ' . number_format($min, 0, ',', '.') . ' - Rp ' . number_format($max, 0, ',', '.')
             : '> Rp ' . number_format($min, 0, ',', '.');
 
-        $roleName = $this->role?->name ?? $this->approver_title ?? 'Approver';
+        $personName = $this->user?->name ?: ($this->employee?->name ?: null);
+        $approverLabel = $personName ? 'User: ' . $personName : ($this->approver_title ?: ($this->role?->name ?: 'Approver'));
+        $roleName = $personName ?: ($this->role?->name ?? $this->approver_title ?? 'Approver');
+
         $scopeParts = [];
         if ($this->project) {
             $scopeParts[] = 'Project: ' . ($this->project->code ?: $this->project->name);
@@ -43,8 +46,12 @@ class ApprovalMatrixResource extends JsonResource
             'range_display' => $rangeDisplay,
             'role_id' => $this->role_id,
             'role_name' => $this->role?->name,
+            'user_id' => $this->user_id,
+            'user_name' => $this->user?->name,
+            'employee_id' => $this->employee_id,
+            'employee_name' => $this->employee?->name,
             'approver_title' => $this->approver_title,
-            'approver_display' => $this->approver_title ?: ($this->role?->name ?: 'Approver'),
+            'approver_display' => $approverLabel,
             'project_id' => $this->project_id,
             'project_name' => $this->project?->name,
             'donor_id' => $this->donor_id,
@@ -58,7 +65,7 @@ class ApprovalMatrixResource extends JsonResource
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
             'code' => 'LVL-' . $this->level . ' (' . strtoupper($this->module) . ')',
-            'name' => $rangeDisplay . ' → ' . ($this->approver_title ?: $roleName),
+            'name' => $rangeDisplay . ' → ' . $approverLabel,
         ];
     }
 }

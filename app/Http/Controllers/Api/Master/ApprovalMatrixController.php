@@ -14,5 +14,5 @@ class ApprovalMatrixController extends BaseMasterController
     protected string $storeRequestClass = StoreApprovalMatrixRequest::class;
     protected string $updateRequestClass = UpdateApprovalMatrixRequest::class;
     protected array $searchableColumns = ['module', 'approver_title', 'description'];
-    protected array $defaultWith = ['role', 'project', 'donor', 'department'];
+    protected array $defaultWith = ['role', 'user', 'employee', 'project', 'donor', 'department'];
 }

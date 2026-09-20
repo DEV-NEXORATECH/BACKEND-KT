@@ -26,8 +26,16 @@ class ReportsDashboardController extends Controller
     public function dashboard(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
         $period = $this->period($request);
-        $budgetRows = $budgetService->summary($request->only(['project_id', 'grant_agreement_id', 'budget_category_id']));
-        $postedLines = $this->postedLines($period['start'], $period['end']);
+
+        // Apply filters
+        $filters = $request->only([
+            'fiscal_year_id', 'start_date', 'end_date', 'organization_id',
+            'office_location_id', 'department_id', 'program_id', 'project_id',
+            'donor_id', 'grant_agreement_id', 'currency_id'
+        ]);
+
+        $budgetRows = $budgetService->summary(array_filter($filters));
+        $postedLines = $this->postedLines($period['start'], $period['end'], $request->input('project_id'));
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
         $budgetTotals = $this->budgetTotals($budgetRows);
         $recentTransactions = $this->recentTransactions($period['start'], $period['end']);
@@ -37,18 +45,44 @@ class ReportsDashboardController extends Controller
             + Journal::query()->whereIn('status', ['submitted', 'reviewed'])->count()
             + SupplierInvoice::query()->whereIn('status', ['matched', 'posted', 'partially_paid'])->count();
 
+        $activeDonorsCount = \App\Models\Master\Donor::query()->where('is_active', true)->count();
+        $activeGrantsCount = \App\Models\Master\GrantAgreement::query()->where('is_active', true)->count();
+        $activeProgramsCount = \App\Models\Master\Program::query()->where('is_active', true)->count();
+        $activeProjectsCount = \App\Models\Master\Project::query()->where('is_active', true)->count();
+
+        $totalIncome = (float) $postedLines
+            ->filter(fn (JournalLine $line) => $line->account?->account_type === 'revenue')
+            ->sum(fn (JournalLine $line) => (float) $line->credit - (float) $line->debit);
+
+        $totalExpense = (float) $postedLines
+            ->filter(fn (JournalLine $line) => $line->account?->account_type === 'expense')
+            ->sum(fn (JournalLine $line) => (float) $line->debit - (float) $line->credit);
+
         return response()->json([
             'success' => true,
             'period' => $period['label'],
             'summary' => [
-                'operating_cash' => $this->cashPosition($period['start'], $period['end']),
+                'total_budget' => $budgetTotals['approved_budget'],
                 'approved_budget' => $budgetTotals['approved_budget'],
+                'total_actual' => $budgetTotals['actual'],
                 'actual_expense' => $budgetTotals['actual'],
                 'commitment' => $budgetTotals['committed'],
+                'remaining_budget' => $budgetTotals['available'],
                 'available_budget' => $budgetTotals['available'],
-                'pending_approvals' => $pendingApprovals,
+                'utilization_percent' => $budgetTotals['utilization_percent'],
+                'total_income' => round($totalIncome, 2),
+                'total_expense' => round($totalExpense, 2),
+                'operating_cash' => $this->cashPosition($period['start'], $period['end']),
+                'cash_bank_balance' => $this->cashPosition($period['start'], $period['end']),
                 'open_ap' => $this->openAp(),
+                'outstanding_payable' => $this->openAp(),
                 'open_ar' => $this->openAr(),
+                'outstanding_receivable' => $this->openAr(),
+                'active_donors' => $activeDonorsCount,
+                'active_grants' => $activeGrantsCount,
+                'active_programs' => $activeProgramsCount,
+                'active_projects' => $activeProjectsCount,
+                'pending_approvals' => $pendingApprovals,
                 'paid_amount' => (float) Payment::query()
                     ->when($period['start'], fn (Builder $query) => $query->whereDate('payment_date', '>=', $period['start']))
                     ->when($period['end'], fn (Builder $query) => $query->whereDate('payment_date', '<=', $period['end']))
@@ -56,11 +90,87 @@ class ReportsDashboardController extends Controller
             ],
             'charts' => [
                 'budget_vs_actual' => $this->monthlyBudgetVsActual($budgetTotals['approved_budget'], $postedLines),
+                'income_vs_expense' => $this->monthlyIncomeVsExpense($postedLines),
                 'donor_utilization' => $this->donorUtilization($budgetRows),
+                'project_utilization' => $this->projectUtilization($budgetRows),
+                'expense_by_category' => $this->expenseByCategory($postedLines),
+                'cash_position_by_bank' => $this->cashBank($period['start'], $period['end']),
+                'approval_status' => $this->approvalStatusBreakdown(),
             ],
             'pending_actions' => $this->pendingActions(),
             'recent_transactions' => $recentTransactions,
         ]);
+    }
+
+    private function monthlyIncomeVsExpense($postedLines): array
+    {
+        $months = collect(range(5, 0))->map(fn (int $monthsAgo) => CarbonImmutable::now()->subMonths($monthsAgo)->startOfMonth());
+
+        return $months->map(function ($month) use ($postedLines) {
+            $income = $postedLines
+                ->filter(fn (JournalLine $line) => $line->journal?->journal_date?->format('Y-m') === $month->format('Y-m'))
+                ->sum(fn (JournalLine $line) => $line->account?->account_type === 'revenue' ? ((float) $line->credit - (float) $line->debit) : 0);
+
+            $expense = $postedLines
+                ->filter(fn (JournalLine $line) => $line->journal?->journal_date?->format('Y-m') === $month->format('Y-m'))
+                ->sum(fn (JournalLine $line) => $line->account?->account_type === 'expense' ? ((float) $line->debit - (float) $line->credit) : 0);
+
+            return [
+                'month' => $month->format('M'),
+                'income' => round($income, 2),
+                'expense' => round($expense, 2),
+            ];
+        })->all();
+    }
+
+    private function projectUtilization(array $rows): array
+    {
+        return collect($rows)
+            ->groupBy(fn (array $row) => $row['project']['name'] ?? 'Unassigned Project')
+            ->map(function ($items, string $project) {
+                $approved = (float) $items->sum('approved_budget');
+                $used = (float) $items->sum(fn (array $row) => $row['actual'] + $row['committed']);
+
+                return [
+                    'name' => $project,
+                    'approved_budget' => round($approved, 2),
+                    'used' => round($used, 2),
+                    'utilization_percent' => $approved > 0 ? round(($used / $approved) * 100, 2) : 0,
+                ];
+            })
+            ->sortByDesc('used')
+            ->take(6)
+            ->values()
+            ->all();
+    }
+
+    private function expenseByCategory($postedLines): array
+    {
+        return $postedLines
+            ->filter(fn (JournalLine $line) => $line->account?->account_type === 'expense')
+            ->groupBy(fn (JournalLine $line) => $line->account?->name ?? 'General Expense')
+            ->map(function ($items, string $accountName) {
+                $total = $items->sum(fn (JournalLine $line) => (float) $line->debit - (float) $line->credit);
+
+                return [
+                    'category' => $accountName,
+                    'total' => round($total, 2),
+                ];
+            })
+            ->sortByDesc('total')
+            ->take(6)
+            ->values()
+            ->all();
+    }
+
+    private function approvalStatusBreakdown(): array
+    {
+        return [
+            'pending' => ExpenseRequest::query()->where('status', 'submitted')->count() + PurchaseRequest::query()->whereIn('status', ['submitted', 'pending_approval'])->count(),
+            'approved' => ExpenseRequest::query()->where('status', 'approved')->count() + PurchaseRequest::query()->where('status', 'approved')->count(),
+            'rejected' => ExpenseRequest::query()->where('status', 'rejected')->count() + PurchaseRequest::query()->where('status', 'rejected')->count(),
+            'need_revision' => ExpenseRequest::query()->where('status', 'draft')->count() + PurchaseRequest::query()->where('status', 'draft')->count(),
+        ];
     }
 
     public function donorDashboard(Request $request, BudgetMonitoringService $budgetService): JsonResponse

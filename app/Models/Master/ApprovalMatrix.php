@@ -20,6 +20,8 @@ class ApprovalMatrix extends Model
         'min_amount',
         'max_amount',
         'role_id',
+        'user_id',
+        'employee_id',
         'project_id',
         'donor_id',
         'department_id',
@@ -43,6 +45,16 @@ class ApprovalMatrix extends Model
     public function role()
     {
         return $this->belongsTo(\App\Models\Role::class, 'role_id');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'user_id');
+    }
+
+    public function employee()
+    {
+        return $this->belongsTo(\App\Models\Master\Employee::class, 'employee_id');
     }
 
     public function project()

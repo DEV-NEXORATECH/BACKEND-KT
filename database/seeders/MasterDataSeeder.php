@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Accounting\Journal;
 use App\Models\Accounting\JournalLine;
 use App\Models\Budget\BudgetCommitment;
+use App\Models\Notification;
 use App\Models\Master\Activity;
 use App\Models\Master\ApprovalMatrix;
 use App\Models\Master\AssetCategory;
@@ -447,22 +448,25 @@ class MasterDataSeeder extends Seeder
         ]);
 
         // 12. Unit of Measures & Budget Categories
-        $uomTrip = UnitOfMeasure::updateOrCreate(['code' => 'TRIP'], [
+        $uomTrip = UnitOfMeasure::withTrashed()->updateOrCreate(['code' => 'TRIP'], [
             'name' => 'Round Trip',
             'category' => 'Travel',
             'is_active' => true,
+            'deleted_at' => null,
         ]);
 
-        $uomMo = UnitOfMeasure::updateOrCreate(['code' => 'MONTH'], [
+        $uomMo = UnitOfMeasure::withTrashed()->updateOrCreate(['code' => 'MONTH'], [
             'name' => 'Person-Month',
             'category' => 'Time',
             'is_active' => true,
+            'deleted_at' => null,
         ]);
 
-        $uomPkg = UnitOfMeasure::updateOrCreate(['code' => 'PKG'], [
+        $uomPkg = UnitOfMeasure::withTrashed()->updateOrCreate(['code' => 'PKG'], [
             'name' => 'Package / Paket',
             'category' => 'Quantity',
             'is_active' => true,
+            'deleted_at' => null,
         ]);
 
         $bcatPersonnel = BudgetCategory::updateOrCreate(['code' => 'BCAT-100'], [
@@ -1119,5 +1123,42 @@ class MasterDataSeeder extends Seeder
                 'status' => 'open',
             ]);
         }
+
+        // 19. System Notifications
+        Notification::updateOrCreate([
+            'title' => 'Pending Approval: Expense Claim #EXP-2026-004',
+        ], [
+            'message' => 'Pengajuan klaim per diem & akomodasi lapangan Pontianak membutuhkan verifikasi Finance Manager.',
+            'type' => 'approval',
+            'action_url' => '/expenses-approvals/approvals',
+            'created_at' => now()->subMinutes(15),
+        ]);
+
+        Notification::updateOrCreate([
+            'title' => 'Over-Budget Warning: Grant BL-FORD-2.1',
+        ], [
+            'message' => 'Pos biaya Direct Activity Costs (BL-FORD-2.1) telah melebihi batas anggaran yang disetujui.',
+            'type' => 'alert',
+            'action_url' => '/funding-projects/budget',
+            'created_at' => now()->subHours(2),
+        ]);
+
+        Notification::updateOrCreate([
+            'title' => 'Purchase Request Approved: PR-2026-001',
+        ], [
+            'message' => 'Permintaan pengadaan peralatan komputer lapangan telah disetujui oleh Executive Director.',
+            'type' => 'success',
+            'action_url' => '/procurement/purchase-requests',
+            'created_at' => now()->subHours(5),
+        ]);
+
+        Notification::updateOrCreate([
+            'title' => 'Monthly Tax Report Reminder',
+        ], [
+            'message' => 'Laporan PPh 21/23 untuk bulan ini siap diverifikasi dan dikirim.',
+            'type' => 'info',
+            'action_url' => '/accounting/tax',
+            'created_at' => now()->subDay(),
+        ]);
     }
 }
