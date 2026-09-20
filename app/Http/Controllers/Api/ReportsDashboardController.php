@@ -63,6 +63,81 @@ class ReportsDashboardController extends Controller
         ]);
     }
 
+    public function donorDashboard(Request $request, BudgetMonitoringService $budgetService): JsonResponse
+    {
+        $period = $this->period($request);
+        $donors = \App\Models\Master\Donor::query()->with(['grantAgreements'])->get();
+        $grants = \App\Models\Master\GrantAgreement::query()->with(['donor', 'currency', 'projects'])->get();
+
+        $budgetRows = $budgetService->summary($request->only(['project_id', 'grant_agreement_id', 'donor_id']));
+        $postedLines = $this->postedLines($period['start'], $period['end']);
+        $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
+        $totals = $this->budgetTotals($budgetRows);
+
+        $donorSummaries = $donors->map(function ($donor) use ($budgetRows) {
+            $donorLines = collect($budgetRows)->filter(fn ($r) => ($r['donor']['id'] ?? null) == $donor->id);
+            $approved = (float) $donorLines->sum('approved_budget');
+            $actual = (float) $donorLines->sum('actual');
+            $committed = (float) $donorLines->sum('committed');
+            $available = (float) $donorLines->sum('available');
+
+            return [
+                'id' => $donor->id,
+                'code' => $donor->code,
+                'name' => $donor->name,
+                'type' => $donor->donor_type ?? 'Institutional',
+                'active_grants_count' => $donor->grantAgreements->count(),
+                'approved_budget' => round($approved, 2),
+                'actual' => round($actual, 2),
+                'committed' => round($committed, 2),
+                'available' => round($available, 2),
+                'utilization_percent' => $approved > 0 ? round((($actual + $committed) / $approved) * 100, 2) : 0,
+            ];
+        });
+
+        $grantSummaries = $grants->map(function ($grant) use ($budgetRows) {
+            $grantLines = collect($budgetRows)->filter(fn ($r) => ($r['grant_agreement']['id'] ?? null) == $grant->id);
+            $approved = (float) $grantLines->sum('approved_budget');
+            $actual = (float) $grantLines->sum('actual');
+            $committed = (float) $grantLines->sum('committed');
+            $available = (float) $grantLines->sum('available');
+            $grantTotal = $approved > 0 ? $approved : (float) $grant->total_amount;
+
+            return [
+                'id' => $grant->id,
+                'grant_no' => $grant->grant_no,
+                'agreement_name' => $grant->agreement_name,
+                'donor_name' => $grant->donor?->name ?? '-',
+                'start_date' => $grant->start_date?->toDateString(),
+                'end_date' => $grant->end_date?->toDateString(),
+                'approved_budget' => round($grantTotal, 2),
+                'actual' => round($actual, 2),
+                'committed' => round($committed, 2),
+                'available' => round($available, 2),
+                'utilization_percent' => $grantTotal > 0
+                    ? round((($actual + $committed) / $grantTotal) * 100, 2)
+                    : 0,
+                'status' => $grant->status ?? 'active',
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'period' => $period['label'],
+            'summary' => [
+                'total_donors' => $donors->count(),
+                'total_grants' => $grants->count(),
+                'total_budget' => $totals['approved_budget'],
+                'total_actual' => $totals['actual'],
+                'total_committed' => $totals['committed'],
+                'total_available' => $totals['available'],
+                'overall_utilization' => $totals['utilization_percent'],
+            ],
+            'donors' => $donorSummaries,
+            'grants' => $grantSummaries,
+        ]);
+    }
+
     public function reports(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
         $period = $this->period($request);

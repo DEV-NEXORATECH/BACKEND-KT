@@ -90,6 +90,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/v1/dashboard/overview', [ReportsDashboardController::class, 'dashboard'])->middleware('permission:dashboard.view');
     Route::get('/v1/reports/summary', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
+    Route::get('/v1/donors/dashboard', [ReportsDashboardController::class, 'donorDashboard'])->middleware('permission:reports.view');
 
     Route::prefix('v1/accounting')->group(function () {
         Route::get('journals', [JournalController::class, 'index'])->middleware('permission:accounting.journal.view');
@@ -152,6 +153,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('transactions', [TaxTransactionController::class, 'index'])->middleware('permission:tax.view');
         Route::post('transactions', [TaxTransactionController::class, 'store'])->middleware('permission:tax.manage');
         Route::get('report', [TaxTransactionController::class, 'report'])->middleware('permission:tax.view');
+        Route::get('calendar', [TaxTransactionController::class, 'calendar'])->middleware('permission:tax.view');
     });
 
     Route::prefix('v1/timesheets')->group(function () {

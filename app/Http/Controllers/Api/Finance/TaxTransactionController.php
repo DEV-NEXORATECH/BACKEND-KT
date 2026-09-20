@@ -135,6 +135,63 @@ class TaxTransactionController extends Controller
         ]);
     }
 
+    public function calendar(Request $request): JsonResponse
+    {
+        $year = (int) $request->query('year', now()->year);
+        $month = (int) $request->query('month', now()->month);
+        $currentMonth = sprintf('%04d-%02d', $year, $month);
+
+        $deadlines = [
+            [
+                'tax_type' => 'pph_21',
+                'title' => 'Setor PPh 21/26 Masa ' . sprintf('%02d/%04d', $month, $year),
+                'due_date' => sprintf('%04d-%02d-10', $year, $month),
+                'category' => 'Payment',
+                'status' => 'upcoming',
+                'description' => 'Batas akhir penyetoran PPh Pasal 21 Masa ke kas negara via e-Billing.'
+            ],
+            [
+                'tax_type' => 'pph_23',
+                'title' => 'Setor PPh 23/26 Masa ' . sprintf('%02d/%04d', $month, $year),
+                'due_date' => sprintf('%04d-%02d-10', $year, $month),
+                'category' => 'Payment',
+                'status' => 'upcoming',
+                'description' => 'Batas akhir penyetoran PPh Pasal 23/26 terpotong ke kas negara.'
+            ],
+            [
+                'tax_type' => 'pph_final',
+                'title' => 'Setor PPh Final (4 ayat 2)',
+                'due_date' => sprintf('%04d-%02d-10', $year, $month),
+                'category' => 'Payment',
+                'status' => 'upcoming',
+                'description' => 'Batas akhir penyetoran PPh Final 4(2) atas sewa & jasa.'
+            ],
+            [
+                'tax_type' => 'ebupot_unifikasi',
+                'title' => 'Lapor e-Bupot Unifikasi PPh',
+                'due_date' => sprintf('%04d-%02d-20', $year, $month),
+                'category' => 'Filing',
+                'status' => 'upcoming',
+                'description' => 'Batas akhir pelaporan SPT Masa PPh Unifikasi via DJP Online.'
+            ],
+            [
+                'tax_type' => 'ppn',
+                'title' => 'Setor & Lapor PPN e-Faktur Masa',
+                'due_date' => sprintf('%04d-%02d-%02d', $year, $month, date('t', strtotime("{$year}-{$month}-01"))),
+                'category' => 'Filing & Payment',
+                'status' => 'upcoming',
+                'description' => 'Batas akhir pelaporan SPT Masa PPN dan penyetoran Kurang Bayar PPN.'
+            ]
+        ];
+
+        return response()->json([
+            'success' => true,
+            'year' => $year,
+            'month' => $month,
+            'deadlines' => $deadlines,
+        ]);
+    }
+
     private function calculateTax(Tax $tax, float $amount, bool $isInclusive, string $direction): array
     {
         $rate = round((float) $tax->rate_percent, 4);

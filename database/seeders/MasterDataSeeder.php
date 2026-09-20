@@ -2,6 +2,9 @@
 
 namespace Database\Seeders;
 
+use App\Models\Accounting\Journal;
+use App\Models\Accounting\JournalLine;
+use App\Models\Budget\BudgetCommitment;
 use App\Models\Master\Activity;
 use App\Models\Master\ApprovalMatrix;
 use App\Models\Master\AssetCategory;
@@ -1060,9 +1063,54 @@ class MasterDataSeeder extends Seeder
                 'min_amount' => 0,
             ], [
                 'role_id' => $roleProjectManager->id,
-                'approver_title' => 'Project Manager (Community Forest)',
-                'description' => 'Realokasi anggaran antar pos biaya Project Community Forest Monitoring',
-                'is_active' => true,
+        // 18. Real Database Transactions for Over-Budget & Warning Alerts
+        $blFord1 = BudgetLine::where('line_code', 'BL-FORD-2.1')->first();
+        $blFord2 = BudgetLine::where('line_code', 'BL-FORD-3.1')->first();
+
+        if ($blFord1) {
+            $j1 = Journal::updateOrCreate(['journal_number' => 'JV-2026-SEED-01'], [
+                'journal_date' => now()->subDays(5)->toDateString(),
+                'journal_type' => 'manual',
+                'reference' => 'EXP-WORKSHOP-001',
+                'description' => 'Realisasi Workshop & Pelatihan Tata Kelola Hutan (Over-Budget)',
+                'currency_id' => $idr->id,
+                'status' => 'posted',
+                'posted_at' => now()->subDays(5),
+            ]);
+
+            JournalLine::updateOrCreate([
+                'journal_id' => $j1->id,
+                'budget_line_id' => $blFord1->id,
+                'line_order' => 1,
+            ], [
+                'account_id' => $createdCoa['5200']->id ?? 1,
+                'donor_id' => $grantFord->donor_id ?? null,
+                'project_id' => $blFord1->project_id,
+                'line_description' => 'Biaya Konsumsi, Akomodasi & Paket Training',
+                'debit' => 22500000.00,
+                'credit' => 0,
+            ]);
+
+            JournalLine::updateOrCreate([
+                'journal_id' => $j1->id,
+                'line_order' => 2,
+            ], [
+                'account_id' => $createdCoa['1110']->id ?? 2,
+                'line_description' => 'Pembayaran via Bank Mandiri Utama',
+                'debit' => 0,
+                'credit' => 22500000.00,
+            ]);
+        }
+
+        if ($blFord2) {
+            BudgetCommitment::updateOrCreate([
+                'commitment_number' => 'PO-2026-SEED-02',
+                'budget_line_id' => $blFord2->id,
+            ], [
+                'source_type' => 'purchase_order',
+                'source_id' => 1,
+                'amount' => 8200000.00,
+                'status' => 'open',
             ]);
         }
     }
