@@ -8,19 +8,31 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('approval_matrices', function (Blueprint $table) {
-            $table->foreignId('user_id')->nullable()->after('role_id')->constrained('users')->nullOnDelete();
-            $table->foreignId('employee_id')->nullable()->after('user_id')->constrained('employees')->nullOnDelete();
-        });
+        if (! Schema::hasColumn('approval_matrices', 'user_id')) {
+            Schema::table('approval_matrices', function (Blueprint $table) {
+                $table->foreignId('user_id')->nullable()->after('role_id')->constrained('users')->nullOnDelete();
+            });
+        }
+
+        if (! Schema::hasColumn('approval_matrices', 'employee_id')) {
+            Schema::table('approval_matrices', function (Blueprint $table) {
+                $table->foreignId('employee_id')->nullable()->after('user_id')->constrained('employees')->nullOnDelete();
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('approval_matrices', function (Blueprint $table) {
-            $table->dropForeign(['user_id']);
-            $table->dropColumn('user_id');
-            $table->dropForeign(['employee_id']);
-            $table->dropColumn('employee_id');
-        });
+        if (Schema::hasColumn('approval_matrices', 'employee_id')) {
+            Schema::table('approval_matrices', function (Blueprint $table) {
+                $table->dropConstrainedForeignId('employee_id');
+            });
+        }
+
+        if (Schema::hasColumn('approval_matrices', 'user_id')) {
+            Schema::table('approval_matrices', function (Blueprint $table) {
+                $table->dropConstrainedForeignId('user_id');
+            });
+        }
     }
 };
