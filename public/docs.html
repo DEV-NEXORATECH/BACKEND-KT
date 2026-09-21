@@ -26,7 +26,10 @@
     <script>
         window.onload = () => {
             window.ui = SwaggerUIBundle({
-                url: '/api-docs.json',
+                // Keep the API definition URL relative to this page. This works both
+                // when Laravel is served from the domain root and when a shared host
+                // exposes the app through a /public path.
+                url: 'api-docs.json',
                 dom_id: '#swagger-ui',
                 deepLinking: true,
                 presets: [
