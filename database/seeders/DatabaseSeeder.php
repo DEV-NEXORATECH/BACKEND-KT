@@ -256,7 +256,6 @@ class DatabaseSeeder extends Seeder
                 ['title' => 'Expense Categories', 'slug' => 'master-expense-categories', 'path' => '/master-data/expense-categories', 'sort_order' => 42],
                 ['title' => 'Document Types', 'slug' => 'master-document-types', 'path' => '/master-data/document-types', 'sort_order' => 43],
                 ['title' => 'Asset Categories', 'slug' => 'master-asset-categories', 'path' => '/master-data/asset-categories', 'sort_order' => 44],
-                ['title' => 'Approval Matrices', 'slug' => 'master-approval-matrices', 'path' => '/master-data/approval-matrices', 'sort_order' => 45],
             ]],
             ['title' => 'Funding & Projects', 'slug' => 'funding-projects', 'path' => '/funding-projects', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
                 ['title' => 'Donor & Grant', 'slug' => 'funding-donor-grant', 'path' => '/funding-projects/donor-grant', 'sort_order' => 21],
@@ -312,6 +311,13 @@ class DatabaseSeeder extends Seeder
                     [...$childDefinition, 'parent_id' => $menu->id, 'is_active' => true],
                 ));
             }
+        }
+
+        // Approval Matrix is managed from Administration now, not Master Data.
+        $legacyApprovalMatrixMenu = Menu::where('slug', 'master-approval-matrices')->first();
+        if ($legacyApprovalMatrixMenu) {
+            $legacyApprovalMatrixMenu->update(['is_active' => false]);
+            $roles->each(fn (Role $role) => $role->menus()->detach($legacyApprovalMatrixMenu->id));
         }
 
         $roles->each(fn (Role $role) => $role->menus()->syncWithoutDetaching($menus->pluck('id')));
