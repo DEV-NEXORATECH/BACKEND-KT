@@ -18,6 +18,10 @@ class GrantAgreement extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'start_date' => 'date',
+        'end_date' => 'date',
+        'grant_value' => 'decimal:2',
+        'exchange_rate_contract' => 'decimal:6',
     ];
 
     public function donor()

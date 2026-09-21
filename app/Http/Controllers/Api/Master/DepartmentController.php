@@ -15,4 +15,14 @@ class DepartmentController extends BaseMasterController
     protected string $updateRequestClass = UpdateDepartmentRequest::class;
     protected array $searchableColumns = ['code', 'name', 'manager_name'];
     protected array $defaultWith = ['organization', 'parent'];
+    protected array $defaultWithCount = [
+        'children',
+        'costCenters',
+        'employees',
+        'approvalMatrices',
+        'journalLines',
+        'purchaseRequests',
+        'expenseRequests',
+        'timesheetEntries',
+    ];
 }

@@ -327,5 +327,6 @@ class DatabaseSeeder extends Seeder
 
         // Run Master Data Seeder
         $this->call(MasterDataSeeder::class);
+        $this->call(BudgetAlertThresholdSeeder::class);
     }
 }

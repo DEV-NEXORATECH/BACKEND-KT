@@ -45,6 +45,31 @@ class Department extends Model
         return $this->hasMany(\App\Models\Master\Employee::class);
     }
 
+    public function approvalMatrices()
+    {
+        return $this->hasMany(\App\Models\Master\ApprovalMatrix::class);
+    }
+
+    public function journalLines()
+    {
+        return $this->hasMany(\App\Models\Accounting\JournalLine::class);
+    }
+
+    public function purchaseRequests()
+    {
+        return $this->hasMany(\App\Models\Procurement\PurchaseRequest::class);
+    }
+
+    public function expenseRequests()
+    {
+        return $this->hasMany(\App\Models\Expense\ExpenseRequest::class);
+    }
+
+    public function timesheetEntries()
+    {
+        return $this->hasMany(\App\Models\Timesheet\TimesheetEntry::class);
+    }
+
     public function updatedByUser()
     {
         return $this->belongsTo(\App\Models\User::class, 'updated_by');
@@ -52,6 +77,15 @@ class Department extends Model
 
     public function getRelatedRecordsCountAttribute(): int
     {
-        return (int) ($this->children()->count() + $this->costCenters()->count() + $this->employees()->count());
+        return (int) (
+            $this->children()->count()
+            + $this->costCenters()->count()
+            + $this->employees()->count()
+            + $this->approvalMatrices()->count()
+            + $this->journalLines()->count()
+            + $this->purchaseRequests()->count()
+            + $this->expenseRequests()->count()
+            + $this->timesheetEntries()->count()
+        );
     }
 }

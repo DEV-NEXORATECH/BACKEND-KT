@@ -12,6 +12,25 @@ class DepartmentResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        return parent::toArray($request);
+        $data = parent::toArray($request);
+        $countRelations = [
+            'children',
+            'cost_centers',
+            'employees',
+            'approval_matrices',
+            'journal_lines',
+            'purchase_requests',
+            'expense_requests',
+            'timesheet_entries',
+        ];
+
+        $data['related_records_count'] = collect($countRelations)
+            ->sum(fn (string $relation) => (int) ($data["{$relation}_count"] ?? 0));
+
+        foreach ($countRelations as $relation) {
+            unset($data["{$relation}_count"]);
+        }
+
+        return $data;
     }
 }

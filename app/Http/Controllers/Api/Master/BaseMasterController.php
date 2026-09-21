@@ -19,10 +19,11 @@ abstract class BaseMasterController extends Controller
     protected string $updateRequestClass;
     protected array $searchableColumns = ['code', 'name'];
     protected array $defaultWith = [];
+    protected array $defaultWithCount = [];
 
     public function index(Request $request): JsonResponse
     {
-        $query = $this->modelClass::query()->with($this->defaultWith);
+        $query = $this->modelClass::query()->with($this->defaultWith)->withCount($this->defaultWithCount);
 
         // Lightweight dropdown/options mode for Frontend Select components
         if ($request->boolean('options') || $request->query('paginate') === 'false') {
@@ -57,6 +58,7 @@ abstract class BaseMasterController extends Controller
         $validated = app($this->storeRequestClass)->validated();
         $record = $this->modelClass::create($validated);
         $record->loadMissing($this->defaultWith);
+        $record->loadCount($this->defaultWithCount);
 
         return $this->successResponse(
             new $this->resourceClass($record),
@@ -67,7 +69,7 @@ abstract class BaseMasterController extends Controller
 
     public function show($id): JsonResponse
     {
-        $record = $this->modelClass::with($this->defaultWith)->findOrFail($id);
+        $record = $this->modelClass::with($this->defaultWith)->withCount($this->defaultWithCount)->findOrFail($id);
 
         return $this->successResponse(
             new $this->resourceClass($record),
@@ -81,6 +83,7 @@ abstract class BaseMasterController extends Controller
         $validated = app($this->updateRequestClass)->validated();
         $record->update($validated);
         $record->loadMissing($this->defaultWith);
+        $record->loadCount($this->defaultWithCount);
 
         return $this->successResponse(
             new $this->resourceClass($record),
