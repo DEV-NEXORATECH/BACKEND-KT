@@ -32,7 +32,7 @@ class Department extends Model
 
     public function children()
     {
-        return $this->hasMany(\App\Models\Master\Department::class);
+        return $this->hasMany(\App\Models\Master\Department::class, 'parent_id');
     }
 
     public function costCenters()
