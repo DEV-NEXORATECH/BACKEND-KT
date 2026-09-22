@@ -95,6 +95,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/v1/dashboard/overview', [ReportsDashboardController::class, 'dashboard'])->middleware('permission:dashboard.view');
     Route::get('/v1/reports/summary', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/balance-sheet', [ReportsDashboardController::class, 'balanceSheet'])->middleware('permission:reports.view');
     Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');
     Route::get('/v1/reports/custom/options', [CustomReportController::class, 'options'])->middleware('permission:reports.view');
     Route::post('/v1/reports/custom', [CustomReportController::class, 'build'])->middleware('permission:reports.view');
@@ -130,6 +131,15 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1/procurement')->group(function () {
+        Route::get('processes/options', [ProcurementFulfillmentController::class, 'processOptions'])->middleware('permission:procurement.po.view');
+        Route::get('goods-receipts', [ProcurementFulfillmentController::class, 'goodsReceipts'])->middleware('permission:procurement.grn.view');
+        Route::get('goods-receipts/{goodsReceipt}', [ProcurementFulfillmentController::class, 'showGoodsReceipt'])->middleware('permission:procurement.grn.view');
+        Route::put('goods-receipts/{goodsReceipt}', [ProcurementFulfillmentController::class, 'updateGoodsReceipt'])->middleware('permission:procurement.grn.create');
+        Route::post('goods-receipts/{goodsReceipt}/cancel', [ProcurementFulfillmentController::class, 'cancelGoodsReceipt'])->middleware('permission:procurement.grn.create');
+        Route::get('supplier-invoices', [ProcurementFulfillmentController::class, 'supplierInvoices'])->middleware('permission:procurement.invoice.view');
+        Route::get('supplier-invoices/{supplierInvoice}', [ProcurementFulfillmentController::class, 'showSupplierInvoice'])->middleware('permission:procurement.invoice.view');
+        Route::put('supplier-invoices/{supplierInvoice}', [ProcurementFulfillmentController::class, 'updateSupplierInvoice'])->middleware('permission:procurement.invoice.create');
+        Route::post('supplier-invoices/{supplierInvoice}/cancel', [ProcurementFulfillmentController::class, 'cancelSupplierInvoice'])->middleware('permission:procurement.invoice.create');
         Route::get('purchase-requests', [PurchaseRequestController::class, 'index'])->middleware('permission:procurement.pr.view');
         Route::post('purchase-requests', [PurchaseRequestController::class, 'store'])->middleware('permission:procurement.pr.create');
         Route::get('purchase-requests/{purchaseRequest}', [PurchaseRequestController::class, 'show'])->middleware('permission:procurement.pr.view');
@@ -140,6 +150,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('purchase-requests/{purchaseRequest}/reject', [PurchaseRequestController::class, 'reject'])->middleware('permission:procurement.pr.approve');
         Route::post('purchase-requests/{purchaseRequest}/cancel', [PurchaseRequestController::class, 'cancel'])->middleware('permission:procurement.pr.update');
         Route::get('purchase-orders', [ProcurementFulfillmentController::class, 'purchaseOrders'])->middleware('permission:procurement.po.view');
+        Route::get('purchase-orders/{purchaseOrder}', [ProcurementFulfillmentController::class, 'showPurchaseOrder'])->middleware('permission:procurement.po.view');
+        Route::put('purchase-orders/{purchaseOrder}', [ProcurementFulfillmentController::class, 'updatePurchaseOrder'])->middleware('permission:procurement.po.create');
+        Route::post('purchase-orders/{purchaseOrder}/cancel', [ProcurementFulfillmentController::class, 'cancelPurchaseOrder'])->middleware('permission:procurement.po.approve');
         Route::post('purchase-requests/{purchaseRequest}/purchase-orders', [ProcurementFulfillmentController::class, 'createPoFromPr'])->middleware('permission:procurement.po.create');
         Route::post('purchase-orders/{purchaseOrder}/approve', [ProcurementFulfillmentController::class, 'approvePo'])->middleware('permission:procurement.po.approve');
         Route::post('purchase-orders/{purchaseOrder}/goods-receipts', [ProcurementFulfillmentController::class, 'createGrn'])->middleware('permission:procurement.grn.create');
@@ -148,12 +161,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('rfqs', [AdvancedProcurementController::class, 'rfqs'])->middleware('permission:procurement.rfq.view');
         Route::post('purchase-requests/{purchaseRequest}/rfqs', [AdvancedProcurementController::class, 'createRfq'])->middleware('permission:procurement.rfq.create');
         Route::post('rfqs/{rfq}/quotations', [AdvancedProcurementController::class, 'submitQuotation'])->middleware('permission:procurement.rfq.create');
+        Route::post('rfqs/{rfq}/close', [AdvancedProcurementController::class, 'closeRfq'])->middleware('permission:procurement.rfq.create');
+        Route::post('rfqs/{rfq}/cancel', [AdvancedProcurementController::class, 'cancelRfq'])->middleware('permission:procurement.rfq.create');
         Route::post('rfqs/{rfq}/cba', [AdvancedProcurementController::class, 'createCba'])->middleware('permission:procurement.cba.create');
         Route::post('cba/{cba}/approve', [AdvancedProcurementController::class, 'approveCba'])->middleware('permission:procurement.cba.approve');
         Route::post('cba/{cba}/purchase-orders', [AdvancedProcurementController::class, 'createPoFromCba'])->middleware('permission:procurement.po.create');
         Route::get('scns', [SupplierContractNotificationController::class, 'index'])->middleware('permission:procurement.pr.view');
         Route::post('scns', [SupplierContractNotificationController::class, 'store'])->middleware('permission:procurement.pr.create');
         Route::post('scns/{supplierContractNotification}/issue', [SupplierContractNotificationController::class, 'issue'])->middleware('permission:procurement.pr.approve');
+        Route::post('scns/{supplierContractNotification}/cancel', [SupplierContractNotificationController::class, 'cancel'])->middleware('permission:procurement.pr.approve');
     });
 
     Route::prefix('v1/finance')->group(function () {

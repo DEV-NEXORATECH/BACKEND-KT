@@ -108,8 +108,11 @@ class FixedAssetController extends Controller
             throw ValidationException::withMessages(['account' => 'COA depreciation dan accumulated depreciation harus tersedia.']);
         }
 
-        $monthly = $data['amount'] ?? round((float) $fixedAsset->acquisition_cost / max(1, (int) $fixedAsset->useful_life_months), 2);
         $remaining = round((float) $fixedAsset->net_book_value, 2);
+        $lifeMonths = max(1, (int) $fixedAsset->useful_life_months);
+        $monthly = $data['amount'] ?? ($fixedAsset->depreciation_method === 'declining_balance'
+            ? round($remaining * (2 / $lifeMonths), 2)
+            : round((float) $fixedAsset->acquisition_cost / $lifeMonths, 2));
         $amount = min($monthly, $remaining);
         if ($amount <= 0) {
             throw ValidationException::withMessages(['amount' => 'Net book value sudah habis.']);

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
 use App\Models\Accounting\JournalLine;
+use App\Models\Asset\FixedAsset;
 use App\Models\Budget\BudgetCommitment;
 use App\Models\Expense\ExpenseRequest;
 use App\Models\Finance\BankTransaction;
@@ -260,6 +261,7 @@ class ReportsDashboardController extends Controller
             'success' => true,
             'period' => $period['label'],
             'financial_statement' => $this->financialStatement($postedLines),
+            'balance_sheet' => $this->balanceSheetData($request->input('as_of', $period['end']?->toDateString())),
             'budget_vs_actual' => [
                 'totals' => $this->budgetTotals($budgetRows),
                 'rows' => array_values(collect($budgetRows)->map(fn (array $row) => [
@@ -283,6 +285,24 @@ class ReportsDashboardController extends Controller
             'procurement' => $this->procurementReport(),
             'expense' => $this->expenseReport(),
             'recent_transactions' => $this->recentTransactions($period['start'], $period['end']),
+        ]);
+    }
+
+    /**
+     * Returns cumulative balance sheet balances. Depreciation journals posted by
+     * FixedAssetController are included automatically in the asset and expense
+     * account balances, so the report always reflects the current net book value.
+     */
+    public function balanceSheet(Request $request): JsonResponse
+    {
+        $asOf = $request->filled('as_of')
+            ? CarbonImmutable::parse($request->string('as_of'))->endOfDay()
+            : CarbonImmutable::now()->endOfDay();
+
+        return response()->json([
+            'success' => true,
+            'as_of' => $asOf->toDateString(),
+            'data' => $this->balanceSheetData($asOf->toDateString()),
         ]);
     }
 
@@ -491,6 +511,69 @@ class ReportsDashboardController extends Controller
         return [
             'totals_by_type' => $rows->groupBy('account_type')->map(fn ($items) => round((float) $items->sum('balance'), 2))->all(),
             'rows' => $rows->all(),
+        ];
+    }
+
+    private function balanceSheetData(?string $asOf): array
+    {
+        $date = $asOf ? CarbonImmutable::parse($asOf)->endOfDay() : CarbonImmutable::now()->endOfDay();
+        $lines = JournalLine::query()
+            ->with('account:id,code,name,account_type,normal_balance')
+            ->whereHas('journal', fn (Builder $query) => $query->where('status', 'posted')->whereDate('journal_date', '<=', $date))
+            ->get();
+
+        $accounts = $lines->groupBy('account_id')->map(function ($items) {
+            $account = $items->first()->account;
+            if (! $account || ! in_array($account->account_type, ['asset', 'liability', 'equity', 'revenue', 'expense'], true)) {
+                return null;
+            }
+            $debit = (float) $items->sum('debit');
+            $credit = (float) $items->sum('credit');
+            $balance = $account->normal_balance === 'credit' ? $credit - $debit : $debit - $credit;
+            return [
+                'account_id' => $account->id,
+                'code' => $account->code,
+                'name' => $account->name,
+                'account_type' => $account->account_type,
+                'debit' => round($debit, 2),
+                'credit' => round($credit, 2),
+                'balance' => round($balance, 2),
+            ];
+        })->filter()->filter(fn (array $row) => abs($row['balance']) > 0.00001)->sortBy('code')->values();
+
+        $byType = $accounts->groupBy('account_type')->map(fn ($rows) => round((float) $rows->sum('balance'), 2));
+        $assets = (float) ($byType['asset'] ?? 0);
+        $liabilities = (float) ($byType['liability'] ?? 0);
+        $equity = (float) ($byType['equity'] ?? 0);
+        $currentResult = (float) ($byType['revenue'] ?? 0) - (float) ($byType['expense'] ?? 0);
+
+        $fixedAssets = FixedAsset::query()
+            ->whereDate('acquisition_date', '<=', $date)
+            ->whereIn('status', ['active', 'transferred', 'disposed'])
+            ->get();
+        $fixedAssetSummary = [
+            'acquisition_cost' => round((float) $fixedAssets->sum('acquisition_cost'), 2),
+            'accumulated_depreciation' => round((float) $fixedAssets->sum('accumulated_depreciation'), 2),
+            'net_book_value' => round((float) $fixedAssets->sum('net_book_value'), 2),
+            'asset_count' => $fixedAssets->count(),
+        ];
+        $balanceAccounts = $accounts->whereIn('account_type', ['asset', 'liability', 'equity'])->values();
+
+        return [
+            'accounts' => $balanceAccounts->all(),
+            'assets' => $balanceAccounts->where('account_type', 'asset')->values()->all(),
+            'liabilities' => $balanceAccounts->where('account_type', 'liability')->values()->all(),
+            'equity' => $balanceAccounts->where('account_type', 'equity')->values()->all(),
+            'totals' => [
+                'assets' => round($assets, 2),
+                'liabilities' => round($liabilities, 2),
+                'equity' => round($equity, 2),
+                'current_result' => round($currentResult, 2),
+                'liabilities_and_equity' => round($liabilities + $equity + $currentResult, 2),
+                'difference' => round($assets - ($liabilities + $equity + $currentResult), 2),
+                'balanced' => abs($assets - ($liabilities + $equity + $currentResult)) < 0.01,
+            ],
+            'fixed_assets' => $fixedAssetSummary,
         ];
     }
 

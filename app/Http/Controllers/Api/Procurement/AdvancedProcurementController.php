@@ -93,6 +93,20 @@ class AdvancedProcurementController extends Controller
         return response()->json(['success' => true, 'message' => 'Quotation vendor berhasil dicatat.', 'data' => $this->formatQuotation($quotation->load('vendor:id,code,name'))], Response::HTTP_CREATED);
     }
 
+    public function closeRfq(Rfq $rfq): JsonResponse
+    {
+        if (! in_array($rfq->status, ['issued', 'closed'], true)) throw ValidationException::withMessages(['status' => 'RFQ hanya dapat ditutup dari status issued.']);
+        $rfq->update(['status' => 'closed']);
+        return response()->json(['success' => true, 'message' => 'RFQ berhasil ditutup.', 'data' => $this->formatRfq($rfq->fresh(['purchaseRequest:id,pr_number,status', 'vendors:id,code,name', 'quotations.vendor:id,code,name', 'cba.selectedVendor:id,code,name']))]);
+    }
+
+    public function cancelRfq(Rfq $rfq): JsonResponse
+    {
+        if (in_array($rfq->status, ['closed', 'cancelled'], true)) throw ValidationException::withMessages(['status' => 'RFQ tidak dapat dibatalkan dari status saat ini.']);
+        $rfq->update(['status' => 'cancelled']);
+        return response()->json(['success' => true, 'message' => 'RFQ berhasil dibatalkan.', 'data' => $this->formatRfq($rfq->fresh(['purchaseRequest:id,pr_number,status', 'vendors:id,code,name', 'quotations.vendor:id,code,name', 'cba.selectedVendor:id,code,name']))]);
+    }
+
     public function createCba(Rfq $rfq, Request $request): JsonResponse
     {
         $data = $request->validate([

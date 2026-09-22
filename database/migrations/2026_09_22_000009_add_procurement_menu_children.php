@@ -11,9 +11,9 @@ return new class extends Migration {
         $now = now();
         foreach ([
             ['title' => 'Vendors', 'slug' => 'procurement-vendors', 'path' => '/master-data/vendors', 'sort_order' => 494],
-            ['title' => 'Purchase Orders', 'slug' => 'procurement-purchase-orders', 'path' => '/procurement/purchase-requests', 'sort_order' => 495],
-            ['title' => 'Goods Receipts', 'slug' => 'procurement-goods-receipts', 'path' => '/procurement/purchase-requests', 'sort_order' => 496],
-            ['title' => 'Supplier Invoices', 'slug' => 'procurement-supplier-invoices', 'path' => '/procurement/purchase-requests', 'sort_order' => 497],
+            ['title' => 'Purchase Orders', 'slug' => 'procurement-purchase-orders', 'path' => '/procurement/purchase-orders', 'sort_order' => 495],
+            ['title' => 'Goods Receipts', 'slug' => 'procurement-goods-receipts', 'path' => '/procurement/goods-receipts', 'sort_order' => 496],
+            ['title' => 'Supplier Invoices', 'slug' => 'procurement-supplier-invoices', 'path' => '/procurement/supplier-invoices', 'sort_order' => 497],
         ] as $menu) {
             DB::table('menus')->updateOrInsert(['slug' => $menu['slug']], [...$menu, 'parent_id' => $parentId, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now]);
         }
