@@ -226,7 +226,46 @@ class DatabaseSeeder extends Seeder
 
         $menuDefinitions = [
             ['title' => 'Dashboard', 'slug' => 'dashboard', 'path' => '/dashboard', 'icon' => 'dashboard', 'sort_order' => 10],
-            ['title' => 'Master Data', 'slug' => 'master-data', 'path' => '/master-data', 'icon' => 'database', 'sort_order' => 15],
+            ['title' => 'Master Data', 'slug' => 'master-data', 'path' => '/master-data', 'icon' => 'database', 'sort_order' => 15, 'children' => [
+                ['title' => 'Organization & Structure', 'slug' => 'master-organization-structure', 'path' => '/master-data', 'sort_order' => 16, 'children' => [
+                    ['title' => 'Organizations', 'slug' => 'master-organizations', 'path' => '/master-data/organizations', 'sort_order' => 161],
+                    ['title' => 'Office Locations', 'slug' => 'master-office-locations', 'path' => '/master-data/office-locations', 'sort_order' => 162],
+                    ['title' => 'Departments', 'slug' => 'master-departments', 'path' => '/master-data/departments', 'sort_order' => 163],
+                    ['title' => 'Cost Centers', 'slug' => 'master-cost-centers', 'path' => '/master-data/cost-centers', 'sort_order' => 164],
+                    ['title' => 'Employees', 'slug' => 'master-employees', 'path' => '/master-data/employees', 'sort_order' => 165],
+                ]],
+                ['title' => 'Finance & Accounting', 'slug' => 'master-finance-accounting', 'path' => '/master-data', 'sort_order' => 17, 'children' => [
+                    ['title' => 'Currencies', 'slug' => 'master-currencies', 'path' => '/master-data/currencies', 'sort_order' => 171],
+                    ['title' => 'Exchange Rates', 'slug' => 'master-exchange-rates', 'path' => '/master-data/exchange-rates', 'sort_order' => 172],
+                    ['title' => 'Fiscal Years', 'slug' => 'master-fiscal-years', 'path' => '/master-data/fiscal-years', 'sort_order' => 173],
+                    ['title' => 'Accounting Periods', 'slug' => 'master-accounting-periods', 'path' => '/master-data/accounting-periods', 'sort_order' => 174],
+                    ['title' => 'Chart of Accounts', 'slug' => 'master-chart-of-accounts', 'path' => '/master-data/chart-of-accounts', 'sort_order' => 175],
+                    ['title' => 'Taxes', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
+                    ['title' => 'Bank Accounts', 'slug' => 'master-bank-accounts', 'path' => '/master-data/bank-accounts', 'sort_order' => 177],
+                    ['title' => 'Petty Cashes', 'slug' => 'master-petty-cashes', 'path' => '/master-data/petty-cashes', 'sort_order' => 178],
+                    ['title' => 'Payment Methods', 'slug' => 'master-payment-methods', 'path' => '/master-data/payment-methods', 'sort_order' => 179],
+                ]],
+                ['title' => 'Funding & Projects', 'slug' => 'master-funding-projects', 'path' => '/master-data', 'sort_order' => 18, 'children' => [
+                    ['title' => 'Funding Sources', 'slug' => 'master-funding-sources', 'path' => '/master-data/funding-sources', 'sort_order' => 181],
+                    ['title' => 'Donors', 'slug' => 'master-donors', 'path' => '/master-data/donors', 'sort_order' => 182],
+                    ['title' => 'Grant Agreements', 'slug' => 'master-grant-agreements', 'path' => '/master-data/grant-agreements', 'sort_order' => 183],
+                    ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 184],
+                    ['title' => 'Projects', 'slug' => 'master-projects', 'path' => '/master-data/projects', 'sort_order' => 185],
+                    ['title' => 'Activities', 'slug' => 'master-activities', 'path' => '/master-data/activities', 'sort_order' => 186],
+                    ['title' => 'Beneficiary Partners', 'slug' => 'master-beneficiary-partners', 'path' => '/master-data/beneficiary-partners', 'sort_order' => 187],
+                ]],
+                ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'path' => '/master-data', 'sort_order' => 19, 'children' => [
+                    ['title' => 'Reporting Dimensions', 'slug' => 'master-reporting-dimensions', 'path' => '/master-data/reporting-dimensions', 'sort_order' => 191],
+                    ['title' => 'Unit of Measures', 'slug' => 'master-unit-of-measures', 'path' => '/master-data/unit-of-measures', 'sort_order' => 192],
+                    ['title' => 'Budget Categories', 'slug' => 'master-budget-categories', 'path' => '/master-data/budget-categories', 'sort_order' => 193],
+                    ['title' => 'Budget Lines', 'slug' => 'master-budget-lines', 'path' => '/master-data/budget-lines', 'sort_order' => 194],
+                ]],
+                ['title' => 'Expenses & Assets', 'slug' => 'master-expenses-assets', 'path' => '/master-data', 'sort_order' => 20, 'children' => [
+                    ['title' => 'Expense Categories', 'slug' => 'master-expense-categories', 'path' => '/master-data/expense-categories', 'sort_order' => 201],
+                    ['title' => 'Document Types', 'slug' => 'master-document-types', 'path' => '/master-data/document-types', 'sort_order' => 202],
+                    ['title' => 'Asset Categories', 'slug' => 'master-asset-categories', 'path' => '/master-data/asset-categories', 'sort_order' => 203],
+                ]],
+            ]],
             ['title' => 'Funding & Projects', 'slug' => 'funding-projects', 'path' => '/funding-projects', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
                 ['title' => 'Donor & Grant', 'slug' => 'funding-donor-grant', 'path' => '/funding-projects/donor-grant', 'sort_order' => 21],
                 ['title' => 'Program/Project', 'slug' => 'funding-program-project', 'path' => '/funding-projects/program-project', 'sort_order' => 22],
@@ -282,23 +321,20 @@ class DatabaseSeeder extends Seeder
 
         $menus = collect();
 
-        foreach ($menuDefinitions as $definition) {
+        $persistMenu = function (array $definition, ?int $parentId = null) use (&$persistMenu, $menus): void {
             $children = $definition['children'] ?? [];
             unset($definition['children']);
-
             $menu = Menu::updateOrCreate(
                 ['slug' => $definition['slug']],
-                [...$definition, 'parent_id' => null, 'is_active' => true],
+                [...$definition, 'parent_id' => $parentId, 'is_active' => true],
             );
-
             $menus->push($menu);
-
             foreach ($children as $childDefinition) {
-                $menus->push(Menu::updateOrCreate(
-                    ['slug' => $childDefinition['slug']],
-                    [...$childDefinition, 'parent_id' => $menu->id, 'is_active' => true],
-                ));
+                $persistMenu($childDefinition, $menu->id);
             }
+        };
+        foreach ($menuDefinitions as $definition) {
+            $persistMenu($definition);
         }
 
         // Approval Matrix is managed from Administration now, not Master Data.

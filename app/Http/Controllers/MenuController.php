@@ -12,13 +12,19 @@ class MenuController extends Controller
     public function index(): JsonResponse
     {
         $includeInactive = request()->boolean('include_inactive');
-        $menus = Menu::query()
-            ->whereNull('parent_id')
+        $allMenus = Menu::query()
             ->when(! $includeInactive, fn ($query) => $query->where('is_active', true))
-            ->with(['children' => fn ($query) => $query->when(! $includeInactive, fn ($childQuery) => $childQuery->where('is_active', true))->orderBy('sort_order')])
             ->orderBy('sort_order')
-            ->get()
-            ->map(fn (Menu $menu) => $this->formatMenu($menu));
+            ->get();
+        $byParent = $allMenus->groupBy('parent_id');
+        $format = function (Menu $menu) use (&$format, $byParent): array {
+            return [
+                'id' => $menu->id, 'parent_id' => $menu->parent_id, 'title' => $menu->title, 'slug' => $menu->slug,
+                'path' => $menu->path, 'icon' => $menu->icon, 'sort_order' => $menu->sort_order, 'is_active' => $menu->is_active,
+                'children' => $byParent->get($menu->id, collect())->map($format)->values()->all(),
+            ];
+        };
+        $menus = $byParent->get(null, collect())->map($format)->values();
 
         return response()->json([
             'menus' => $menus,
