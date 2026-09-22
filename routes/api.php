@@ -21,6 +21,8 @@ use App\Http\Controllers\Api\Timesheet\TimesheetEntryController;
 use App\Http\Controllers\Api\Asset\FixedAssetController;
 use App\Http\Controllers\Api\ReportsDashboardController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\CustomReportController;
+use App\Http\Controllers\Api\AutomationController;
 
 // Master Controllers
 use App\Http\Controllers\Api\Master\OrganizationController;
@@ -93,6 +95,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/dashboard/overview', [ReportsDashboardController::class, 'dashboard'])->middleware('permission:dashboard.view');
     Route::get('/v1/reports/summary', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');
+    Route::post('/v1/reports/custom', [CustomReportController::class, 'build'])->middleware('permission:reports.view');
+    Route::post('/v1/automation/run', [AutomationController::class, 'run'])->middleware('permission:reports.view');
     Route::get('/v1/donors/dashboard', [ReportsDashboardController::class, 'donorDashboard'])->middleware('permission:reports.view');
 
     Route::prefix('v1/notifications')->group(function () {

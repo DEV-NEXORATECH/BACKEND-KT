@@ -287,6 +287,7 @@ class DatabaseSeeder extends Seeder
             ['title' => 'Reports', 'slug' => 'reports', 'path' => '/reports', 'icon' => 'reports', 'sort_order' => 50, 'children' => [
                 ['title' => 'Reports Summary', 'slug' => 'reports-summary', 'path' => '/reports', 'sort_order' => 501],
                 ['title' => 'Expense Forecast', 'slug' => 'reports-forecast', 'path' => '/reports/forecast', 'sort_order' => 502],
+                ['title' => 'Custom Report Builder', 'slug' => 'reports-custom', 'path' => '/reports/custom', 'sort_order' => 503],
             ]],
             ['title' => 'Administration', 'slug' => 'administration', 'path' => '/administration', 'icon' => 'admin', 'sort_order' => 60, 'children' => [
                 ['title' => 'Master Menu', 'slug' => 'master-menu', 'path' => '/administration/master-menu', 'sort_order' => 61],
