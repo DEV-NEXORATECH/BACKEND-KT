@@ -11,9 +11,11 @@ class MenuController extends Controller
 {
     public function index(): JsonResponse
     {
+        $includeInactive = request()->boolean('include_inactive');
         $menus = Menu::query()
             ->whereNull('parent_id')
-            ->with(['children' => fn ($query) => $query->orderBy('sort_order')])
+            ->when(! $includeInactive, fn ($query) => $query->where('is_active', true))
+            ->with(['children' => fn ($query) => $query->when(! $includeInactive, fn ($childQuery) => $childQuery->where('is_active', true))->orderBy('sort_order')])
             ->orderBy('sort_order')
             ->get()
             ->map(fn (Menu $menu) => $this->formatMenu($menu));
