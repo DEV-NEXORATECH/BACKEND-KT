@@ -157,9 +157,21 @@ class FixedAssetController extends Controller
             throw ValidationException::withMessages(['status' => 'Asset sudah disposed.']);
         }
         $data = $request->validate(['disposed_date' => ['required', 'date'], 'disposal_reason' => ['required', 'string']]);
-        $fixedAsset->update([...$data, 'status' => 'disposed']);
-
-        return response()->json(['success' => true, 'message' => 'Asset berhasil disposed.', 'data' => $this->format($fixedAsset->fresh($this->with))]);
+        $category = $fixedAsset->category;
+        $assetAccount = $category?->assetGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('is_header', false)->first();
+        $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
+        $resultAccount = ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
+        if (! $assetAccount || ! $accumulatedAccount || ! $resultAccount) throw ValidationException::withMessages(['account' => 'COA asset, accumulated depreciation, dan disposal result harus tersedia.']);
+        $asset = DB::transaction(function () use ($fixedAsset, $data, $assetAccount, $accumulatedAccount, $resultAccount) {
+            $netBookValue = round((float) $fixedAsset->net_book_value, 2);
+            $journal = Journal::create(['journal_number' => 'DISP-'.now()->format('YmdHis').'-'.random_int(100, 999), 'journal_date' => $data['disposed_date'], 'journal_type' => 'adjustment', 'reference' => $fixedAsset->asset_code, 'description' => 'Disposal '.$fixedAsset->asset_name, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now()]);
+            if ((float) $fixedAsset->accumulated_depreciation > 0) $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Remove accumulated depreciation', 'debit' => $fixedAsset->accumulated_depreciation, 'credit' => 0, 'line_order' => 1]);
+            if ($netBookValue > 0) $journal->lines()->create(['account_id' => $resultAccount->id, 'line_description' => 'Disposal loss', 'debit' => $netBookValue, 'credit' => 0, 'line_order' => 2]);
+            $journal->lines()->create(['account_id' => $assetAccount->id, 'line_description' => 'Remove asset cost', 'debit' => 0, 'credit' => $fixedAsset->acquisition_cost, 'line_order' => 3]);
+            $fixedAsset->update([...$data, 'status' => 'disposed', 'journal_id' => $journal->id, 'net_book_value' => 0]);
+            return $fixedAsset->fresh($this->with);
+        });
+        return response()->json(['success' => true, 'message' => 'Asset berhasil disposed dan jurnal pelepasan diposting.', 'data' => $this->format($asset)]);
     }
 
     private function validatePayload(Request $request): array

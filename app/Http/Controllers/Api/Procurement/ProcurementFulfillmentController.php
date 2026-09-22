@@ -38,7 +38,13 @@ class ProcurementFulfillmentController extends Controller
     public function updateGoodsReceipt(Request $request, GoodsReceipt $goodsReceipt): JsonResponse
     {
         if ($goodsReceipt->status === 'cancelled') throw ValidationException::withMessages(['status' => 'GRN sudah dibatalkan.']);
-        $data = $request->validate(['receipt_date' => ['sometimes', 'date'], 'notes' => ['nullable', 'string']]);
+        $data = $request->validate(['receipt_date' => ['sometimes', 'date'], 'notes' => ['nullable', 'string'], 'lines' => ['sometimes', 'array', 'min:1'], 'lines.*.purchase_order_line_id' => ['required_with:lines', 'integer', 'exists:purchase_order_lines,id'], 'lines.*.received_quantity' => ['required_with:lines', 'numeric', 'min:0.01']]);
+        if (isset($data['lines'])) {
+            $this->validateOrderLines($goodsReceipt->purchaseOrder, $data['lines'], $goodsReceipt->id);
+            $goodsReceipt->lines()->delete();
+            foreach ($data['lines'] as $line) $goodsReceipt->lines()->create($line);
+            unset($data['lines']);
+        }
         $goodsReceipt->update($data);
         return response()->json(['success' => true, 'message' => 'GRN berhasil diperbarui.', 'data' => $this->formatGrn($goodsReceipt->fresh(['purchaseOrder:id,po_number', 'lines.purchaseOrderLine']))]);
     }
@@ -64,7 +70,16 @@ class ProcurementFulfillmentController extends Controller
     public function updateSupplierInvoice(Request $request, SupplierInvoice $supplierInvoice): JsonResponse
     {
         if (! in_array($supplierInvoice->status, ['draft', 'matched'], true)) throw ValidationException::withMessages(['status' => 'Invoice hanya dapat diubah saat draft atau matched.']);
-        $data = $request->validate(['invoice_date' => ['sometimes', 'date'], 'due_date' => ['nullable', 'date'], 'notes' => ['nullable', 'string']]);
+        $data = $request->validate(['invoice_date' => ['sometimes', 'date'], 'due_date' => ['nullable', 'date'], 'notes' => ['nullable', 'string'], 'lines' => ['sometimes', 'array', 'min:1'], 'lines.*.purchase_order_line_id' => ['required_with:lines', 'integer', 'exists:purchase_order_lines,id'], 'lines.*.item_description' => ['required_with:lines', 'string', 'max:255'], 'lines.*.quantity' => ['required_with:lines', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required_with:lines', 'numeric', 'min:0.01']]);
+        if (isset($data['lines'])) {
+            $this->validateOrderLines($supplierInvoice->purchaseOrder, $data['lines']);
+            $supplierInvoice->lines()->delete();
+            $total = 0;
+            foreach ($data['lines'] as $line) { $line['total_amount'] = round((float) $line['quantity'] * (float) $line['unit_price'], 2); $total += $line['total_amount']; $supplierInvoice->lines()->create($line); }
+            $data['total_amount'] = $total;
+            $supplierInvoice->update(['match_status' => 'unchecked', 'status' => 'draft']);
+            unset($data['lines']);
+        }
         $supplierInvoice->update($data);
         return response()->json(['success' => true, 'message' => 'Supplier invoice berhasil diperbarui.', 'data' => $this->formatInvoice($supplierInvoice->fresh(['purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'vendor:id,code,name', 'lines']))]);
     }
@@ -284,7 +299,7 @@ class ProcurementFulfillmentController extends Controller
         ]);
     }
 
-    private function validateOrderLines(PurchaseOrder $purchaseOrder, array $lines): void
+    private function validateOrderLines(PurchaseOrder $purchaseOrder, array $lines, ?int $ignoreGoodsReceiptId = null): void
     {
         $lineIds = collect($lines)->pluck('purchase_order_line_id')->filter()->unique()->values();
         $validIds = $purchaseOrder->lines()->whereIn('id', $lineIds)->pluck('id');
@@ -294,7 +309,7 @@ class ProcurementFulfillmentController extends Controller
         foreach ($lines as $line) {
             if (! isset($line['received_quantity'])) continue;
             $ordered = (float) $purchaseOrder->lines()->whereKey($line['purchase_order_line_id'])->value('quantity');
-            $received = (float) $purchaseOrder->goodsReceipts()->where('status', '!=', 'cancelled')->with('lines')->get()->sum(fn ($grn) => (float) $grn->lines->where('purchase_order_line_id', $line['purchase_order_line_id'])->sum('received_quantity'));
+            $received = (float) $purchaseOrder->goodsReceipts()->where('status', '!=', 'cancelled')->when($ignoreGoodsReceiptId, fn ($q) => $q->where('id', '!=', $ignoreGoodsReceiptId))->with('lines')->get()->sum(fn ($grn) => (float) $grn->lines->where('purchase_order_line_id', $line['purchase_order_line_id'])->sum('received_quantity'));
             if ($received + (float) $line['received_quantity'] > $ordered) throw ValidationException::withMessages(['lines' => 'Jumlah penerimaan melebihi quantity PO.']);
         }
     }
