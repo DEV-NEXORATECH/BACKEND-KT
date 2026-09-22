@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\ReportsDashboardController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\CustomReportController;
 use App\Http\Controllers\Api\AutomationController;
+use App\Http\Controllers\Api\SavedReportController;
 
 // Master Controllers
 use App\Http\Controllers\Api\Master\OrganizationController;
@@ -97,6 +98,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');
     Route::get('/v1/reports/custom/options', [CustomReportController::class, 'options'])->middleware('permission:reports.view');
     Route::post('/v1/reports/custom', [CustomReportController::class, 'build'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/custom/saved', [SavedReportController::class, 'index'])->middleware('permission:reports.view');
+    Route::post('/v1/reports/custom/saved', [SavedReportController::class, 'store'])->middleware('permission:reports.view');
+    Route::delete('/v1/reports/custom/saved/{savedReport}', [SavedReportController::class, 'destroy'])->middleware('permission:reports.view');
     Route::post('/v1/automation/run', [AutomationController::class, 'run'])->middleware('permission:reports.view');
     Route::get('/v1/donors/dashboard', [ReportsDashboardController::class, 'donorDashboard'])->middleware('permission:reports.view');
 
