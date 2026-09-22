@@ -77,15 +77,14 @@ class Department extends Model
 
     public function getRelatedRecordsCountAttribute(): int
     {
-        return (int) (
-            $this->children()->count()
-            + $this->costCenters()->count()
-            + $this->employees()->count()
-            + $this->approvalMatrices()->count()
-            + $this->journalLines()->count()
-            + $this->purchaseRequests()->count()
-            + $this->expenseRequests()->count()
-            + $this->timesheetEntries()->count()
-        );
+        $relations = ['children', 'costCenters', 'employees', 'approvalMatrices', 'journalLines', 'purchaseRequests', 'expenseRequests', 'timesheetEntries'];
+        return (int) collect($relations)->sum(function (string $relation): int {
+            try {
+                return (int) $this->{$relation}()->count();
+            } catch (\Throwable) {
+                // Keep master data usable when an optional module migration is not deployed yet.
+                return 0;
+            }
+        });
     }
 }
