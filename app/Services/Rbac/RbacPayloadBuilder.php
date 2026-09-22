@@ -59,25 +59,21 @@ class RbacPayloadBuilder
     {
         $allowed = array_flip($user->role?->menus->pluck('id')->all() ?? []);
 
-        return Menu::query()
-            ->whereNull('parent_id')
-            ->with(['children' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order')])
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->get()
-            ->filter(fn (Menu $menu) => $this->menuVisible($menu, $allowed))
-            ->map(fn (Menu $menu) => $this->formatMenuItem($menu, $allowed))
+        $allMenus = Menu::query()->where('is_active', true)->orderBy('sort_order')->get();
+        $byParent = $allMenus->groupBy('parent_id');
+        return $byParent->get(null, collect())
+            ->filter(fn (Menu $menu) => $this->menuVisible($menu, $allowed, $byParent))
+            ->map(fn (Menu $menu) => $this->formatMenuItem($menu, $allowed, $byParent))
             ->values()
             ->all();
     }
 
-    private function menuVisible(Menu $menu, array $allowed): bool
+    private function menuVisible(Menu $menu, array $allowed, $byParent): bool
     {
-        return isset($allowed[$menu->id])
-            || $menu->children->contains(fn (Menu $child) => isset($allowed[$child->id]));
+        return isset($allowed[$menu->id]) || $byParent->get($menu->id, collect())->contains(fn (Menu $child) => $this->menuVisible($child, $allowed, $byParent));
     }
 
-    private function formatMenuItem(Menu $menu, array $allowed): array
+    private function formatMenuItem(Menu $menu, array $allowed, $byParent): array
     {
         return [
             'id' => $menu->id,
@@ -88,20 +84,10 @@ class RbacPayloadBuilder
             'icon' => $menu->icon,
             'sort_order' => $menu->sort_order,
             'is_active' => $menu->is_active,
-            'children' => $menu->children
-                ->filter(fn (Menu $child) => isset($allowed[$child->id]))
+            'children' => $byParent->get($menu->id, collect())
+                ->filter(fn (Menu $child) => $this->menuVisible($child, $allowed, $byParent))
                 ->values()
-                ->map(fn (Menu $child) => [
-                    'id' => $child->id,
-                    'parent_id' => $child->parent_id,
-                    'title' => $child->title,
-                    'slug' => $child->slug,
-                    'path' => $child->path,
-                    'icon' => $child->icon,
-                    'sort_order' => $child->sort_order,
-                    'is_active' => $child->is_active,
-                    'children' => [],
-                ])
+                ->map(fn (Menu $child) => $this->formatMenuItem($child, $allowed, $byParent))
                 ->all(),
         ];
     }
