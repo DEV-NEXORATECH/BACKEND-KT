@@ -189,6 +189,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('requests/{expenseRequest}/submit', [ExpenseRequestController::class, 'submit'])->middleware('permission:expense.submit');
         Route::post('requests/{expenseRequest}/approve', [ExpenseRequestController::class, 'approve'])->middleware('permission:expense.approve');
         Route::post('requests/{expenseRequest}/reject', [ExpenseRequestController::class, 'reject'])->middleware('permission:expense.approve');
+        Route::post('requests/{expenseRequest}/resubmit', [ExpenseRequestController::class, 'resubmit'])->middleware('permission:expense.submit');
         Route::post('requests/{expenseRequest}/post', [ExpenseRequestController::class, 'post'])->middleware('permission:expense.post');
         Route::post('requests/{expenseRequest}/pay', [ExpenseRequestController::class, 'pay'])->middleware('permission:expense.pay');
     });

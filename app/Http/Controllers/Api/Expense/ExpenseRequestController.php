@@ -90,8 +90,12 @@ class ExpenseRequestController extends Controller
         ], 'Expense request berhasil diapprove.');
     }
 
-    public function reject(ExpenseRequest $expenseRequest): JsonResponse
+    public function reject(Request $request, ExpenseRequest $expenseRequest): JsonResponse
     {
+        $data = $request->validate([
+            'notes' => ['required', 'string', 'max:1000'],
+        ]);
+
         if (! in_array($expenseRequest->status, ['submitted', 'approved'], true)) {
             throw ValidationException::withMessages(['status' => 'Expense tidak dapat direject dari status saat ini.']);
         }
@@ -100,10 +104,20 @@ class ExpenseRequestController extends Controller
             'status' => 'rejected',
             'rejected_by' => request()->user()->id,
             'rejected_at' => now(),
-            'decision_notes' => request('notes'),
+            'decision_notes' => $data['notes'],
         ]);
 
         return response()->json(['success' => true, 'message' => 'Expense request berhasil direject.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
+    }
+
+    public function resubmit(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    {
+        $this->authorizeScope($request, $expenseRequest);
+
+        return $this->transition($expenseRequest, 'rejected', 'submitted', [
+            'submitted_by' => $request->user()->id,
+            'submitted_at' => now(),
+        ], 'Expense request berhasil diajukan kembali.');
     }
 
     public function post(ExpenseRequest $expenseRequest): JsonResponse
@@ -305,6 +319,13 @@ class ExpenseRequestController extends Controller
             'status' => $expense->status,
             'total_amount' => $expense->total_amount,
             'paid_amount' => $expense->paid_amount,
+            'outstanding_amount' => max(0, round((float) $expense->total_amount - (float) $expense->paid_amount, 2)),
+            'decision_notes' => $expense->decision_notes,
+            'submitted_at' => $expense->submitted_at?->toISOString(),
+            'rejected_at' => $expense->rejected_at?->toISOString(),
+            'rejected_by' => $expense->rejected_by,
+            'approved_at' => $expense->approved_at?->toISOString(),
+            'approved_by' => $expense->approved_by,
             'payment_status' => ((float) $expense->paid_amount >= (float) $expense->total_amount && (float) $expense->total_amount > 0) ? 'paid' : (((float) $expense->paid_amount > 0) ? 'partial' : 'unpaid'),
             'lines' => $expense->lines->map(fn ($line) => [
                 'id' => $line->id,

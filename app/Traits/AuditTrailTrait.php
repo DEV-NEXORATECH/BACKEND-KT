@@ -60,16 +60,26 @@ trait AuditTrailTrait
             return;
         }
 
+        $request = request();
+        $platform = strtolower((string) $request?->header('X-Client-Platform', ''));
+        if (! in_array($platform, ['web', 'mobile'], true)) {
+            $userAgent = (string) $request?->userAgent();
+            $platform = preg_match('/android|iphone|ipad|ipod|reactnative|okhttp|cfnetwork/i', $userAgent)
+                ? 'mobile'
+                : 'web';
+        }
+
         AuditLog::query()->create([
             'user_id' => Auth::id(),
             'module' => Str::of($model->getTable())->replace('_', '-')->toString(),
+            'platform' => $platform,
             'action' => $action,
             'entity_type' => $model::class,
             'entity_id' => $model->getKey(),
             'previous_values' => $previous,
             'new_values' => $new,
             'ip_address' => request()?->ip(),
-            'user_agent' => request()?->userAgent(),
+            'user_agent' => $request?->userAgent(),
         ]);
     }
 }

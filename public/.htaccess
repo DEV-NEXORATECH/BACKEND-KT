@@ -4,7 +4,7 @@
     Header always set Access-Control-Allow-Origin "%{CORS_ORIGIN}e" env=CORS_ORIGIN
     Header always set Access-Control-Allow-Credentials "true" env=CORS_ORIGIN
     Header always set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-Client-Platform"
 </IfModule>
 
 <IfModule mod_rewrite.c>

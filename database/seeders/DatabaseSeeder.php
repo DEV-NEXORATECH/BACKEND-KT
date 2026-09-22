@@ -288,6 +288,7 @@ class DatabaseSeeder extends Seeder
                 ['title' => 'Master Menu', 'slug' => 'master-menu', 'path' => '/administration/master-menu', 'sort_order' => 61],
                 ['title' => 'Role Access', 'slug' => 'role-access', 'path' => '/administration/role-access', 'sort_order' => 62],
                 ['title' => 'Approval Matrix', 'slug' => 'administration-approval-matrix', 'path' => '/administration/approval-matrix', 'sort_order' => 63],
+                ['title' => 'Audit Log', 'slug' => 'audit-log', 'path' => '/administration/audit-logs', 'sort_order' => 64],
             ]],
             ['title' => 'Settings', 'slug' => 'settings', 'path' => '/settings', 'icon' => 'settings', 'sort_order' => 70],
         ];
@@ -320,7 +321,19 @@ class DatabaseSeeder extends Seeder
             $roles->each(fn (Role $role) => $role->menus()->detach($legacyApprovalMatrixMenu->id));
         }
 
-        $roles->each(fn (Role $role) => $role->menus()->syncWithoutDetaching($menus->pluck('id')));
+        $auditMenu = $menus->firstWhere('slug', 'audit-log');
+        $regularMenuIds = $menus->reject(fn (Menu $menu) => $menu->slug === 'audit-log')->pluck('id');
+        $auditPermissionId = $permissions->get('audit.view')?->id;
+
+        $roles->each(function (Role $role) use ($regularMenuIds, $auditMenu, $auditPermissionId) {
+            $role->menus()->syncWithoutDetaching($regularMenuIds);
+
+            if ($auditMenu && $auditPermissionId && $role->permissions()->where('permissions.id', $auditPermissionId)->exists()) {
+                $role->menus()->syncWithoutDetaching([$auditMenu->id]);
+            } elseif ($auditMenu) {
+                $role->menus()->detach($auditMenu->id);
+            }
+        });
 
         User::updateOrCreate(
             ['email' => 'admin@kaoemtelapak.test'],

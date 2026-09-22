@@ -16,7 +16,16 @@ return [
         '#^https://.*\.hostingersite\.com/?$#',
     ],
 
-    'allowed_headers' => ['*'],
+    // Keep this explicit because shared-hosting Apache may answer OPTIONS
+    // before Laravel and needs to allow the platform audit header too.
+    'allowed_headers' => [
+        'Accept',
+        'Authorization',
+        'Content-Type',
+        'Origin',
+        'X-Requested-With',
+        'X-Client-Platform',
+    ],
 
     'exposed_headers' => ['Content-Disposition', 'Content-Type'],
 
