@@ -75,6 +75,7 @@ class RbacPayloadBuilder
 
     private function formatMenuItem(Menu $menu, array $allowed, $byParent): array
     {
+        $parentAllowed = isset($allowed[$menu->id]);
         return [
             'id' => $menu->id,
             'parent_id' => $menu->parent_id,
@@ -85,7 +86,7 @@ class RbacPayloadBuilder
             'sort_order' => $menu->sort_order,
             'is_active' => $menu->is_active,
             'children' => $byParent->get($menu->id, collect())
-                ->filter(fn (Menu $child) => $this->menuVisible($child, $allowed, $byParent))
+                ->filter(fn (Menu $child) => $parentAllowed || $this->menuVisible($child, $allowed, $byParent))
                 ->values()
                 ->map(fn (Menu $child) => $this->formatMenuItem($child, $allowed, $byParent))
                 ->all(),
