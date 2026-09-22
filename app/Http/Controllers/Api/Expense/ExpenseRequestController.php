@@ -8,6 +8,7 @@ use App\Models\Expense\ExpenseRequest;
 use App\Models\Finance\BankTransaction;
 use App\Models\Finance\Payment;
 use App\Models\Master\BankAccount;
+use App\Models\Notification;
 use App\Models\Master\ChartOfAccount;
 use App\Services\Budget\BudgetMonitoringService;
 use Illuminate\Http\JsonResponse;
@@ -18,7 +19,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ExpenseRequestController extends Controller
 {
-    private array $with = ['requester:id,name,email', 'project:id,code,name', 'department:id,code,name', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
+    private array $with = ['requester:id,name,email', 'donor:id,code,name', 'grantAgreement:id,agreement_number,title', 'program:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
 
     public function index(Request $request): JsonResponse
     {
@@ -106,6 +107,7 @@ class ExpenseRequestController extends Controller
             'rejected_at' => now(),
             'decision_notes' => $data['notes'],
         ]);
+        Notification::create(['user_id' => null, 'title' => 'Expense ditolak', 'message' => "{$expenseRequest->request_number}: {$data['notes']}", 'type' => 'alert', 'action_url' => '/expenses-approvals/expenses']);
 
         return response()->json(['success' => true, 'message' => 'Expense request berhasil direject.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
     }
@@ -252,14 +254,39 @@ class ExpenseRequestController extends Controller
         return response()->json(['success' => true, 'message' => 'Expense payment berhasil dicatat.', 'data' => $this->format($expense)], Response::HTTP_CREATED);
     }
 
+    public function settle(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    {
+        $this->authorizeScope($request, $expenseRequest);
+        if ($expenseRequest->expense_type !== 'cash_advance') {
+            throw ValidationException::withMessages(['expense_type' => 'Hanya Cash Advance yang dapat diselesaikan.']);
+        }
+        $data = $request->validate(['amount' => ['required', 'numeric', 'min:0.01']]);
+        $settled = round((float) $expenseRequest->settled_amount + (float) $data['amount'], 2);
+        if ($settled > (float) $expenseRequest->total_amount) {
+            throw ValidationException::withMessages(['amount' => 'Settlement melebihi nilai Cash Advance.']);
+        }
+        $status = $settled >= (float) $expenseRequest->total_amount ? 'settled' : 'partially_settled';
+        $expenseRequest->update(['settled_amount' => $settled, 'settlement_status' => $status]);
+        Notification::create(['user_id' => null, 'title' => 'Cash Advance diselesaikan', 'message' => "{$expenseRequest->request_number}: settlement {$settled}.", 'type' => 'info', 'action_url' => '/expenses-approvals/cash-advance']);
+        return response()->json(['success' => true, 'message' => 'Settlement Cash Advance berhasil dicatat.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
+    }
+
     private function validatePayload(Request $request): array
     {
         return $request->validate([
             'request_number' => ['nullable', 'string', 'max:40', 'unique:expense_requests,request_number'],
             'external_request_id' => ['nullable', 'string', 'max:80', 'unique:expense_requests,external_request_id'],
             'requester_id' => ['nullable', 'integer', 'exists:users,id'],
+            'donor_id' => ['nullable', 'integer', 'exists:donors,id'],
+            'grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
+            'program_id' => ['nullable', 'integer', 'exists:programs,id'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'funding_source_id' => ['nullable', 'integer', 'exists:funding_sources,id'],
+            'document_type_id' => ['nullable', 'integer', 'exists:document_types,id'],
+            'tax_id' => ['nullable', 'integer', 'exists:taxes,id'],
+            'attachments' => ['nullable', 'array'],
+            'attachments.*' => ['string', 'max:255'],
             'expense_type' => ['required', 'in:reimbursement,supplier_payment,loan,cash_advance,settlement_advance'],
             'request_date' => ['required', 'date'],
             'currency_code' => ['nullable', 'string', 'max:10'],
@@ -296,6 +323,9 @@ class ExpenseRequestController extends Controller
         }
 
         $expenseRequest->update(['status' => $to, ...$extra]);
+        $labels = ['submitted' => 'diajukan', 'approved' => 'disetujui', 'posted' => 'diposting', 'rejected' => 'ditolak'];
+        $label = $labels[$to] ?? $to;
+        Notification::create(['user_id' => null, 'title' => 'Perubahan status expense', 'message' => "{$expenseRequest->request_number} berhasil {$label}.", 'type' => 'info', 'action_url' => '/expenses-approvals/expenses']);
 
         return response()->json(['success' => true, 'message' => $message, 'data' => $this->format($expenseRequest->fresh($this->with))]);
     }
@@ -308,6 +338,13 @@ class ExpenseRequestController extends Controller
             'request_number' => $expense->request_number,
             'external_request_id' => $expense->external_request_id,
             'requester_name' => $expense->requester?->name,
+            'donor' => $expense->donor ? ['id' => $expense->donor->id, 'code' => $expense->donor->code, 'name' => $expense->donor->name] : null,
+            'grant' => $expense->grantAgreement ? ['id' => $expense->grantAgreement->id, 'number' => $expense->grantAgreement->agreement_number, 'title' => $expense->grantAgreement->title] : null,
+            'program' => $expense->program ? ['id' => $expense->program->id, 'code' => $expense->program->code, 'name' => $expense->program->name] : null,
+            'funding_source' => $expense->fundingSource ? ['id' => $expense->fundingSource->id, 'code' => $expense->fundingSource->code, 'name' => $expense->fundingSource->name] : null,
+            'document_type' => $expense->documentType ? ['id' => $expense->documentType->id, 'code' => $expense->documentType->code, 'name' => $expense->documentType->name] : null,
+            'tax' => $expense->tax ? ['id' => $expense->tax->id, 'code' => $expense->tax->code, 'name' => $expense->tax->name] : null,
+            'attachments' => $expense->attachments ?? [],
             'project_id' => $expense->project_id,
             'project_name' => $expense->project?->name,
             'department_name' => $expense->department?->name,
@@ -320,6 +357,8 @@ class ExpenseRequestController extends Controller
             'total_amount' => $expense->total_amount,
             'paid_amount' => $expense->paid_amount,
             'outstanding_amount' => max(0, round((float) $expense->total_amount - (float) $expense->paid_amount, 2)),
+            'settled_amount' => $expense->settled_amount,
+            'settlement_status' => $expense->settlement_status,
             'decision_notes' => $expense->decision_notes,
             'submitted_at' => $expense->submitted_at?->toISOString(),
             'rejected_at' => $expense->rejected_at?->toISOString(),

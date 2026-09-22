@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Budget\BudgetMonitoringController;
 use App\Http\Controllers\Api\Procurement\PurchaseRequestController;
 use App\Http\Controllers\Api\Procurement\ProcurementFulfillmentController;
 use App\Http\Controllers\Api\Procurement\AdvancedProcurementController;
+use App\Http\Controllers\Api\Procurement\SupplierContractNotificationController;
 use App\Http\Controllers\Api\Finance\AccountsPayableController;
 use App\Http\Controllers\Api\Finance\AccountsReceivableController;
 use App\Http\Controllers\Api\Finance\TaxTransactionController;
@@ -91,6 +92,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/v1/dashboard/overview', [ReportsDashboardController::class, 'dashboard'])->middleware('permission:dashboard.view');
     Route::get('/v1/reports/summary', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');
     Route::get('/v1/donors/dashboard', [ReportsDashboardController::class, 'donorDashboard'])->middleware('permission:reports.view');
 
     Route::prefix('v1/notifications')->group(function () {
@@ -140,6 +142,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('rfqs/{rfq}/cba', [AdvancedProcurementController::class, 'createCba'])->middleware('permission:procurement.cba.create');
         Route::post('cba/{cba}/approve', [AdvancedProcurementController::class, 'approveCba'])->middleware('permission:procurement.cba.approve');
         Route::post('cba/{cba}/purchase-orders', [AdvancedProcurementController::class, 'createPoFromCba'])->middleware('permission:procurement.po.create');
+        Route::get('scns', [SupplierContractNotificationController::class, 'index'])->middleware('permission:procurement.pr.view');
+        Route::post('scns', [SupplierContractNotificationController::class, 'store'])->middleware('permission:procurement.pr.create');
+        Route::post('scns/{supplierContractNotification}/issue', [SupplierContractNotificationController::class, 'issue'])->middleware('permission:procurement.pr.approve');
     });
 
     Route::prefix('v1/finance')->group(function () {
@@ -154,6 +159,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('ar/invoices/{customerInvoice}/receipts', [AccountsReceivableController::class, 'receivePayment'])->middleware('permission:ar.receive');
         Route::get('payments', [AccountsPayableController::class, 'payments'])->middleware('permission:payments.view');
         Route::get('bank-transactions', [AccountsPayableController::class, 'bankTransactions'])->middleware('permission:banking.view');
+        Route::post('bank-transactions/import', [AccountsPayableController::class, 'importBankTransactions'])->middleware('permission:banking.view');
+        Route::post('bank-transactions/{bankTransaction}/reconcile', [AccountsPayableController::class, 'reconcileBankTransaction'])->middleware('permission:banking.view');
     });
 
     Route::prefix('v1/tax')->group(function () {
@@ -192,6 +199,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('requests/{expenseRequest}/resubmit', [ExpenseRequestController::class, 'resubmit'])->middleware('permission:expense.submit');
         Route::post('requests/{expenseRequest}/post', [ExpenseRequestController::class, 'post'])->middleware('permission:expense.post');
         Route::post('requests/{expenseRequest}/pay', [ExpenseRequestController::class, 'pay'])->middleware('permission:expense.pay');
+        Route::post('requests/{expenseRequest}/settle', [ExpenseRequestController::class, 'settle'])->middleware('permission:expense.submit');
     });
 
     // -------------------------------------------------------------

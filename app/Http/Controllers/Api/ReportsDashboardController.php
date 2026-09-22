@@ -286,6 +286,16 @@ class ReportsDashboardController extends Controller
         ]);
     }
 
+    public function forecast(Request $request): JsonResponse
+    {
+        $months = max(3, min(12, (int) $request->input('months', 6)));
+        $from = CarbonImmutable::now()->startOfMonth()->subMonths($months - 1);
+        $rows = JournalLine::query()->whereHas('journal', fn (Builder $q) => $q->where('status', 'posted')->whereDate('journal_date', '>=', $from))->with('journal:id,journal_date')->get();
+        $monthly = collect(range(0, $months - 1))->mapWithKeys(function ($index) use ($from, $rows) { $month = $from->addMonths($index); $key = $month->format('Y-m'); $value = $rows->filter(fn (JournalLine $line) => $line->journal?->journal_date?->format('Y-m') === $key)->sum(fn (JournalLine $line) => (float) $line->debit - (float) $line->credit); return [$key => round(max(0, $value), 2)]; });
+        $average = round($monthly->avg(), 2);
+        return response()->json(['success' => true, 'data' => ['months' => $monthly, 'average_monthly_expense' => $average, 'next_month_projection' => $average, 'method' => 'rolling_average']]);
+    }
+
     private function period(Request $request): array
     {
         $start = $request->filled('start_date') ? CarbonImmutable::parse($request->string('start_date'))->startOfDay() : null;

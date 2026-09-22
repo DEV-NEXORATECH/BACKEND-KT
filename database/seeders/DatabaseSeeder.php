@@ -282,8 +282,12 @@ class DatabaseSeeder extends Seeder
             ['title' => 'Procurement', 'slug' => 'procurement', 'path' => '/procurement', 'icon' => 'briefcase', 'sort_order' => 49, 'children' => [
                 ['title' => 'Purchase Request', 'slug' => 'procurement-purchase-request', 'path' => '/procurement/purchase-requests', 'sort_order' => 491],
                 ['title' => 'RFQ & CBA', 'slug' => 'procurement-rfq-cba', 'path' => '/procurement/rfq-cba', 'sort_order' => 492],
+                ['title' => 'Supplier Contract Notification', 'slug' => 'procurement-scn', 'path' => '/procurement/scn', 'sort_order' => 493],
             ]],
-            ['title' => 'Reports', 'slug' => 'reports', 'path' => '/reports', 'icon' => 'reports', 'sort_order' => 50],
+            ['title' => 'Reports', 'slug' => 'reports', 'path' => '/reports', 'icon' => 'reports', 'sort_order' => 50, 'children' => [
+                ['title' => 'Reports Summary', 'slug' => 'reports-summary', 'path' => '/reports', 'sort_order' => 501],
+                ['title' => 'Expense Forecast', 'slug' => 'reports-forecast', 'path' => '/reports/forecast', 'sort_order' => 502],
+            ]],
             ['title' => 'Administration', 'slug' => 'administration', 'path' => '/administration', 'icon' => 'admin', 'sort_order' => 60, 'children' => [
                 ['title' => 'Master Menu', 'slug' => 'master-menu', 'path' => '/administration/master-menu', 'sort_order' => 61],
                 ['title' => 'Role Access', 'slug' => 'role-access', 'path' => '/administration/role-access', 'sort_order' => 62],

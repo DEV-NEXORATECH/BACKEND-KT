@@ -180,6 +180,44 @@ class AccountsPayableController extends Controller
         return response()->json(['success' => true, 'data' => BankTransaction::with(['bankAccount:id,bank_name,account_number'])->latest('transaction_date')->latest('id')->get()]);
     }
 
+    public function importBankTransactions(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'bank_account_id' => ['required', 'integer', 'exists:bank_accounts,id'],
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+        ]);
+
+        $handle = fopen($data['file']->getRealPath(), 'rb');
+        $created = 0;
+        $skipped = 0;
+        $row = 0;
+        while (($columns = fgetcsv($handle)) !== false) {
+            $row++;
+            if ($row === 1 && isset($columns[0]) && preg_match('/date|tanggal/i', (string) $columns[0])) continue;
+            if (count($columns) < 4 || ! trim((string) $columns[0])) { $skipped++; continue; }
+            try {
+                $date = \Carbon\Carbon::parse(trim((string) $columns[0]))->toDateString();
+                $reference = trim((string) ($columns[1] ?? '')) ?: null;
+                $description = trim((string) ($columns[2] ?? '')) ?: null;
+                $debit = (float) str_replace([',', ' '], ['', ''], (string) ($columns[3] ?? 0));
+                $credit = (float) str_replace([',', ' '], ['', ''], (string) ($columns[4] ?? 0));
+                $exists = BankTransaction::where('bank_account_id', $data['bank_account_id'])->whereDate('transaction_date', $date)->where('reference', $reference)->where('debit', $debit)->where('credit', $credit)->exists();
+                if ($exists) { $skipped++; continue; }
+                BankTransaction::create(['bank_account_id' => $data['bank_account_id'], 'transaction_date' => $date, 'reference' => $reference, 'description' => $description, 'debit' => $debit, 'credit' => $credit, 'status' => 'unmatched']);
+                $created++;
+            } catch (\Throwable) { $skipped++; }
+        }
+        fclose($handle);
+        return response()->json(['success' => true, 'message' => "{$created} transaksi diimport, {$skipped} dilewati.", 'data' => ['created' => $created, 'skipped' => $skipped]]);
+    }
+
+    public function reconcileBankTransaction(Request $request, BankTransaction $bankTransaction): JsonResponse
+    {
+        $data = $request->validate(['status' => ['required', 'in:matched,excluded,reconciled,unmatched']]);
+        $bankTransaction->update(['status' => $data['status']]);
+        return response()->json(['success' => true, 'message' => 'Status rekonsiliasi diperbarui.', 'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number'])]);
+    }
+
     private function formatInvoice(SupplierInvoice $invoice): array
     {
         return [
