@@ -34,6 +34,7 @@ class PurchaseRequest extends Model
         'rejected_by',
         'rejected_at',
         'decision_notes',
+        'attachments',
         'created_by',
         'updated_by',
         'deleted_by',
@@ -41,6 +42,7 @@ class PurchaseRequest extends Model
 
     protected $casts = [
         'request_date' => 'date',
+        'attachments' => 'array',
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',

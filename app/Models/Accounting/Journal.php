@@ -33,6 +33,7 @@ class Journal extends Model
         'posted_at',
         'reversed_by',
         'reversed_at',
+        'attachments',
         'created_by',
         'updated_by',
         'deleted_by',
@@ -41,6 +42,7 @@ class Journal extends Model
     protected $casts = [
         'journal_date' => 'date',
         'exchange_rate' => 'decimal:6',
+        'attachments' => 'array',
         'submitted_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'posted_at' => 'datetime',

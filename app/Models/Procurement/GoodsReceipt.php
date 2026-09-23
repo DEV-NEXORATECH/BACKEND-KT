@@ -12,9 +12,9 @@ class GoodsReceipt extends Model
 {
     use SoftDeletes, AuditTrailTrait;
 
-    protected $fillable = ['purchase_order_id', 'grn_number', 'receipt_date', 'notes', 'status', 'received_by', 'received_at', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['purchase_order_id', 'grn_number', 'receipt_date', 'notes', 'status', 'attachments', 'received_by', 'received_at', 'created_by', 'updated_by', 'deleted_by'];
 
-    protected $casts = ['receipt_date' => 'date', 'received_at' => 'datetime'];
+    protected $casts = ['receipt_date' => 'date', 'attachments' => 'array', 'received_at' => 'datetime'];
 
     public function purchaseOrder(): BelongsTo
     {

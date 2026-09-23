@@ -62,6 +62,8 @@ class ApprovalCenterAndAttachmentTest extends TestCase
         Storage::fake('local');
 
         $role = Role::create(['name' => 'Admin', 'slug' => 'super-admin']);
+        $role->permissions()->attach(Permission::create(['name' => 'View expense', 'slug' => 'expense.view']));
+        $role->permissions()->attach(Permission::create(['name' => 'Create expense', 'slug' => 'expense.create']));
         $user = User::factory()->create(['role_id' => $role->id]);
 
         $expense = ExpenseRequest::create([

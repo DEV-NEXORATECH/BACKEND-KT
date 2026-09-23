@@ -22,9 +22,9 @@ class FixedAsset extends Model
 {
     use SoftDeletes, AuditTrailTrait;
 
-    protected $fillable = ['asset_code', 'asset_name', 'asset_category_id', 'acquisition_date', 'acquisition_cost', 'vendor_id', 'purchase_order_id', 'goods_receipt_id', 'supplier_invoice_id', 'donor_id', 'program_id', 'project_id', 'location', 'custodian_id', 'useful_life_months', 'depreciation_method', 'accumulated_depreciation', 'net_book_value', 'status', 'notes', 'journal_id', 'capitalized_at', 'capitalized_by', 'disposed_date', 'disposal_reason', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['asset_code', 'asset_name', 'asset_category_id', 'acquisition_date', 'acquisition_cost', 'vendor_id', 'purchase_order_id', 'goods_receipt_id', 'supplier_invoice_id', 'donor_id', 'program_id', 'project_id', 'location', 'custodian_id', 'useful_life_months', 'depreciation_method', 'accumulated_depreciation', 'net_book_value', 'status', 'notes', 'attachments', 'journal_id', 'capitalized_at', 'capitalized_by', 'disposed_date', 'disposal_reason', 'created_by', 'updated_by', 'deleted_by'];
 
-    protected $casts = ['acquisition_date' => 'date', 'acquisition_cost' => 'decimal:2', 'accumulated_depreciation' => 'decimal:2', 'net_book_value' => 'decimal:2', 'capitalized_at' => 'datetime', 'disposed_date' => 'date'];
+    protected $casts = ['acquisition_date' => 'date', 'acquisition_cost' => 'decimal:2', 'accumulated_depreciation' => 'decimal:2', 'net_book_value' => 'decimal:2', 'attachments' => 'array', 'capitalized_at' => 'datetime', 'disposed_date' => 'date'];
 
     public function category(): BelongsTo { return $this->belongsTo(AssetCategory::class, 'asset_category_id'); }
     public function vendor(): BelongsTo { return $this->belongsTo(Vendor::class); }

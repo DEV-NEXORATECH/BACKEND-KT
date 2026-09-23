@@ -14,6 +14,7 @@ use App\Models\Procurement\SupplierInvoice;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -36,6 +37,7 @@ class AttachmentController extends Controller
         $file = $request->file('file');
 
         $entity = $this->findEntity($module, $entityId);
+        $this->authorizeAttachment($request, $module, $entity, true);
 
         $path = $file->store("secure_attachments/{$module}", 'local');
         $originalName = $file->getClientOriginalName();
@@ -70,6 +72,7 @@ class AttachmentController extends Controller
     public function download(Request $request, string $module, int $id, int $index): StreamedResponse|JsonResponse
     {
         $entity = $this->findEntity($module, $id);
+        $this->authorizeAttachment($request, $module, $entity);
 
         $attachments = is_array($entity->attachments) ? $entity->attachments : [];
 
@@ -118,5 +121,38 @@ class AttachmentController extends Controller
         }
 
         return $entity;
+    }
+
+    /**
+     * Do not let a caller turn an entity ID into a file-read/write primitive.
+     * Modules without an attachments column are explicitly rejected until their
+     * transaction schema and ownership rule have been implemented.
+     */
+    private function authorizeAttachment(Request $request, string $module, $entity, bool $upload = false): void
+    {
+        if (! Schema::hasColumn($entity->getTable(), 'attachments')) {
+            throw ValidationException::withMessages([
+                'module' => 'Attachment belum didukung untuk modul ini.',
+            ]);
+        }
+
+        $permissions = match ($module) {
+            'expense' => $upload ? ['expense.create', 'expense.approve', 'expense.post', 'expense.pay'] : ['expense.view', 'expense.approve', 'expense.post', 'expense.pay'],
+            'pr' => ['procurement.pr.create', 'procurement.pr.update', 'procurement.pr.approve'],
+            'po' => ['procurement.po.create', 'procurement.po.approve'],
+            'grn' => ['procurement.grn.create', 'procurement.grn.view'],
+            'ap', 'invoice' => ['ap.view', 'ap.post', 'ap.pay', 'procurement.invoice.create', 'procurement.invoice.view'],
+            'journal' => ['accounting.journal.view', 'accounting.journal.create', 'accounting.journal.update'],
+            'tax' => ['tax.view', 'tax.manage'],
+            'asset' => ['asset.view', 'asset.create', 'asset.capitalize'],
+            default => [],
+        };
+        if (! $request->user()->hasAnyPermission($permissions)) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak memiliki permission untuk mengakses lampiran modul ini.');
+        }
+
+        if ($module === 'expense' && ! $request->user()->hasAnyPermission(['expense.approve', 'expense.post', 'expense.pay']) && (int) $entity->requester_id !== (int) $request->user()->id) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengakses lampiran expense milik user lain.');
+        }
     }
 }

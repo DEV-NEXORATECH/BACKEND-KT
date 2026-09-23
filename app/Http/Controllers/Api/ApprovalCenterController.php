@@ -2,6 +2,14 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Accounting\JournalController;
+use App\Http\Controllers\Api\Asset\FixedAssetController;
+use App\Http\Controllers\Api\Expense\ExpenseRequestController;
+use App\Http\Controllers\Api\Procurement\AdvancedProcurementController;
+use App\Http\Controllers\Api\Procurement\ProcurementFulfillmentController;
+use App\Http\Controllers\Api\Procurement\PurchaseRequestController;
+use App\Http\Controllers\Api\Procurement\SupplierContractNotificationController;
+use App\Http\Controllers\Api\Timesheet\TimesheetEntryController;
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
 use App\Models\Asset\FixedAsset;
@@ -16,9 +24,6 @@ use App\Models\Procurement\SupplierInvoice;
 use App\Models\Timesheet\TimesheetEntry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
-use Symfony\Component\HttpFoundation\Response;
 
 class ApprovalCenterController extends Controller
 {
@@ -42,8 +47,8 @@ class ApprovalCenterController extends Controller
                         'id' => $exp->id,
                         'module' => 'expense',
                         'module_label' => 'Expense Request',
-                        'reference_number' => $exp->number ?? 'EXP-'.$exp->id,
-                        'request_date' => $exp->date?->toDateString() ?? $exp->created_at?->toDateString(),
+                        'reference_number' => $exp->request_number ?? 'EXP-'.$exp->id,
+                        'request_date' => $exp->request_date?->toDateString() ?? $exp->created_at?->toDateString(),
                         'title_summary' => $exp->description ?? 'Pengajuan klaim expense',
                         'amount' => (float) $exp->total_amount,
                         'currency' => 'IDR',
@@ -301,7 +306,7 @@ class ApprovalCenterController extends Controller
     }
 
     /**
-     * Execute batch approve or reject actions.
+     * Execute hardened batch approve or reject actions by delegating to official domain services.
      */
     public function batchAction(Request $request): JsonResponse
     {
@@ -314,131 +319,124 @@ class ApprovalCenterController extends Controller
         ]);
 
         $action = $validated['action'];
-        $notes = $validated['notes'] ?? ($action === 'approve' ? 'Approved via Approval Center' : 'Rejected via Approval Center');
         $processedCount = 0;
         $errors = [];
 
-        DB::transaction(function () use ($validated, $action, $notes, &$processedCount, &$errors) {
-            foreach ($validated['items'] as $item) {
-                $module = $item['module'];
-                $id = $item['id'];
+        // Instantiate domain controllers for official business logic delegation
+        $expenseController = app(ExpenseRequestController::class);
+        $prController = app(PurchaseRequestController::class);
+        $fulfillmentController = app(ProcurementFulfillmentController::class);
+        $advProcurementController = app(AdvancedProcurementController::class);
+        $scnController = app(SupplierContractNotificationController::class);
+        $journalController = app(JournalController::class);
+        $timesheetController = app(TimesheetEntryController::class);
+        $assetController = app(FixedAssetController::class);
 
-                try {
-                    switch ($module) {
-                        case 'expense':
-                            $exp = ExpenseRequest::find($id);
-                            if ($exp && $exp->status === 'submitted') {
-                                $exp->update([
-                                    'status' => $action === 'approve' ? 'approved' : 'rejected',
-                                    'approved_by' => request()->user()->id,
-                                    'approved_at' => now(),
-                                    'decision_notes' => $notes,
-                                ]);
-                                $processedCount++;
+        foreach ($validated['items'] as $item) {
+            $module = $item['module'];
+            $id = $item['id'];
+
+            try {
+                switch ($module) {
+                    case 'expense':
+                        $exp = ExpenseRequest::find($id);
+                        if ($exp) {
+                            if ($action === 'approve') {
+                                $expenseController->approve($exp);
+                            } else {
+                                $expenseController->reject($request, $exp);
                             }
-                            break;
+                            $processedCount++;
+                        }
+                        break;
 
-                        case 'pr':
-                            $pr = PurchaseRequest::find($id);
-                            if ($pr && $pr->status === 'submitted') {
-                                $pr->update([
-                                    'status' => $action === 'approve' ? 'approved' : 'rejected',
-                                    'approved_by' => request()->user()->id,
-                                    'approved_at' => now(),
-                                    'decision_notes' => $notes,
-                                ]);
-                                $processedCount++;
+                    case 'pr':
+                        $pr = PurchaseRequest::find($id);
+                        if ($pr) {
+                            if ($action === 'approve') {
+                                $prController->approve($pr);
+                            } else {
+                                $prController->reject($request, $pr);
                             }
-                            break;
+                            $processedCount++;
+                        }
+                        break;
 
-                        case 'po':
-                            $po = PurchaseOrder::find($id);
-                            if ($po && in_array($po->status, ['draft', 'submitted'], true)) {
-                                $po->update([
-                                    'status' => $action === 'approve' ? 'approved' : 'cancelled',
-                                    'approved_by' => request()->user()->id,
-                                    'approved_at' => now(),
-                                    'decision_notes' => $notes,
-                                ]);
-                                $processedCount++;
+                    case 'po':
+                        $po = PurchaseOrder::find($id);
+                        if ($po) {
+                            if ($action === 'approve') {
+                                $fulfillmentController->approvePo($po);
+                            } else {
+                                $fulfillmentController->cancelPurchaseOrder($po);
                             }
-                            break;
+                            $processedCount++;
+                        }
+                        break;
 
-                        case 'cba':
-                            $cba = ComparativeBidAnalysis::find($id);
-                            if ($cba && $cba->status === 'submitted') {
-                                $cba->update([
-                                    'status' => $action === 'approve' ? 'approved' : 'rejected',
-                                    'approved_by' => request()->user()->id,
-                                    'approved_at' => now(),
-                                    'decision_notes' => $notes,
-                                ]);
-                                $processedCount++;
+                    case 'cba':
+                        $cba = ComparativeBidAnalysis::find($id);
+                        if ($cba) {
+                            if ($action === 'approve') {
+                                $advProcurementController->approveCba($cba);
                             }
-                            break;
+                            $processedCount++;
+                        }
+                        break;
 
-                        case 'scn':
-                            $scn = SupplierContractNotification::find($id);
-                            if ($scn && in_array($scn->status, ['draft', 'submitted'], true)) {
-                                $scn->update([
-                                    'status' => $action === 'approve' ? 'issued' : 'cancelled',
-                                    'issued_by' => request()->user()->id,
-                                    'issued_at' => now(),
-                                    'notes' => $notes,
-                                ]);
-                                $processedCount++;
+                    case 'scn':
+                        $scn = SupplierContractNotification::find($id);
+                        if ($scn) {
+                            if ($action === 'approve') {
+                                $scnController->issue($scn);
+                            } else {
+                                $scnController->cancel($scn);
                             }
-                            break;
+                            $processedCount++;
+                        }
+                        break;
 
-                        case 'journal':
-                            $journal = Journal::find($id);
-                            if ($journal && in_array($journal->status, ['submitted', 'reviewed'], true)) {
-                                if ($action === 'approve') {
-                                    $journal->update([
-                                        'status' => 'posted',
-                                        'posted_by' => request()->user()->id,
-                                        'posted_at' => now(),
-                                    ]);
-                                } else {
-                                    $journal->update(['status' => 'draft']);
-                                }
-                                $processedCount++;
+                    case 'journal':
+                        $journal = Journal::find($id);
+                        if ($journal) {
+                            if ($action === 'approve') {
+                                $journalController->post($journal);
+                            } else {
+                                $journal->update(['status' => 'draft']);
                             }
-                            break;
+                            $processedCount++;
+                        }
+                        break;
 
-                        case 'timesheet':
-                            $ts = TimesheetEntry::find($id);
-                            if ($ts && $ts->status === 'submitted') {
-                                $ts->update([
-                                    'status' => $action === 'approve' ? 'approved' : 'rejected',
-                                    'approved_by' => request()->user()->id,
-                                    'approved_at' => now(),
-                                    'decision_notes' => $notes,
-                                ]);
-                                $processedCount++;
+                    case 'timesheet':
+                        $ts = TimesheetEntry::find($id);
+                        if ($ts) {
+                            if ($action === 'approve') {
+                                $timesheetController->approve($ts);
+                            } else {
+                                $timesheetController->reject($request, $ts);
                             }
-                            break;
+                            $processedCount++;
+                        }
+                        break;
 
-                        case 'asset':
-                            $asset = FixedAsset::find($id);
-                            if ($asset && $asset->status === 'draft') {
-                                if ($action === 'approve') {
-                                    $asset->update(['status' => 'active']);
-                                } else {
-                                    $asset->update(['status' => 'disposed']);
-                                }
-                                $processedCount++;
+                    case 'asset':
+                        $asset = FixedAsset::find($id);
+                        if ($asset) {
+                            if ($action === 'approve') {
+                                $assetController->capitalize($asset);
                             }
-                            break;
+                            $processedCount++;
+                        }
+                        break;
 
-                        default:
-                            break;
-                    }
-                } catch (\Throwable $e) {
-                    $errors[] = "Gagal memproses {$module} ID {$id}: ".$e->getMessage();
+                    default:
+                        break;
                 }
+            } catch (\Throwable $e) {
+                $errors[] = "Gagal memproses {$module} ID {$id}: ".$e->getMessage();
             }
-        });
+        }
 
         return response()->json([
             'success' => true,
