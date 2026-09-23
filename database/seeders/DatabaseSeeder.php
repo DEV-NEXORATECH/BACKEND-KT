@@ -16,6 +16,8 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->command?->info('Seeding RBAC roles, permissions, menus, and default admin...');
+
         $roles = collect([
             ['slug' => 'super-admin', 'name' => 'SUPER ADMIN'],
             ['slug' => 'admin-system-owner', 'name' => 'ADMIN / SYSTEM OWNER'],
@@ -318,7 +320,8 @@ class DatabaseSeeder extends Seeder
             ['title' => 'Accounting', 'slug' => 'accounting', 'path' => '/accounting', 'icon' => 'accounting', 'sort_order' => 40, 'children' => [
                 ['title' => 'Journal', 'slug' => 'journal', 'path' => '/accounting/journal', 'sort_order' => 41],
                 ['title' => 'General Ledger', 'slug' => 'general-ledger', 'path' => '/accounting/general-ledger', 'sort_order' => 42],
-                ['title' => 'Chart of Accounts', 'slug' => 'accounting-chart-of-accounts', 'path' => '/accounting/chart-of-accounts', 'sort_order' => 42],
+                ['title' => 'Recurring Journal', 'slug' => 'recurring-journal', 'path' => '/accounting/recurring-journals', 'sort_order' => 423],
+                ['title' => 'Chart of Accounts', 'slug' => 'accounting-chart-of-accounts', 'path' => '/accounting/chart-of-accounts', 'sort_order' => 424],
                 ['title' => 'Accounts Payable', 'slug' => 'accounts-payable', 'path' => '/accounting/accounts-payable', 'sort_order' => 43],
                 ['title' => 'Accounts Receivable', 'slug' => 'accounts-receivable', 'path' => '/accounting/accounts-receivable', 'sort_order' => 44],
                 ['title' => 'Bank Reconciliation', 'slug' => 'bank-reconciliation', 'path' => '/accounting/bank-reconciliation', 'sort_order' => 45],
@@ -401,8 +404,13 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
+        $this->command?->info('RBAC roles, permissions, menus, and default admin seeded.');
+
         // Run Master Data Seeder
         $this->call(MasterDataSeeder::class);
         $this->call(BudgetAlertThresholdSeeder::class);
+        $this->call(DepartmentSeeder::class);
+        $this->call(MasterMenuSeeder::class);
+        $this->call(RoleSeeder::class);
     }
 }

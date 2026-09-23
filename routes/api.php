@@ -155,7 +155,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('v1/accounting')->group(function () {
         Route::get('general-ledger', [GeneralLedgerController::class, 'index'])->middleware('permission:accounting.view');
-        Route::apiResource('recurring-journals', RecurringJournalController::class)->only(['index','store'])->middleware('permission:accounting.journal.create');
+        Route::post('recurring-journals/{recurringJournal}/generate', [RecurringJournalController::class, 'generate'])
+            ->middleware('permission:accounting.journal.create');
+        Route::apiResource('recurring-journals', RecurringJournalController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->middleware('permission:accounting.journal.create');
         Route::get('journals', [JournalController::class, 'index'])->middleware('permission:accounting.journal.view');
         Route::post('journals', [JournalController::class, 'store'])->middleware('permission:accounting.journal.create');
         Route::get('journals/{journal}', [JournalController::class, 'show'])->middleware('permission:accounting.journal.view');
