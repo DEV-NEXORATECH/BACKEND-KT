@@ -28,7 +28,7 @@ class JournalController extends Controller
         $perPage = (int) $request->query('per_page', 10);
         $perPage = $perPage < 1 || $perPage > 100 ? 10 : $perPage;
 
-        $journals = Journal::query()
+        $query = Journal::query()
             ->with(['currency:id,code,name', 'lines'])
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->query('status')))
             ->when($request->filled('search'), function ($query) use ($request) {
@@ -38,8 +38,18 @@ class JournalController extends Controller
                         ->orWhere('reference', 'like', "%{$search}%")
                         ->orWhere('description', 'like', "%{$search}%");
                 });
-            })
-            ->latest('journal_date')
+            });
+
+        app(\App\Services\Rbac\DataScopeService::class)->applyScope(
+            $query,
+            $request->user(),
+            'created_by',
+            null,
+            null,
+            ['accounting.journal.view', 'accounting.journal.review', 'accounting.journal.post']
+        );
+
+        $journals = $query->latest('journal_date')
             ->latest('id')
             ->paginate($perPage);
 
@@ -85,8 +95,22 @@ class JournalController extends Controller
         ], Response::HTTP_CREATED);
     }
 
-    public function show(Journal $journal): JsonResponse
+    public function show(Request $request, Journal $journal): JsonResponse
     {
+        $query = Journal::whereKey($journal->id);
+        app(\App\Services\Rbac\DataScopeService::class)->applyScope(
+            $query,
+            $request->user(),
+            'created_by',
+            null,
+            null,
+            ['accounting.journal.view', 'accounting.journal.review', 'accounting.journal.post']
+        );
+
+        if (! $query->exists()) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengakses journal ini.');
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Detail journal berhasil dimuat.',
@@ -96,6 +120,20 @@ class JournalController extends Controller
 
     public function update(Request $request, Journal $journal): JsonResponse
     {
+        $query = Journal::whereKey($journal->id);
+        app(\App\Services\Rbac\DataScopeService::class)->applyScope(
+            $query,
+            $request->user(),
+            'created_by',
+            null,
+            null,
+            ['accounting.journal.update']
+        );
+
+        if (! $query->exists()) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengubah journal ini.');
+        }
+
         if ($journal->status !== 'draft') {
             throw ValidationException::withMessages([
                 'status' => 'Journal hanya dapat diubah saat status draft.',
@@ -123,8 +161,22 @@ class JournalController extends Controller
         ]);
     }
 
-    public function destroy(Journal $journal): JsonResponse
+    public function destroy(Request $request, Journal $journal): JsonResponse
     {
+        $query = Journal::whereKey($journal->id);
+        app(\App\Services\Rbac\DataScopeService::class)->applyScope(
+            $query,
+            $request->user(),
+            'created_by',
+            null,
+            null,
+            ['accounting.journal.delete']
+        );
+
+        if (! $query->exists()) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh menghapus journal ini.');
+        }
+
         if ($journal->status !== 'draft') {
             throw ValidationException::withMessages([
                 'status' => 'Journal hanya dapat dihapus saat status draft.',
@@ -165,13 +217,29 @@ class JournalController extends Controller
         ], 'Journal berhasil diposting.');
     }
 
-    public function reverse(Journal $journal): JsonResponse
+    public function reverse(Request $request, Journal $journal): JsonResponse
     {
         if ($journal->status !== 'posted') {
             throw ValidationException::withMessages([
                 'status' => 'Hanya journal posted yang dapat direverse.',
             ]);
         }
+
+        $query = Journal::whereKey($journal->id);
+        app(\App\Services\Rbac\DataScopeService::class)->applyScope(
+            $query,
+            $request->user(),
+            'created_by',
+            null,
+            null,
+            ['accounting.journal.reverse']
+        );
+
+        if (! $query->exists()) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mereverse journal ini.');
+        }
+
+        $this->guardOpenPeriod(now()->toDateString());
 
         $reversal = DB::transaction(function () use ($journal) {
             $reversal = Journal::query()->create([
@@ -279,8 +347,24 @@ class JournalController extends Controller
         }
     }
 
-    private function transition(Journal $journal, string $from, string $to, array $extra, string $message): JsonResponse
+    public function transition(Journal $journal, string $from, string $to, array $extra, string $message, ?Request $request = null): JsonResponse
     {
+        $request = $request ?? request();
+
+        $query = Journal::whereKey($journal->id);
+        app(\App\Services\Rbac\DataScopeService::class)->applyScope(
+            $query,
+            $request->user(),
+            'created_by',
+            null,
+            null,
+            ['accounting.journal.submit', 'accounting.journal.review', 'accounting.journal.post']
+        );
+
+        if (! $query->exists()) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengubah journal ini.');
+        }
+
         if ($journal->status !== $from) {
             throw ValidationException::withMessages([
                 'status' => "Journal harus berstatus {$from} untuk aksi ini.",

@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Api\Budget;
 
 use App\Http\Controllers\Controller;
+use App\Models\Master\BudgetLine;
 use App\Services\Budget\BudgetMonitoringService;
+use App\Services\Rbac\DataScopeService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -11,13 +14,25 @@ class BudgetMonitoringController extends Controller
 {
     public function index(Request $request, BudgetMonitoringService $service): JsonResponse
     {
-        $items = $service->summary($request->only([
+        $filters = $request->only([
             'budget_line_id',
             'project_id',
             'grant_agreement_id',
             'budget_category_id',
             'search',
-        ]));
+        ]);
+
+        $query = BudgetLine::query()
+            ->when($filters['budget_line_id'] ?? null, fn (Builder $q, $id) => $q->whereKey($id))
+            ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where('project_id', $id))
+            ->when($filters['grant_agreement_id'] ?? null, fn (Builder $q, $id) => $q->where('grant_agreement_id', $id))
+            ->when($filters['budget_category_id'] ?? null, fn (Builder $q, $id) => $q->where('budget_category_id', $id));
+
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'project_id', null, ['budget.view']);
+
+        $filters['budget_line_ids'] = $query->pluck('id')->all();
+
+        $items = $service->summary($filters);
 
         $totals = [
             'approved_budget' => round($items->sum('approved_budget'), 2),

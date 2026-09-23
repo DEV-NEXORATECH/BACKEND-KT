@@ -18,7 +18,7 @@ class TimesheetEntry extends Model
 {
     use SoftDeletes, AuditTrailTrait;
 
-    protected $fillable = ['employee_id', 'user_id', 'entry_date', 'hours', 'description', 'donor_id', 'program_id', 'project_id', 'activity_id', 'department_id', 'is_billable', 'supervisor_id', 'status', 'submitted_by', 'submitted_at', 'approved_by', 'approved_at', 'rejected_by', 'rejected_at', 'decision_notes', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['employee_id', 'user_id', 'entry_date', 'hours', 'description', 'donor_id', 'program_id', 'project_id', 'activity_id', 'department_id', 'is_billable', 'supervisor_id', 'status', 'journal_id', 'posted_by', 'posted_at', 'submitted_by', 'submitted_at', 'approved_by', 'approved_at', 'rejected_by', 'rejected_at', 'decision_notes', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'entry_date' => 'date',
@@ -27,6 +27,7 @@ class TimesheetEntry extends Model
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
+        'posted_at' => 'datetime',
     ];
 
     public function employee(): BelongsTo { return $this->belongsTo(Employee::class); }

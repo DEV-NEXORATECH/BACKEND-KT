@@ -25,6 +25,7 @@ class BudgetMonitoringService
             ->when($filters['project_id'] ?? null, fn (Builder $query, $projectId) => $query->where('project_id', $projectId))
             ->when($filters['grant_agreement_id'] ?? null, fn (Builder $query, $grantId) => $query->where('grant_agreement_id', $grantId))
             ->when($filters['budget_category_id'] ?? null, fn (Builder $query, $categoryId) => $query->where('budget_category_id', $categoryId))
+            ->when($filters['budget_line_ids'] ?? null, fn (Builder $query, array $ids) => $query->whereIn('id', $ids))
             ->when($filters['search'] ?? null, function (Builder $query, string $search) {
                 $query->where(function (Builder $inner) use ($search) {
                     $inner->where('line_code', 'like', "%{$search}%")
@@ -124,5 +125,69 @@ class BudgetMonitoringService
                 ? 'Budget tersedia untuk transaksi ini.'
                 : 'Nilai transaksi melebihi available budget.',
         ];
+    }
+
+    /**
+     * Create an open budget commitment for a given source document.
+     */
+    public function commit(int $budgetLineId, string $sourceType, ?int $sourceId, float $amount, string $reference, int $userId): BudgetCommitment
+    {
+        return BudgetCommitment::query()->updateOrCreate(
+            [
+                'source_type' => $sourceType,
+                'source_id' => $sourceId,
+                'budget_line_id' => $budgetLineId,
+            ],
+            [
+                'reference' => $reference,
+                'amount' => round($amount, 2),
+                'status' => 'open',
+                'created_by' => $userId,
+            ],
+        );
+    }
+
+    /**
+     * Flag an existing open commitment as released so the committed amount
+     * returns to the available budget.
+     */
+    public function release(BudgetCommitment $commitment, string $status = 'released', ?int $userId = null): BudgetCommitment
+    {
+        if ($commitment->status === 'open') {
+            $commitment->update([
+                'status' => $status,
+                'released_by' => $userId,
+                'released_at' => now(),
+            ]);
+        }
+
+        return $commitment;
+    }
+
+    /**
+     * Release all open commitments scoped to a source document.
+     */
+    public function releaseForSource(string $sourceType, int $sourceId, string $status = 'released', ?int $userId = null): int
+    {
+        return BudgetCommitment::query()
+            ->where('source_type', $sourceType)
+            ->where('source_id', $sourceId)
+            ->where('status', 'open')
+            ->update([
+                'status' => $status,
+                'released_by' => $userId,
+                'released_at' => now(),
+            ]);
+    }
+
+    /**
+     * Mark an open commitment as converted, meaning budget was actually
+     * consumed (actual expense has been posted against the budget line).
+     */
+    public function convert(BudgetCommitment $commitment, int $userId): BudgetCommitment
+    {
+        $this->release($commitment, 'converted', $userId);
+
+        return $commitment;
     }
 }

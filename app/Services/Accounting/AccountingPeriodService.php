@@ -6,7 +6,7 @@ use App\Models\Master\AccountingPeriod;
 use App\Services\Settings\SystemPolicyService;
 use Illuminate\Validation\ValidationException;
 
-/** Prevent financial postings from being created in a closed accounting period. */
+/** Prevent financial postings from being created in a closed accounting period or fiscal year. */
 class AccountingPeriodService
 {
     public function ensureOpen(string $date, string $field = 'transaction_date'): void
@@ -15,15 +15,27 @@ class AccountingPeriodService
             return;
         }
 
-        $isClosed = AccountingPeriod::query()
+        $period = AccountingPeriod::query()
+            ->where('status', 'closed')
+            ->whereDate('start_date', '<=', $date)
+            ->whereDate('end_date', '>=', $date)
+            ->first();
+
+        if ($period) {
+            throw ValidationException::withMessages([
+                $field => 'Tanggal transaksi berada pada accounting period yang sudah closed.',
+            ]);
+        }
+
+        $closedFiscalYear = \App\Models\Master\FiscalYear::query()
             ->where('status', 'closed')
             ->whereDate('start_date', '<=', $date)
             ->whereDate('end_date', '>=', $date)
             ->exists();
 
-        if ($isClosed) {
+        if ($closedFiscalYear) {
             throw ValidationException::withMessages([
-                $field => 'Tanggal transaksi berada pada accounting period yang sudah closed.',
+                $field => 'Tanggal transaksi berada pada fiscal year yang sudah closed.',
             ]);
         }
     }

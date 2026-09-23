@@ -7,10 +7,12 @@ use App\Models\Master\Activity;
 use App\Models\Master\Employee;
 use App\Models\Master\Project;
 use App\Models\Timesheet\TimesheetEntry;
+use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -53,6 +55,10 @@ class TimesheetEntryController extends Controller
 
         if ($activity && $project && (int) $activity->project_id !== (int) $project->id) {
             throw ValidationException::withMessages(['activity_id' => 'Activity tidak sesuai dengan project yang dipilih.']);
+        }
+
+        if (! $this->userHasPermission($request->user(), 'timesheet.approve') && $employee?->user?->id !== $request->user()->id) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh membuat timesheet untuk pegawai lain.');
         }
 
         $entry = TimesheetEntry::create([
@@ -145,13 +151,19 @@ class TimesheetEntryController extends Controller
         $postingDate = $data['posting_date'] ?? now()->toDateString();
         $defaultRate = (float) ($data['hourly_rate'] ?? 100000); // Default Rp 100.000 / jam
 
+        app(AccountingPeriodService::class)->ensureOpen($postingDate, 'posting_date');
+
         $entries = TimesheetEntry::whereIn('id', $data['timesheet_ids'])
             ->where('status', 'approved')
+            ->whereNull('journal_id')
             ->get();
 
         if ($entries->isEmpty()) {
             throw ValidationException::withMessages(['timesheet_ids' => 'Tidak ada timesheet berstatus approved yang dipilih.']);
         }
+
+        $processedIds = TimesheetEntry::whereIn('id', $data['timesheet_ids'])->pluck('id');
+        $skippedIds = $processedIds->diff($entries->pluck('id'))->values();
 
         $laborAccount = \App\Models\Master\ChartOfAccount::where('account_type', 'expense')->where('is_header', false)->first();
         $payableAccount = \App\Models\Master\ChartOfAccount::where('account_type', 'liability')->where('is_header', false)->first();
@@ -163,7 +175,7 @@ class TimesheetEntryController extends Controller
         $postedCount = 0;
         $totalCost = 0;
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($entries, $postingDate, $defaultRate, $laborAccount, $payableAccount, &$postedCount, &$totalCost) {
+        DB::transaction(function () use ($entries, $postingDate, $defaultRate, $laborAccount, $payableAccount, &$postedCount, &$totalCost, $request) {
             foreach ($entries as $entry) {
                 $cost = round((float) $entry->hours * $defaultRate, 2);
                 $journal = \App\Models\Accounting\Journal::create([
@@ -173,7 +185,7 @@ class TimesheetEntryController extends Controller
                     'reference' => 'TS-'.$entry->id,
                     'description' => 'Alokasi biaya jam kerja: '.$entry->description,
                     'status' => 'posted',
-                    'posted_by' => request()->user()->id,
+                    'posted_by' => $request->user()->id,
                     'posted_at' => now(),
                 ]);
 
@@ -197,7 +209,12 @@ class TimesheetEntryController extends Controller
                     'line_order' => 2,
                 ]);
 
-                $entry->update(['status' => 'posted']);
+                $entry->update([
+                    'status' => 'posted',
+                    'journal_id' => $journal->id,
+                    'posted_by' => $request->user()->id,
+                    'posted_at' => now(),
+                ]);
                 $postedCount++;
                 $totalCost += $cost;
             }
@@ -207,6 +224,7 @@ class TimesheetEntryController extends Controller
             'success' => true,
             'message' => "Berhasil memposting alokasi biaya tenaga kerja untuk {$postedCount} timesheet.",
             'posted_count' => $postedCount,
+            'skipped_ids' => $skippedIds->all(),
             'total_cost' => $totalCost,
         ]);
     }
@@ -249,9 +267,11 @@ class TimesheetEntryController extends Controller
             'is_billable' => $entry->is_billable,
             'supervisor' => $entry->supervisor ? ['id' => $entry->supervisor->id, 'name' => $entry->supervisor->name] : null,
             'status' => $entry->status,
+            'journal_id' => $entry->journal_id,
             'submitted_at' => $entry->submitted_at?->toIso8601String(),
             'approved_at' => $entry->approved_at?->toIso8601String(),
             'rejected_at' => $entry->rejected_at?->toIso8601String(),
+            'posted_at' => $entry->posted_at?->toIso8601String(),
             'decision_notes' => $entry->decision_notes,
         ];
     }

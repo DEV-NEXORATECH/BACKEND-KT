@@ -7,6 +7,7 @@ use App\Models\Procurement\GoodsReceipt;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
+use App\Services\Rbac\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,9 +26,11 @@ class ProcurementFulfillmentController extends Controller
         ]]);
     }
 
-    public function goodsReceipts(): JsonResponse
+    public function goodsReceipts(Request $request): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => GoodsReceipt::with('purchaseOrder:id,po_number')->latest('id')->get()->map(fn ($grn) => ['id' => $grn->id, 'grn_number' => $grn->grn_number, 'receipt_date' => $grn->receipt_date?->toDateString(), 'purchase_order' => $grn->purchaseOrder?->po_number, 'status' => $grn->status])]);
+        $query = GoodsReceipt::with('purchaseOrder:id,po_number');
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'purchaseOrder.project_id', null, ['procurement.grn.view']);
+        return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn ($grn) => ['id' => $grn->id, 'grn_number' => $grn->grn_number, 'receipt_date' => $grn->receipt_date?->toDateString(), 'purchase_order' => $grn->purchaseOrder?->po_number, 'status' => $grn->status])]);
     }
 
     public function showGoodsReceipt(GoodsReceipt $goodsReceipt): JsonResponse
@@ -57,9 +60,11 @@ class ProcurementFulfillmentController extends Controller
         return response()->json(['success' => true, 'message' => 'GRN berhasil dibatalkan.', 'data' => $this->formatGrn($goodsReceipt->fresh(['purchaseOrder:id,po_number', 'lines.purchaseOrderLine']))]);
     }
 
-    public function supplierInvoices(): JsonResponse
+    public function supplierInvoices(Request $request): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => SupplierInvoice::with(['purchaseOrder:id,po_number', 'vendor:id,code,name'])->latest('id')->get()->map(fn ($invoice) => ['id' => $invoice->id, 'invoice_number' => $invoice->invoice_number, 'invoice_date' => $invoice->invoice_date?->toDateString(), 'purchase_order' => $invoice->purchaseOrder?->po_number, 'vendor' => $invoice->vendor?->name, 'match_status' => $invoice->match_status, 'status' => $invoice->status, 'total_amount' => $invoice->total_amount])]);
+        $query = SupplierInvoice::with(['purchaseOrder:id,po_number', 'vendor:id,code,name']);
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'purchaseOrder.project_id', null, ['procurement.invoice.view', 'ap.view']);
+        return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn ($invoice) => ['id' => $invoice->id, 'invoice_number' => $invoice->invoice_number, 'invoice_date' => $invoice->invoice_date?->toDateString(), 'purchase_order' => $invoice->purchaseOrder?->po_number, 'vendor' => $invoice->vendor?->name, 'match_status' => $invoice->match_status, 'status' => $invoice->status, 'total_amount' => $invoice->total_amount])]);
     }
 
     public function showSupplierInvoice(SupplierInvoice $supplierInvoice): JsonResponse
@@ -91,11 +96,13 @@ class ProcurementFulfillmentController extends Controller
         return response()->json(['success' => true, 'message' => 'Supplier invoice berhasil dibatalkan.', 'data' => $this->formatInvoice($supplierInvoice->fresh(['purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'vendor:id,code,name', 'lines']))]);
     }
 
-    public function purchaseOrders(): JsonResponse
+    public function purchaseOrders(Request $request): JsonResponse
     {
+        $query = PurchaseOrder::with(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']);
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'purchaseRequest.project_id', null, ['procurement.po.view']);
         return response()->json([
             'success' => true,
-            'data' => PurchaseOrder::with(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines'])->latest('id')->get()->map(fn ($po) => $this->formatPo($po)),
+            'data' => $query->latest('id')->get()->map(fn ($po) => $this->formatPo($po)),
         ]);
     }
 

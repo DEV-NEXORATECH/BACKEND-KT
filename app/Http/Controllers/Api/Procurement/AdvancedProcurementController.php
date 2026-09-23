@@ -8,6 +8,7 @@ use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\Rfq;
 use App\Models\Procurement\VendorQuotation;
+use App\Services\Rbac\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,9 +17,11 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AdvancedProcurementController extends Controller
 {
-    public function rfqs(): JsonResponse
+    public function rfqs(Request $request): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => Rfq::with(['purchaseRequest:id,pr_number,status', 'vendors:id,code,name', 'quotations.vendor:id,code,name', 'cba.selectedVendor:id,code,name'])->latest('id')->get()->map(fn (Rfq $rfq) => $this->formatRfq($rfq))]);
+        $query = Rfq::with(['purchaseRequest:id,pr_number,status', 'vendors:id,code,name', 'quotations.vendor:id,code,name', 'cba.selectedVendor:id,code,name']);
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'purchaseRequest.project_id', null, ['procurement.rfq.view']);
+        return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn (Rfq $rfq) => $this->formatRfq($rfq))]);
     }
 
     public function createRfq(PurchaseRequest $purchaseRequest, Request $request): JsonResponse

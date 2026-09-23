@@ -26,7 +26,22 @@ class DataScopeService
     }
 
     /**
+     * Project ids the user is explicitly assigned to.
+     */
+    public function accessibleProjectIds(User $user): array
+    {
+        return \App\Models\ProjectAssignment::query()
+            ->where('user_id', $user->id)
+            ->where('is_active', true)
+            ->pluck('project_id')
+            ->all();
+    }
+
+    /**
      * Apply data scoping filters on an Eloquent query builder.
+     *
+     * A user sees records they own, records on projects they are explicitly
+     * assigned to, or everything when they have full-access privileges.
      */
     public function applyScope(
         Builder $query,
@@ -40,13 +55,26 @@ class DataScopeService
             return $query;
         }
 
-        // Project currently has no employee/department ownership columns. Until
-        // project assignment is modelled explicitly, owner-only is the secure
-        // fallback: it neither leaks records nor emits invalid SQL columns.
-        if ($ownerColumn === null) {
+        $projectIds = $this->accessibleProjectIds($user);
+
+        if ($ownerColumn === null && $projectColumn === null && $orgColumn === null) {
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->where($ownerColumn, $user->id);
+        $query->where(function (Builder $inner) use ($ownerColumn, $projectColumn, $user, $projectIds) {
+            if ($ownerColumn !== null) {
+                $inner->orWhere($ownerColumn, $user->id);
+            }
+
+            if ($projectColumn !== null && ! empty($projectIds)) {
+                $inner->orWhereIn($projectColumn, $projectIds);
+            }
+        });
+
+        if ($ownerColumn === null && ($projectColumn === null || empty($projectIds))) {
+            $query->whereRaw('1 = 0');
+        }
+
+        return $query;
     }
 }

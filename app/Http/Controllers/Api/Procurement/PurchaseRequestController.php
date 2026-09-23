@@ -165,21 +165,37 @@ class PurchaseRequestController extends Controller
                 'status' => 'Purchase request harus berstatus submitted untuk approval.',
             ]);
         }
+
+        $aggregated = $purchaseRequest->lines
+            ->groupBy('budget_line_id')
+            ->map(fn ($lines) => round((float) $lines->sum('total_amount'), 2));
+
+        foreach ($aggregated as $budgetLineId => $amount) {
+            $ownCommitted = (float) BudgetCommitment::query()
+                ->where('source_type', PurchaseRequest::class)
+                ->where('source_id', $purchaseRequest->id)
+                ->where('budget_line_id', $budgetLineId)
+                ->where('status', 'open')
+                ->sum('amount');
+
+            $netAmount = round($amount - $ownCommitted, 2);
+            if ($netAmount <= 0) {
+                continue;
+            }
+            $validation = $budgetService->validate($budgetLineId, $netAmount);
+            if (! $validation['allowed'] && $policies->blocksOverBudget()) {
+                throw ValidationException::withMessages([
+                    'budget_line_id' => "Budget line {$budgetLineId}: {$validation['message']}",
+                ]);
+            }
+        }
+
         $approval = $workflow->approve('procurement', $purchaseRequest, $request->user(), $request->input('notes'));
         if ($approval['managed'] && ! $approval['completed']) {
             return response()->json(['success' => true, 'message' => "Approval tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($purchaseRequest->fresh()->load($this->with))]);
         }
 
-        foreach ($purchaseRequest->lines as $line) {
-            $validation = $budgetService->validate($line->budget_line_id, (float) $line->total_amount);
-            if (! $validation['allowed'] && $policies->blocksOverBudget()) {
-                throw ValidationException::withMessages([
-                    'budget_line_id' => "{$line->item_description}: {$validation['message']}",
-                ]);
-            }
-        }
-
-        $purchaseRequest = DB::transaction(function () use ($purchaseRequest) {
+        $purchaseRequest = DB::transaction(function () use ($purchaseRequest, $aggregated) {
             $purchaseRequest->update([
                 'status' => 'approved',
                 'approved_by' => request()->user()->id,
@@ -187,16 +203,16 @@ class PurchaseRequestController extends Controller
                 'decision_notes' => request('notes'),
             ]);
 
-            foreach ($purchaseRequest->lines as $line) {
+            foreach ($aggregated as $budgetLineId => $amount) {
                 BudgetCommitment::query()->updateOrCreate(
                     [
                         'source_type' => PurchaseRequest::class,
                         'source_id' => $purchaseRequest->id,
-                        'budget_line_id' => $line->budget_line_id,
+                        'budget_line_id' => $budgetLineId,
                     ],
                     [
                         'reference' => $purchaseRequest->pr_number,
-                        'amount' => $line->total_amount,
+                        'amount' => $amount,
                         'status' => 'open',
                         'created_by' => request()->user()->id,
                     ],

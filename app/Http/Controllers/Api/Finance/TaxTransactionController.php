@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\Finance;
 use App\Http\Controllers\Controller;
 use App\Models\Finance\TaxTransaction;
 use App\Models\Master\Tax;
+use App\Services\Accounting\AccountingPeriodService;
+use App\Services\Rbac\DataScopeService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -44,13 +46,16 @@ class TaxTransactionController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $items = TaxTransaction::query()
+        $query = TaxTransaction::query()
             ->with('tax:id,code,name,tax_type,rate_percent')
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
             ->when($request->filled('tax_id'), fn (Builder $query) => $query->where('tax_id', $request->integer('tax_id')))
-            ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
-            ->latest('transaction_date')
+            ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')));
+
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, ['tax.manage']);
+
+        $items = $query->latest('transaction_date')
             ->latest('id')
             ->get();
 
@@ -75,6 +80,8 @@ class TaxTransactionController extends Controller
             'status' => ['nullable', 'in:draft,reported,cancelled'],
             'notes' => ['nullable', 'string'],
         ]);
+
+        app(AccountingPeriodService::class)->ensureOpen($data['transaction_date'], 'transaction_date');
 
         $tax = Tax::findOrFail($data['tax_id']);
         $calculation = $this->calculateTax($tax, (float) $data['amount'], (bool) ($data['is_inclusive'] ?? false), $data['direction']);
@@ -107,13 +114,16 @@ class TaxTransactionController extends Controller
      */
     public function exportDjp(Request $request): StreamedResponse
     {
-        $items = TaxTransaction::query()
+        $query = TaxTransaction::query()
             ->with('tax:id,code,name,tax_type,rate_percent')
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
             ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
-            ->where('status', '!=', 'cancelled')
-            ->orderBy('transaction_date')
+            ->where('status', '!=', 'cancelled');
+
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, ['tax.manage']);
+
+        $items = $query->orderBy('transaction_date')
             ->get();
 
         $filename = 'djp_export_' . now()->format('Ymd_His') . '.csv';
@@ -163,12 +173,15 @@ class TaxTransactionController extends Controller
 
     public function report(Request $request): JsonResponse
     {
-        $items = TaxTransaction::query()
+        $query = TaxTransaction::query()
             ->with('tax:id,code,name,tax_type,rate_percent')
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
-            ->where('status', '!=', 'cancelled')
-            ->get();
+            ->where('status', '!=', 'cancelled');
+
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, ['tax.manage']);
+
+        $items = $query->get();
 
         $byType = $items->groupBy(fn (TaxTransaction $item) => $item->tax?->tax_type ?? 'unknown')
             ->map(fn ($rows, string $type) => [

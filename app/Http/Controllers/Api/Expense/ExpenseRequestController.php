@@ -122,20 +122,41 @@ class ExpenseRequestController extends Controller
             return response()->json(['success' => true, 'message' => "Approval tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
         }
 
-        foreach ($expenseRequest->lines as $line) {
-            if ($line->budget_line_id) {
-                $validation = $budgetService->validate($line->budget_line_id, (float) $line->amount);
-                if (! $validation['allowed'] && $policies->blocksOverBudget()) {
-                    throw ValidationException::withMessages(['budget_line_id' => "{$line->description}: {$validation['message']}"]);
-                }
+        $aggregated = $expenseRequest->lines
+            ->where('budget_line_id')
+            ->groupBy('budget_line_id')
+            ->map(fn ($lines) => round((float) $lines->sum('amount'), 2));
+
+        foreach ($aggregated as $budgetLineId => $amount) {
+            $validation = $budgetService->validate($budgetLineId, $amount);
+            if (! $validation['allowed'] && $policies->blocksOverBudget()) {
+                throw ValidationException::withMessages(['budget_line_id' => "Budget line {$budgetLineId}: {$validation['message']}"]);
             }
         }
 
-        return $this->transition($expenseRequest, 'submitted', 'approved', [
+        $expense = $this->transition($expenseRequest, 'submitted', 'approved', [
             'approved_by' => request()->user()->id,
             'approved_at' => now(),
             'decision_notes' => request('notes'),
         ], 'Expense request berhasil diapprove.');
+
+        DB::transaction(function () use ($expenseRequest, $budgetService, $request) {
+            foreach ($expenseRequest->lines as $line) {
+                if (! $line->budget_line_id) {
+                    continue;
+                }
+                $budgetService->commit(
+                    $line->budget_line_id,
+                    ExpenseRequest::class,
+                    $expenseRequest->id,
+                    (float) $line->amount,
+                    $expenseRequest->request_number,
+                    $request->user()->id,
+                );
+            }
+        });
+
+        return $expense;
     }
 
     public function reject(Request $request, ExpenseRequest $expenseRequest): JsonResponse
@@ -147,14 +168,16 @@ class ExpenseRequestController extends Controller
         if (! in_array($expenseRequest->status, ['submitted', 'approved'], true)) {
             throw ValidationException::withMessages(['status' => 'Expense tidak dapat direject dari status saat ini.']);
         }
-        app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request->user(), $data['notes']);
+app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request->user(), $data['notes']);
 
         $expenseRequest->update([
             'status' => 'rejected',
-            'rejected_by' => request()->user()->id,
+            'rejected_by' => $request->user()->id,
             'rejected_at' => now(),
             'decision_notes' => $data['notes'],
         ]);
+        app(\App\Services\Budget\BudgetMonitoringService::class)
+            ->releaseForSource(ExpenseRequest::class, $expenseRequest->id, 'released', $request->user()->id);
         Notification::create(['user_id' => null, 'title' => 'Expense ditolak', 'message' => "{$expenseRequest->request_number}: {$data['notes']}", 'type' => 'alert', 'action_url' => '/expenses-approvals/expenses']);
 
         return response()->json(['success' => true, 'message' => 'Expense request berhasil direject.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
@@ -223,6 +246,9 @@ class ExpenseRequestController extends Controller
             ]);
 
             $expenseRequest->update(['status' => 'posted', 'journal_id' => $journal->id]);
+
+            app(\App\Services\Budget\BudgetMonitoringService::class)
+                ->releaseForSource(ExpenseRequest::class, $expenseRequest->id, 'converted', request()->user()->id);
 
             return $expenseRequest->fresh($this->with);
         });

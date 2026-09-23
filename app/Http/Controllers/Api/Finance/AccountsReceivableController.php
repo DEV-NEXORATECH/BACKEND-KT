@@ -126,7 +126,8 @@ class AccountsReceivableController extends Controller
                 }
                 $journal->lines()->create([
                     'account_id' => $revenue->id,
-                    'budget_line_id' => $line->budget_line_id,
+                    // Revenue represents income, not budget consumption; do not
+                    // attach budget_line_id so it never inflates/deflates budget actuals.
                     'line_description' => $line->description,
                     'debit' => 0,
                     'credit' => $line->total_amount,

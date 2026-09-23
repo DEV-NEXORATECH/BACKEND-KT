@@ -97,6 +97,19 @@ class AccountsPayableController extends Controller
                 'posted_at' => now(),
             ]);
 
+            // Budget is now consumed by actual expense; convert and release the
+            // source PR commitment to prevent double counting in available budget.
+            $purchaseRequestId = $supplierInvoice->purchaseOrder?->purchase_request_id;
+            if ($purchaseRequestId) {
+                app(\App\Services\Budget\BudgetMonitoringService::class)
+                    ->releaseForSource(
+                        \App\Models\Procurement\PurchaseRequest::class,
+                        $purchaseRequestId,
+                        'converted',
+                        request()->user()->id,
+                    );
+            }
+
             return $supplierInvoice->fresh(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines']);
         });
 
@@ -232,14 +245,56 @@ class AccountsPayableController extends Controller
 
     public function reconcileBankTransaction(Request $request, BankTransaction $bankTransaction): JsonResponse
     {
+        $query = BankTransaction::whereKey($bankTransaction->id);
+        if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
+            $query->whereHas('payment', fn ($payment) => $payment->where('created_by', $request->user()->id));
+        }
+        if (! $query->exists()) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh merekonsiliasi transaksi bank ini.');
+        }
+
         $data = $request->validate(['status' => ['required', 'in:matched,excluded,reconciled,unmatched']]);
+        $previous = ['status' => $bankTransaction->status];
         $bankTransaction->update(['status' => $data['status']]);
+        \App\Models\AuditLog::create([
+            'user_id' => $request->user()->id,
+            'module' => 'banking',
+            'platform' => strtolower($request->header('X-Client-Platform', 'web')),
+            'action' => 'RECONCILE',
+            'entity_type' => BankTransaction::class,
+            'entity_id' => $bankTransaction->id,
+            'previous_values' => $previous,
+            'new_values' => ['status' => $data['status']],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
         return response()->json(['success' => true, 'message' => 'Status rekonsiliasi diperbarui.', 'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number'])]);
     }
 
-    public function unmatchBankTransaction(BankTransaction $bankTransaction): JsonResponse
+    public function unmatchBankTransaction(Request $request, BankTransaction $bankTransaction): JsonResponse
     {
+        $query = BankTransaction::whereKey($bankTransaction->id);
+        if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
+            $query->whereHas('payment', fn ($payment) => $payment->where('created_by', $request->user()->id));
+        }
+        if (! $query->exists()) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh membatalkan rekonsiliasi transaksi bank ini.');
+        }
+
+        $previous = ['status' => $bankTransaction->status];
         $bankTransaction->update(['status' => 'unmatched']);
+        \App\Models\AuditLog::create([
+            'user_id' => $request->user()->id,
+            'module' => 'banking',
+            'platform' => strtolower($request->header('X-Client-Platform', 'web')),
+            'action' => 'UNMATCH',
+            'entity_type' => BankTransaction::class,
+            'entity_id' => $bankTransaction->id,
+            'previous_values' => $previous,
+            'new_values' => ['status' => 'unmatched'],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
         return response()->json([
             'success' => true,
             'message' => 'Rekonsiliasi bank berhasil dibatalkan.',
