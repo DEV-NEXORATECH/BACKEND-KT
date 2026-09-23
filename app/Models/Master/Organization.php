@@ -14,7 +14,7 @@ class Organization extends Model
 
     protected $table = 'organizations';
 
-    protected $fillable = ['code', 'name', 'legal_name', 'npwp', 'address', 'base_currency_id', 'fiscal_year_start_month', 'logo_url', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'name', 'legal_name', 'npwp', 'email', 'website', 'pass_code', 'address', 'base_currency_id', 'fiscal_year_start_month', 'logo_url', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',

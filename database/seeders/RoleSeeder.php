@@ -141,6 +141,7 @@ class RoleSeeder extends Seeder
                 ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'path' => '/master-data', 'sort_order' => 19, 'children' => [
                     ['title' => 'Budget Categories', 'slug' => 'master-budget-categories', 'path' => '/master-data/budget-categories', 'sort_order' => 193],
                     ['title' => 'Budget Templates / Lines', 'slug' => 'master-budget-templates', 'path' => '/master-data/budget-lines', 'sort_order' => 194],
+                    ['title' => 'Reporting Categories', 'slug' => 'master-reporting-categories', 'path' => '/master-data/reporting-categories', 'sort_order' => 195],
                     ['title' => 'Reporting Dimensions', 'slug' => 'master-reporting-dimensions', 'path' => '/master-data/reporting-dimensions', 'sort_order' => 191],
                 ]],
                 ['title' => 'Expenses & Assets', 'slug' => 'master-expenses-assets', 'path' => '/master-data', 'sort_order' => 20, 'children' => [
@@ -156,53 +157,92 @@ class RoleSeeder extends Seeder
                     ['title' => 'Procurement Categories', 'slug' => 'master-procurement-categories', 'path' => '/master-data/procurement-categories', 'sort_order' => 215],
                 ]],
             ]],
-            ['title' => 'Funding & Projects', 'slug' => 'funding-projects', 'path' => '/funding-projects', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
-                ['title' => 'Donor & Grant', 'slug' => 'funding-donor-grant', 'path' => '/funding-projects/donor-grant', 'sort_order' => 21],
-                ['title' => 'Program/Project', 'slug' => 'funding-program-project', 'path' => '/funding-projects/program-project', 'sort_order' => 22],
-                ['title' => 'Budget', 'slug' => 'funding-budget', 'path' => '/funding-projects/budget', 'sort_order' => 23],
+            ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/donor-grant', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
+                ['title' => 'Dashboard', 'slug' => 'donor-grant-dashboard', 'path' => '/donor-grant/dashboard', 'sort_order' => 21],
+                ['title' => 'Donors', 'slug' => 'donor-grant-donors', 'path' => '/donor-grant/donors', 'sort_order' => 22],
+                ['title' => 'Programs / Projects', 'slug' => 'donor-grant-programs-projects', 'path' => '/donor-grant/programs-projects', 'sort_order' => 23],
+                ['title' => 'Grants', 'slug' => 'donor-grant-grants', 'path' => '/donor-grant/grants', 'sort_order' => 24],
+                ['title' => 'Budget', 'slug' => 'donor-grant-budget', 'path' => '/donor-grant/budget', 'sort_order' => 25],
+                ['title' => 'Budget Monitoring', 'slug' => 'donor-grant-budget-monitoring', 'path' => '/donor-grant/budget-monitoring', 'sort_order' => 26],
+                ['title' => 'Grant Reporting', 'slug' => 'donor-grant-reporting', 'path' => '/donor-grant/reporting', 'sort_order' => 27],
             ]],
             ['title' => 'Expenses & Approvals', 'slug' => 'expenses-approvals', 'path' => '/expenses-approvals', 'icon' => 'wallet', 'sort_order' => 30, 'children' => [
-                ['title' => 'Expenses', 'slug' => 'expenses', 'path' => '/expenses-approvals/expenses', 'sort_order' => 31],
-                ['title' => 'Cash Advance', 'slug' => 'cash-advance', 'path' => '/expenses-approvals/cash-advance', 'sort_order' => 32],
-                ['title' => 'Reimbursement', 'slug' => 'reimbursement', 'path' => '/expenses-approvals/reimbursement', 'sort_order' => 33],
-                ['title' => 'Approvals', 'slug' => 'approvals', 'path' => '/expenses-approvals/approvals', 'sort_order' => 34],
-                ['title' => 'Timesheet', 'slug' => 'timesheet', 'path' => '/expenses-approvals/timesheet', 'sort_order' => 35],
+                ['title' => 'Dashboard', 'slug' => 'expenses-dashboard', 'path' => '/expenses-approvals/dashboard', 'sort_order' => 30],
+                ['title' => 'Expense Requests', 'slug' => 'expense-requests', 'path' => '/expenses-approvals/requests', 'sort_order' => 31],
+                ['title' => 'Reimbursements', 'slug' => 'reimbursements', 'path' => '/expenses-approvals/reimbursements', 'sort_order' => 32],
+                ['title' => 'Cash Advances', 'slug' => 'cash-advances', 'path' => '/expenses-approvals/cash-advances', 'sort_order' => 33],
+                ['title' => 'Settlement', 'slug' => 'settlement', 'path' => '/expenses-approvals/settlement', 'sort_order' => 34],
+                ['title' => 'Approval Center', 'slug' => 'approval-center', 'path' => '/expenses-approvals/approvals', 'sort_order' => 35],
+                ['title' => 'Finance Verification', 'slug' => 'finance-verification', 'path' => '/expenses-approvals/finance-verification', 'sort_order' => 36],
+                ['title' => 'Payment Processing', 'slug' => 'payment-processing', 'path' => '/expenses-approvals/payment-processing', 'sort_order' => 37],
+                ['title' => 'Expense Monitoring', 'slug' => 'expense-monitoring', 'path' => '/expenses-approvals/monitoring', 'sort_order' => 38],
             ]],
             ['title' => 'Accounting', 'slug' => 'accounting', 'path' => '/accounting', 'icon' => 'accounting', 'sort_order' => 40, 'children' => [
-                ['title' => 'Journal', 'slug' => 'journal', 'path' => '/accounting/journal', 'sort_order' => 41],
-                ['title' => 'Recurring Journal', 'slug' => 'recurring-journal', 'path' => '/accounting/recurring-journals', 'sort_order' => 415],
-                ['title' => 'Chart of Accounts', 'slug' => 'accounting-chart-of-accounts', 'path' => '/accounting/chart-of-accounts', 'sort_order' => 42],
-                ['title' => 'Accounts Payable', 'slug' => 'accounts-payable', 'path' => '/accounting/accounts-payable', 'sort_order' => 43],
-                ['title' => 'Accounts Receivable', 'slug' => 'accounts-receivable', 'path' => '/accounting/accounts-receivable', 'sort_order' => 44],
-                ['title' => 'Bank Reconciliation', 'slug' => 'bank-reconciliation', 'path' => '/accounting/bank-reconciliation', 'sort_order' => 45],
-                ['title' => 'Tax', 'slug' => 'accounting-tax', 'path' => '/accounting/tax', 'sort_order' => 46],
-                ['title' => 'Fixed Assets', 'slug' => 'fixed-assets', 'path' => '/accounting/fixed-assets', 'sort_order' => 47],
+                ['title' => 'Dashboard', 'slug' => 'accounting-dashboard', 'path' => '/accounting/dashboard', 'sort_order' => 40],
+                ['title' => 'Chart of Accounts', 'slug' => 'accounting-chart-of-accounts', 'path' => '/accounting/chart-of-accounts', 'sort_order' => 41],
+                ['title' => 'Journal', 'slug' => 'journal', 'path' => '/accounting/journal', 'sort_order' => 42],
+                ['title' => 'General Ledger', 'slug' => 'general-ledger', 'path' => '/accounting/general-ledger', 'sort_order' => 43],
+                ['title' => 'Accounts Payable', 'slug' => 'accounts-payable', 'path' => '/accounting/accounts-payable', 'sort_order' => 44],
+                ['title' => 'Accounts Receivable', 'slug' => 'accounts-receivable', 'path' => '/accounting/accounts-receivable', 'sort_order' => 45],
+                ['title' => 'Banking', 'slug' => 'banking', 'path' => '/accounting/banking', 'sort_order' => 46],
+                ['title' => 'Bank Reconciliation', 'slug' => 'bank-reconciliation', 'path' => '/accounting/bank-reconciliation', 'sort_order' => 47],
+                ['title' => 'Fixed Assets', 'slug' => 'fixed-assets', 'path' => '/accounting/fixed-assets', 'sort_order' => 48],
+                ['title' => 'Period Closing', 'slug' => 'period-closing', 'path' => '/accounting/period-closing', 'sort_order' => 49],
             ]],
-            ['title' => 'Tax Calculator', 'slug' => 'tax-calculator', 'path' => '/tax-calculator', 'icon' => 'calculator', 'sort_order' => 48],
+            ['title' => 'Taxes', 'slug' => 'taxes', 'path' => '/taxes', 'icon' => 'calculator', 'sort_order' => 50, 'children' => [
+                ['title' => 'Dashboard', 'slug' => 'taxes-dashboard', 'path' => '/taxes/dashboard', 'sort_order' => 501],
+                ['title' => 'Tax Transactions', 'slug' => 'taxes-transactions', 'path' => '/taxes/transactions', 'sort_order' => 502],
+                ['title' => 'PPh', 'slug' => 'taxes-pph', 'path' => '/taxes/pph', 'sort_order' => 503],
+                ['title' => 'VAT / PPN', 'slug' => 'taxes-vat', 'path' => '/taxes/vat', 'sort_order' => 504],
+                ['title' => 'e-Bupot', 'slug' => 'taxes-ebupot', 'path' => '/taxes/e-bupot', 'sort_order' => 505],
+                ['title' => 'e-Faktur', 'slug' => 'taxes-efaktur', 'path' => '/taxes/e-faktur', 'sort_order' => 506],
+                ['title' => 'Tax Calendar', 'slug' => 'taxes-calendar', 'path' => '/taxes/calendar', 'sort_order' => 507],
+                ['title' => 'Tax Reports', 'slug' => 'taxes-reports', 'path' => '/taxes/reports', 'sort_order' => 508],
+            ]],
             ['title' => 'Procurement', 'slug' => 'procurement', 'path' => '/procurement', 'icon' => 'briefcase', 'sort_order' => 49, 'children' => [
+                ['title' => 'Dashboard', 'slug' => 'procurement-dashboard', 'path' => '/procurement/dashboard', 'sort_order' => 490],
                 ['title' => 'Purchase Request', 'slug' => 'procurement-purchase-request', 'path' => '/procurement/purchase-requests', 'sort_order' => 491],
                 ['title' => 'RFQ & CBA', 'slug' => 'procurement-rfq-cba', 'path' => '/procurement/rfq-cba', 'sort_order' => 492],
-                ['title' => 'Supplier Contract Notification', 'slug' => 'procurement-scn', 'path' => '/procurement/scn', 'sort_order' => 493],
-                ['title' => 'Vendors', 'slug' => 'procurement-vendors', 'path' => '/master-data/vendors', 'sort_order' => 494],
-                ['title' => 'Purchase Orders', 'slug' => 'procurement-purchase-orders', 'path' => '/procurement/purchase-orders', 'sort_order' => 495],
-                ['title' => 'Goods Receipts', 'slug' => 'procurement-goods-receipts', 'path' => '/procurement/goods-receipts', 'sort_order' => 496],
-                ['title' => 'Supplier Invoices', 'slug' => 'procurement-supplier-invoices', 'path' => '/procurement/supplier-invoices', 'sort_order' => 497],
+                ['title' => 'Vendors', 'slug' => 'procurement-vendors', 'path' => '/master-data/vendors', 'sort_order' => 493],
+                ['title' => 'Purchase Orders', 'slug' => 'procurement-purchase-orders', 'path' => '/procurement/purchase-orders', 'sort_order' => 494],
+                ['title' => 'Contracts', 'slug' => 'procurement-contracts', 'path' => '/procurement/contracts', 'sort_order' => 495],
+                ['title' => 'Supplier Contract Notification', 'slug' => 'procurement-scn', 'path' => '/procurement/scn', 'sort_order' => 496],
+                ['title' => 'Goods Receipts', 'slug' => 'procurement-goods-receipts', 'path' => '/procurement/goods-receipts', 'sort_order' => 497],
+                ['title' => 'Supplier Invoices', 'slug' => 'procurement-supplier-invoices', 'path' => '/procurement/supplier-invoices', 'sort_order' => 498],
+                ['title' => 'Waiver & Justification', 'slug' => 'procurement-waivers', 'path' => '/procurement/waivers', 'sort_order' => 499],
             ]],
-            ['title' => 'HR & Administration', 'slug' => 'hr-administration', 'path' => '/administration', 'icon' => 'admin', 'sort_order' => 55, 'children' => [
-                ['title' => 'Employees', 'slug' => 'hr-employees', 'path' => '/master-data/employees', 'sort_order' => 551],
-                ['title' => 'Departments', 'slug' => 'hr-departments', 'path' => '/master-data/departments', 'sort_order' => 552],
-                ['title' => 'Office Locations', 'slug' => 'hr-office-locations', 'path' => '/master-data/office-locations', 'sort_order' => 553],
-                ['title' => 'Role Access', 'slug' => 'hr-role-access', 'path' => '/administration/role-access', 'sort_order' => 554],
-                ['title' => 'Approval Matrix', 'slug' => 'hr-approval-matrix', 'path' => '/administration/approval-matrix', 'sort_order' => 555],
-                ['title' => 'Audit Log', 'slug' => 'hr-audit-log', 'path' => '/administration/audit-logs', 'sort_order' => 556],
-                ['title' => 'Master Menu', 'slug' => 'hr-master-menu', 'path' => '/administration/master-menu', 'sort_order' => 557],
+            ['title' => 'Timesheet', 'slug' => 'timesheet', 'path' => '/timesheet', 'icon' => 'clock', 'sort_order' => 52, 'children' => [
+                ['title' => 'Dashboard', 'slug' => 'timesheet-dashboard', 'path' => '/timesheet/dashboard', 'sort_order' => 521],
+                ['title' => 'My Timesheet', 'slug' => 'timesheet-my', 'path' => '/timesheet/my-timesheet', 'sort_order' => 522],
+                ['title' => 'Team Timesheet', 'slug' => 'timesheet-team', 'path' => '/timesheet/team-timesheet', 'sort_order' => 523],
+                ['title' => 'Project Timesheet', 'slug' => 'timesheet-project', 'path' => '/timesheet/project-timesheet', 'sort_order' => 524],
+                ['title' => 'Approval', 'slug' => 'timesheet-approval', 'path' => '/timesheet/approval', 'sort_order' => 525],
+                ['title' => 'Reports', 'slug' => 'timesheet-reports', 'path' => '/timesheet/reports', 'sort_order' => 526],
             ]],
-            ['title' => 'Reports', 'slug' => 'reports', 'path' => '/reports', 'icon' => 'reports', 'sort_order' => 50, 'children' => [
-                ['title' => 'Reports Summary', 'slug' => 'reports-summary', 'path' => '/reports', 'sort_order' => 501],
-                ['title' => 'Expense Forecast', 'slug' => 'reports-forecast', 'path' => '/reports/forecast', 'sort_order' => 502],
-                ['title' => 'Custom Report Builder', 'slug' => 'reports-custom', 'path' => '/reports/custom', 'sort_order' => 503],
+            ['title' => 'Reports', 'slug' => 'reports', 'path' => '/reports', 'icon' => 'reports', 'sort_order' => 55, 'children' => [
+                ['title' => 'Financial Reports', 'slug' => 'reports-financial', 'path' => '/reports/financial', 'sort_order' => 551],
+                ['title' => 'Budget Reports', 'slug' => 'reports-budget', 'path' => '/reports/budget', 'sort_order' => 552],
+                ['title' => 'Donor / Grant Reports', 'slug' => 'reports-donor-grant', 'path' => '/reports/donor-grant', 'sort_order' => 553],
+                ['title' => 'Project Reports', 'slug' => 'reports-project', 'path' => '/reports/project', 'sort_order' => 554],
+                ['title' => 'Procurement Reports', 'slug' => 'reports-procurement', 'path' => '/reports/procurement', 'sort_order' => 555],
+                ['title' => 'Tax Reports', 'slug' => 'reports-tax', 'path' => '/reports/tax', 'sort_order' => 556],
+                ['title' => 'Management Reports', 'slug' => 'reports-management', 'path' => '/reports/management', 'sort_order' => 557],
             ]],
-            ['title' => 'Settings', 'slug' => 'settings', 'path' => '/settings', 'icon' => 'settings', 'sort_order' => 70],
+            ['title' => 'Administration', 'slug' => 'administration', 'path' => '/administration', 'icon' => 'admin', 'sort_order' => 60, 'children' => [
+                ['title' => 'Staff', 'slug' => 'admin-staff', 'path' => '/administration/staff', 'sort_order' => 601],
+                ['title' => 'Organization', 'slug' => 'admin-organization', 'path' => '/administration/organization', 'sort_order' => 602],
+                ['title' => 'Department', 'slug' => 'admin-department', 'path' => '/administration/department', 'sort_order' => 603],
+                ['title' => 'Documents', 'slug' => 'admin-documents', 'path' => '/administration/documents', 'sort_order' => 604],
+                ['title' => 'Contracts', 'slug' => 'admin-contracts', 'path' => '/administration/contracts', 'sort_order' => 605],
+            ]],
+            ['title' => 'Settings', 'slug' => 'settings', 'path' => '/settings', 'icon' => 'settings', 'sort_order' => 70, 'children' => [
+                ['title' => 'Users', 'slug' => 'settings-users', 'path' => '/settings/users', 'sort_order' => 701],
+                ['title' => 'Roles & Permissions', 'slug' => 'settings-roles-permissions', 'path' => '/settings/roles-permissions', 'sort_order' => 702],
+                ['title' => 'Approval Workflow', 'slug' => 'settings-approval-workflow', 'path' => '/settings/approval-workflow', 'sort_order' => 703],
+                ['title' => 'System Settings', 'slug' => 'settings-system', 'path' => '/settings/system', 'sort_order' => 704],
+                ['title' => 'Integrations', 'slug' => 'settings-integrations', 'path' => '/settings/integrations', 'sort_order' => 705],
+                ['title' => 'Notifications', 'slug' => 'settings-notifications', 'path' => '/settings/notifications', 'sort_order' => 706],
+            ]],
         ];
 
         $persistMenu = function (array $definition, ?int $parentId = null) use (&$persistMenu): void {
@@ -222,7 +262,7 @@ class RoleSeeder extends Seeder
         }
 
         // Clean up legacy menu entries so they cannot reappear under Master Data.
-        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-reporting-categories', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types'])
+        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'tax-calculator', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom'])
             ->update(['is_active' => false]);
 
         // 3. Define Menu Groups mapping for ease of assignment
@@ -232,36 +272,36 @@ class RoleSeeder extends Seeder
                 'master-data', 'master-organization-structure', 'master-organizations', 'master-office-locations', 'master-departments', 'master-positions', 'master-employees',
                 'master-finance-accounting', 'master-chart-of-accounts', 'master-account-categories', 'master-bank-accounts', 'master-payment-methods', 'master-fx-rates', 'master-currencies', 'master-fiscal-years', 'master-accounting-periods', 'master-taxes',
                 'master-funding-projects', 'master-donors', 'master-grant-agreements', 'master-programs', 'master-projects', 'master-activities', 'master-budget-codes', 'master-sof',
-                'master-budget-reporting', 'master-budget-categories', 'master-budget-templates', 'master-reporting-dimensions',
+                'master-budget-reporting', 'master-budget-categories', 'master-budget-templates', 'master-reporting-categories', 'master-reporting-dimensions',
                 'master-expenses-assets', 'master-expense-categories', 'master-expense-types', 'master-asset-categories',
                 'master-procurement', 'master-vendors', 'master-vendor-categories', 'master-items-services', 'master-unit-of-measures', 'master-procurement-categories',
             ],
             'Accounting' => [
-                'accounting', 'journal', 'accounting-chart-of-accounts', 'accounts-payable', 'accounts-receivable', 'bank-reconciliation', 'accounting-tax', 'fixed-assets',
+                'accounting', 'accounting-dashboard', 'accounting-chart-of-accounts', 'journal', 'general-ledger', 'accounts-payable', 'accounts-receivable', 'banking', 'bank-reconciliation', 'fixed-assets', 'period-closing',
             ],
             'Donor / Grant' => [
-                'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget',
+                'donor-grant', 'donor-grant-dashboard', 'donor-grant-donors', 'donor-grant-programs-projects', 'donor-grant-grants', 'donor-grant-budget', 'donor-grant-budget-monitoring', 'donor-grant-reporting',
             ],
             'Expenses / Approval' => [
-                'expenses-approvals', 'expenses', 'cash-advance', 'reimbursement', 'approvals',
+                'expenses-approvals', 'expenses-dashboard', 'expense-requests', 'reimbursements', 'cash-advances', 'settlement', 'approval-center', 'finance-verification', 'payment-processing', 'expense-monitoring',
             ],
             'Timesheet' => [
-                'timesheet',
+                'timesheet', 'timesheet-dashboard', 'timesheet-my', 'timesheet-team', 'timesheet-project', 'timesheet-approval', 'timesheet-reports',
             ],
             'Procurement' => [
-                'procurement', 'procurement-purchase-request', 'procurement-rfq-cba', 'procurement-scn', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-goods-receipts', 'procurement-supplier-invoices',
+                'procurement', 'procurement-dashboard', 'procurement-purchase-request', 'procurement-rfq-cba', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-contracts', 'procurement-scn', 'procurement-goods-receipts', 'procurement-supplier-invoices', 'procurement-waivers',
             ],
             'Taxes' => [
-                'tax-calculator',
+                'taxes', 'taxes-dashboard', 'taxes-transactions', 'taxes-pph', 'taxes-vat', 'taxes-ebupot', 'taxes-efaktur', 'taxes-calendar', 'taxes-reports',
             ],
             'Administration' => [
-                'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu',
+                'administration', 'admin-staff', 'admin-organization', 'admin-department', 'admin-documents', 'admin-contracts',
             ],
             'Reports' => [
-                'reports', 'reports-summary', 'reports-forecast', 'reports-custom',
+                'reports', 'reports-financial', 'reports-budget', 'reports-donor-grant', 'reports-project', 'reports-procurement', 'reports-tax', 'reports-management',
             ],
             'Settings' => [
-                'settings',
+                'settings', 'settings-users', 'settings-roles-permissions', 'settings-approval-workflow', 'settings-system', 'settings-integrations', 'settings-notifications',
             ],
         ];
 

@@ -36,6 +36,7 @@ use App\Models\Master\Position;
 use App\Models\Master\ProcurementCategory;
 use App\Models\Master\ProcurementItem;
 use App\Models\Master\ReportingDimension;
+use App\Models\Master\ReportingCategory;
 use App\Models\Master\Tax;
 use App\Models\Master\UnitOfMeasure;
 use App\Models\Master\Vendor;
@@ -131,6 +132,9 @@ class MasterDataSeeder extends Seeder
             'name' => 'Perkumpulan Kaoem Telapak',
             'legal_name' => 'Perkumpulan Kaoem Telapak Indonesia',
             'npwp' => '01.234.567.8-403.000',
+            'email' => 'info@kaoemtelapak.org',
+            'website' => 'https://kaoemtelapak.org',
+            'pass_code' => 'KT-MASTER-2026',
             'address' => 'Jl. Palem No. 18, Baranangsiang Indah, Bogor, Jawa Barat',
             'base_currency_id' => $idr->id,
             'fiscal_year_start_month' => 1,
@@ -677,6 +681,18 @@ class MasterDataSeeder extends Seeder
             'description' => 'Target capaian yurisdiksi tingkat provinsi',
             'is_active' => true,
         ]);
+
+        foreach ([
+            ['code' => 'RPT-DONOR', 'name' => 'Donor Reporting', 'category_type' => 'donor'],
+            ['code' => 'RPT-PROGRAM', 'name' => 'Program / Project Reporting', 'category_type' => 'program_project'],
+            ['code' => 'RPT-FINANCE', 'name' => 'Financial Reporting', 'category_type' => 'finance'],
+        ] as $reportingCategory) {
+            ReportingCategory::updateOrCreate(['code' => $reportingCategory['code']], [
+                ...$reportingCategory,
+                'description' => 'Kategori pengelompokan laporan berdasarkan kebutuhan manajemen dan donor.',
+                'is_active' => true,
+            ]);
+        }
 
         // 12. Unit of Measures & Budget Categories
         $uomTrip = UnitOfMeasure::withTrashed()->updateOrCreate(['code' => 'TRIP'], [

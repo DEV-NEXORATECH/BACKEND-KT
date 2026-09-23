@@ -57,6 +57,7 @@ use App\Http\Controllers\Api\Master\ProjectController;
 use App\Http\Controllers\Api\Master\ActivityController;
 use App\Http\Controllers\Api\Master\BeneficiaryPartnerController;
 use App\Http\Controllers\Api\Master\ReportingDimensionController;
+use App\Http\Controllers\Api\Master\ReportingCategoryController;
 use App\Http\Controllers\Api\Master\UnitOfMeasureController;
 use App\Http\Controllers\Api\Master\BudgetCategoryController;
 use App\Http\Controllers\Api\Master\BudgetLineController;
@@ -339,6 +340,7 @@ Route::middleware('auth:sanctum')->group(function () {
             'activities' => ActivityController::class,
             'beneficiary-partners' => BeneficiaryPartnerController::class,
             'reporting-dimensions' => ReportingDimensionController::class,
+            'reporting-categories' => ReportingCategoryController::class,
             'unit-of-measures' => UnitOfMeasureController::class,
             'budget-categories' => BudgetCategoryController::class,
             'budget-lines' => BudgetLineController::class,
