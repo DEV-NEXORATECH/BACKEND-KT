@@ -14,7 +14,7 @@ class ChartOfAccount extends Model
 
     protected $table = 'chart_of_accounts';
 
-    protected $fillable = ['parent_id', 'code', 'name', 'account_type', 'normal_balance', 'level', 'is_header', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['parent_id', 'account_category_id', 'code', 'name', 'account_type', 'normal_balance', 'level', 'is_header', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -29,5 +29,7 @@ class ChartOfAccount extends Model
     {
         return $this->hasMany(\App\Models\Master\ChartOfAccount::class);
     }
+
+    public function category() { return $this->belongsTo(AccountCategory::class, 'account_category_id'); }
 
 }

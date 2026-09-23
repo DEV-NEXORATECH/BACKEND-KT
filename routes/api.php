@@ -8,7 +8,9 @@ use App\Http\Controllers\RoleMenuController;
 use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\Api\Accounting\JournalController;
+use App\Http\Controllers\Api\Accounting\GeneralLedgerController;
 use App\Http\Controllers\Api\Budget\BudgetMonitoringController;
+use App\Http\Controllers\Api\Budget\BudgetReallocationController;
 use App\Http\Controllers\Api\Procurement\PurchaseRequestController;
 use App\Http\Controllers\Api\Procurement\ProcurementFulfillmentController;
 use App\Http\Controllers\Api\Procurement\AdvancedProcurementController;
@@ -41,6 +43,7 @@ use App\Http\Controllers\Api\Master\ExchangeRateController;
 use App\Http\Controllers\Api\Master\FiscalYearController;
 use App\Http\Controllers\Api\Master\AccountingPeriodController;
 use App\Http\Controllers\Api\Master\ChartOfAccountController;
+use App\Http\Controllers\Api\Master\AccountCategoryController;
 use App\Http\Controllers\Api\Master\TaxController;
 use App\Http\Controllers\Api\Master\BankAccountController;
 use App\Http\Controllers\Api\Master\PettyCashController;
@@ -62,6 +65,10 @@ use App\Http\Controllers\Api\Master\ExpenseCategoryController;
 use App\Http\Controllers\Api\Master\DocumentTypeController;
 use App\Http\Controllers\Api\Master\AssetCategoryController;
 use App\Http\Controllers\Api\Master\ApprovalMatrixController;
+use App\Http\Controllers\Api\Master\VendorCategoryController;
+use App\Http\Controllers\Api\Master\ProcurementCategoryController;
+use App\Http\Controllers\Api\Master\ProcurementItemController;
+use App\Http\Controllers\Api\Master\PositionController;
 
 Route::get('/health', function () {
     $dbStatus = 'ok';
@@ -144,6 +151,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1/accounting')->group(function () {
+        Route::get('general-ledger', [GeneralLedgerController::class, 'index'])->middleware('permission:accounting.view');
         Route::get('journals', [JournalController::class, 'index'])->middleware('permission:accounting.journal.view');
         Route::post('journals', [JournalController::class, 'store'])->middleware('permission:accounting.journal.create');
         Route::get('journals/{journal}', [JournalController::class, 'show'])->middleware('permission:accounting.journal.view');
@@ -158,6 +166,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1/budget')->group(function () {
         Route::get('monitoring', [BudgetMonitoringController::class, 'index'])->middleware('permission:budget.view');
         Route::post('validate', [BudgetMonitoringController::class, 'validateBudget'])->middleware('permission:budget.validate');
+        Route::get('reallocations', [BudgetReallocationController::class, 'index'])->middleware('permission:budget.view');
+        Route::post('reallocations', [BudgetReallocationController::class, 'store'])->middleware('permission:budget.update');
+        Route::post('reallocations/{budgetReallocation}/submit', [BudgetReallocationController::class, 'submit'])->middleware('permission:budget.update');
+        Route::post('reallocations/{budgetReallocation}/approve', [BudgetReallocationController::class, 'approve'])->middleware('permission:budget.approve');
     });
 
     Route::prefix('v1/procurement')->group(function () {
@@ -303,6 +315,7 @@ Route::middleware('auth:sanctum')->group(function () {
             'fiscal-years' => FiscalYearController::class,
             'accounting-periods' => AccountingPeriodController::class,
             'chart-of-accounts' => ChartOfAccountController::class,
+            'account-categories' => AccountCategoryController::class,
             'taxes' => TaxController::class,
             'bank-accounts' => BankAccountController::class,
             'petty-cashes' => PettyCashController::class,
@@ -319,7 +332,11 @@ Route::middleware('auth:sanctum')->group(function () {
             'budget-categories' => BudgetCategoryController::class,
             'budget-lines' => BudgetLineController::class,
             'employees' => EmployeeController::class,
+            'positions' => PositionController::class,
             'vendors' => VendorController::class,
+            'vendor-categories' => VendorCategoryController::class,
+            'procurement-categories' => ProcurementCategoryController::class,
+            'procurement-items' => ProcurementItemController::class,
             'expense-categories' => ExpenseCategoryController::class,
             'document-types' => DocumentTypeController::class,
             'asset-categories' => AssetCategoryController::class,

@@ -31,10 +31,14 @@ use App\Models\Master\PaymentMethod;
 use App\Models\Master\PettyCash;
 use App\Models\Master\Program;
 use App\Models\Master\Project;
+use App\Models\Master\Position;
+use App\Models\Master\ProcurementCategory;
+use App\Models\Master\ProcurementItem;
 use App\Models\Master\ReportingDimension;
 use App\Models\Master\Tax;
 use App\Models\Master\UnitOfMeasure;
 use App\Models\Master\Vendor;
+use App\Models\Master\VendorCategory;
 use App\Models\Role;
 use Illuminate\Database\Seeder;
 
@@ -774,15 +778,68 @@ class MasterDataSeeder extends Seeder
         ];
 
         foreach ($employeesList as $empData) {
+            $position = Position::withTrashed()->updateOrCreate([
+                'name' => $empData['position'],
+                'department_id' => $empData['department_id'] ?? null,
+            ], [
+                'code' => 'POS-'.strtoupper(substr(md5($empData['position'].'|'.($empData['department_id'] ?? '')), 0, 8)),
+                'is_active' => true,
+                'deleted_at' => null,
+            ]);
             Employee::updateOrCreate(
                 ['employee_id_number' => $empData['employee_id_number']],
-                [...$empData, 'is_active' => true]
+                [...$empData, 'position_id' => $position->id, 'is_active' => true]
             );
         }
+
+        // Procurement reference data is intentionally seeded as reusable master data,
+        // then referenced by vendors and transaction lines rather than hardcoded in forms.
+        $servicesCategory = ProcurementCategory::withTrashed()->updateOrCreate(['code' => 'SERVICES'], [
+            'name' => 'Professional Services',
+            'description' => 'Consultancy, facilitation, and other professional services.',
+            'is_active' => true,
+            'deleted_at' => null,
+        ]);
+        $goodsCategory = ProcurementCategory::withTrashed()->updateOrCreate(['code' => 'GOODS'], [
+            'name' => 'Goods & Supplies',
+            'description' => 'Equipment, printed material, and operational supplies.',
+            'is_active' => true,
+            'deleted_at' => null,
+        ]);
+        $hotelVendorCategory = VendorCategory::withTrashed()->updateOrCreate(['code' => 'ACCOMMODATION'], [
+            'name' => 'Accommodation Provider',
+            'description' => 'Hotel and accommodation supplier.',
+            'is_active' => true,
+            'deleted_at' => null,
+        ]);
+        $printingVendorCategory = VendorCategory::withTrashed()->updateOrCreate(['code' => 'PRINTING'], [
+            'name' => 'Printing Supplier',
+            'description' => 'Printed material and publication supplier.',
+            'is_active' => true,
+            'deleted_at' => null,
+        ]);
+
+        ProcurementItem::withTrashed()->updateOrCreate(['code' => 'SVC-FACILITATION'], [
+            'name' => 'Workshop Facilitation Service',
+            'item_type' => 'service',
+            'procurement_category_id' => $servicesCategory->id,
+            'unit_of_measure_id' => $uomPkg->id,
+            'is_active' => true,
+            'deleted_at' => null,
+        ]);
+        ProcurementItem::withTrashed()->updateOrCreate(['code' => 'GOOD-PRINTING'], [
+            'name' => 'Printed Information Material',
+            'item_type' => 'goods',
+            'procurement_category_id' => $goodsCategory->id,
+            'unit_of_measure_id' => $uomPkg->id,
+            'is_active' => true,
+            'deleted_at' => null,
+        ]);
 
         Vendor::updateOrCreate(['code' => 'VND-HOTEL-01'], [
             'name' => 'Hotel Santika Premiere Pontianak',
             'type' => 'company',
+            'vendor_category_id' => $hotelVendorCategory->id,
             'npwp' => '02.456.789.1-701.000',
             'address' => 'Jl. Diponegoro No. 46, Pontianak',
             'contact_person' => 'Dewi Lestari (Sales Manager)',
@@ -798,6 +855,7 @@ class MasterDataSeeder extends Seeder
         Vendor::updateOrCreate(['code' => 'VND-PRINT-02'], [
             'name' => 'Percetakan Media Grafika Kreasi',
             'type' => 'company',
+            'vendor_category_id' => $printingVendorCategory->id,
             'npwp' => '01.987.654.3-403.000',
             'address' => 'Jl. Pajajaran No. 88, Bogor',
             'contact_person' => 'Bambang Irawan',

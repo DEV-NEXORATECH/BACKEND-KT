@@ -1,0 +1,3 @@
+<?php
+namespace App\Models\Budget; use App\Models\Master\BudgetLine; use App\Traits\AuditTrailTrait; use Illuminate\Database\Eloquent\Model;
+class BudgetReallocation extends Model { use AuditTrailTrait; protected $fillable=['reference','project_id','from_budget_line_id','to_budget_line_id','amount','reason','status','submitted_by','submitted_at','approved_by','approved_at','decision_notes','created_by','updated_by']; protected $casts=['amount'=>'decimal:2','submitted_at'=>'datetime','approved_at'=>'datetime']; public function fromLine(){return $this->belongsTo(BudgetLine::class,'from_budget_line_id');} public function toLine(){return $this->belongsTo(BudgetLine::class,'to_budget_line_id');} }

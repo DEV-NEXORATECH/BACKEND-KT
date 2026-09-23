@@ -19,7 +19,7 @@ class UpdateEmployeeRequest extends FormRequest
             'email' => 'nullable|email|max:100',
             'department_id' => 'nullable|integer|exists:departments,id',
             'office_location_id' => 'nullable|integer|exists:office_locations,id',
-            'position' => 'nullable|string|max:100',
+            'position_id' => 'nullable|integer|exists:positions,id',
             'hourly_cost_rate' => 'nullable|numeric|min:0',
             'bank_name' => 'nullable|string|max:100',
             'bank_account_number' => 'nullable|string|max:50',

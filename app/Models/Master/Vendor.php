@@ -14,7 +14,7 @@ class Vendor extends Model
 
     protected $table = 'vendors';
 
-    protected $fillable = ['code', 'name', 'type', 'npwp', 'address', 'contact_person', 'phone', 'email', 'bank_name', 'bank_account_number', 'bank_account_holder', 'tax_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'name', 'type', 'vendor_category_id', 'npwp', 'address', 'contact_person', 'phone', 'email', 'bank_name', 'bank_account_number', 'bank_account_holder', 'tax_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -23,6 +23,11 @@ class Vendor extends Model
     public function tax()
     {
         return $this->belongsTo(\App\Models\Master\Tax::class, 'tax_id');
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(VendorCategory::class, 'vendor_category_id');
     }
 
 }

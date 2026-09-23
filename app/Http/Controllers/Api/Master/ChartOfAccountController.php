@@ -14,5 +14,5 @@ class ChartOfAccountController extends BaseMasterController
     protected string $storeRequestClass = StoreChartOfAccountRequest::class;
     protected string $updateRequestClass = UpdateChartOfAccountRequest::class;
     protected array $searchableColumns = ['code', 'name'];
-    protected array $defaultWith = ['parent'];
+    protected array $defaultWith = ['parent', 'category'];
 }

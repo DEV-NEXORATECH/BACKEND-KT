@@ -14,5 +14,5 @@ class VendorController extends BaseMasterController
     protected string $storeRequestClass = StoreVendorRequest::class;
     protected string $updateRequestClass = UpdateVendorRequest::class;
     protected array $searchableColumns = ['code', 'name', 'npwp', 'contact_person', 'email'];
-    protected array $defaultWith = ['tax'];
+    protected array $defaultWith = ['tax', 'category'];
 }

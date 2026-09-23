@@ -17,6 +17,7 @@ class StoreVendorRequest extends FormRequest
             'code' => 'required|string|max:30|unique:vendors,code',
             'name' => 'required|string|max:150',
             'type' => 'required|string|max:50',
+            'vendor_category_id' => 'nullable|integer|exists:vendor_categories,id',
             'npwp' => 'nullable|string|max:50',
             'address' => 'nullable|string',
             'contact_person' => 'nullable|string|max:100',

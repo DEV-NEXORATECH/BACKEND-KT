@@ -3,6 +3,7 @@
 namespace App\Models\Procurement;
 
 use App\Models\Master\BudgetLine;
+use App\Models\Master\ProcurementItem;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -11,6 +12,7 @@ class PurchaseRequestLine extends Model
     protected $fillable = [
         'purchase_request_id',
         'budget_line_id',
+        'procurement_item_id',
         'item_description',
         'quantity',
         'unit_price',
@@ -32,5 +34,10 @@ class PurchaseRequestLine extends Model
     public function budgetLine(): BelongsTo
     {
         return $this->belongsTo(BudgetLine::class);
+    }
+
+    public function procurementItem(): BelongsTo
+    {
+        return $this->belongsTo(ProcurementItem::class);
     }
 }

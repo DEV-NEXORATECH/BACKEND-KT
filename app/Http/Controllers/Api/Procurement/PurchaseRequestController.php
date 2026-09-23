@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Procurement;
 use App\Http\Controllers\Controller;
 use App\Models\Budget\BudgetCommitment;
 use App\Models\Procurement\PurchaseRequest;
+use App\Models\Master\ProcurementItem;
 use App\Services\Budget\BudgetMonitoringService;
 use App\Services\Settings\SystemPolicyService;
 use App\Services\Approval\ApprovalWorkflowService;
@@ -23,6 +24,8 @@ class PurchaseRequestController extends Controller
         'project.program:id,code,name',
         'vendor:id,code,name',
         'lines.budgetLine:id,line_code,description,total_amount,project_id',
+        'lines.procurementItem:id,code,name,item_type,unit_of_measure_id,default_unit_price',
+        'lines.procurementItem.unitOfMeasure:id,code,name',
     ];
 
     public function index(Request $request): JsonResponse
@@ -296,12 +299,26 @@ class PurchaseRequestController extends Controller
             'justification' => ['required', 'string'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.budget_line_id' => ['required', 'integer', 'exists:budget_lines,id'],
-            'lines.*.item_description' => ['required', 'string', 'max:255'],
+            'lines.*.procurement_item_id' => ['nullable', 'integer', 'exists:procurement_items,id'],
+            'lines.*.item_description' => ['nullable', 'string', 'max:255'],
             'lines.*.quantity' => ['required', 'numeric', 'min:0.01'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0.01'],
         ]);
 
         foreach ($payload['lines'] as $index => $line) {
+            if (! empty($line['procurement_item_id'])) {
+                $item = ProcurementItem::query()
+                    ->where('is_active', true)
+                    ->findOrFail($line['procurement_item_id']);
+                if (blank($line['item_description'])) {
+                    $payload['lines'][$index]['item_description'] = $item->name;
+                }
+            }
+            if (blank($payload['lines'][$index]['item_description'] ?? null)) {
+                throw ValidationException::withMessages([
+                    "lines.{$index}.item_description" => 'Pilih item/service master atau isi deskripsi item.',
+                ]);
+            }
             $quantity = round((float) $line['quantity'], 2);
             $unitPrice = round((float) $line['unit_price'], 2);
             $payload['lines'][$index]['quantity'] = $quantity;
@@ -400,6 +417,11 @@ class PurchaseRequestController extends Controller
                 'budget_line_id' => $line->budget_line_id,
                 'budget_line_code' => $line->budgetLine?->line_code,
                 'budget_line_description' => $line->budgetLine?->description,
+                'procurement_item_id' => $line->procurement_item_id,
+                'procurement_item_code' => $line->procurementItem?->code,
+                'procurement_item_name' => $line->procurementItem?->name,
+                'item_type' => $line->procurementItem?->item_type,
+                'unit_of_measure' => $line->procurementItem?->unitOfMeasure?->name,
                 'item_description' => $line->item_description,
                 'quantity' => $line->quantity,
                 'unit_price' => $line->unit_price,

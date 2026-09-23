@@ -15,6 +15,7 @@ class UpdateChartOfAccountRequest extends FormRequest
     {
         return [
             'parent_id' => 'nullable|integer|exists:chart_of_accounts,id',
+            'account_category_id' => 'nullable|integer|exists:account_categories,id',
             'code' => 'required|string|max:50|unique:chart_of_accounts,code,' . $this->route('id') . ',id',
             'name' => 'required|string|max:150',
             'account_type' => 'required|in:asset,liability,equity,revenue,expense',
