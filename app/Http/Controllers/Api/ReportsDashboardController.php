@@ -16,6 +16,7 @@ use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
 use App\Services\Budget\BudgetMonitoringService;
+use App\Services\Rbac\DataScopeService;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -27,6 +28,9 @@ class ReportsDashboardController extends Controller
     public function dashboard(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
         $period = $this->period($request);
+        if (! app(DataScopeService::class)->canAccessAll($request->user())) {
+            return $this->personalDashboard($request, $period);
+        }
 
         // Apply filters
         $filters = $request->only([
@@ -100,6 +104,37 @@ class ReportsDashboardController extends Controller
             ],
             'pending_actions' => $this->pendingActions(),
             'recent_transactions' => $recentTransactions,
+        ]);
+    }
+
+    private function personalDashboard(Request $request, array $period): JsonResponse
+    {
+        $userId = $request->user()->id;
+        $expenses = ExpenseRequest::query()->where('requester_id', $userId)
+            ->when($period['start'], fn (Builder $q) => $q->whereDate('request_date', '>=', $period['start']))
+            ->when($period['end'], fn (Builder $q) => $q->whereDate('request_date', '<=', $period['end']))->get();
+        $payments = Payment::query()->where('created_by', $userId)
+            ->when($period['start'], fn (Builder $q) => $q->whereDate('payment_date', '>=', $period['start']))
+            ->when($period['end'], fn (Builder $q) => $q->whereDate('payment_date', '<=', $period['end']))->get();
+        $requests = PurchaseRequest::query()->where('requester_id', $userId)->latest('id')->take(5)->get();
+        $totalExpense = (float) $expenses->sum('total_amount');
+
+        return response()->json([
+            'success' => true,
+            'period' => $period['label'],
+            'scope' => 'personal',
+            'summary' => [
+                'total_budget' => 0, 'approved_budget' => 0, 'total_actual' => $totalExpense, 'actual_expense' => $totalExpense,
+                'commitment' => 0, 'remaining_budget' => 0, 'available_budget' => 0, 'utilization_percent' => 0,
+                'total_income' => 0, 'total_expense' => $totalExpense, 'operating_cash' => 0, 'cash_bank_balance' => 0,
+                'open_ap' => 0, 'outstanding_payable' => 0, 'open_ar' => 0, 'outstanding_receivable' => 0,
+                'active_donors' => 0, 'active_grants' => 0, 'active_programs' => 0, 'active_projects' => 0,
+                'pending_approvals' => $expenses->whereIn('status', ['draft', 'submitted'])->count() + $requests->where('status', 'submitted')->count(),
+                'paid_amount' => (float) $payments->sum('amount'),
+            ],
+            'charts' => ['budget_vs_actual' => [], 'income_vs_expense' => [], 'donor_utilization' => [], 'project_utilization' => [], 'expense_by_category' => [], 'cash_position_by_bank' => [], 'approval_status' => []],
+            'pending_actions' => $expenses->whereIn('status', ['draft', 'submitted'])->map(fn ($item) => ['module' => 'expense', 'reference' => $item->request_number, 'status' => $item->status])->values(),
+            'recent_transactions' => $expenses->sortByDesc('created_at')->take(5)->map(fn ($item) => ['module' => 'expense', 'reference' => $item->request_number, 'description' => $item->description, 'amount' => (float) $item->total_amount, 'date' => $item->request_date?->toDateString(), 'status' => $item->status])->values(),
         ]);
     }
 
@@ -177,6 +212,17 @@ class ReportsDashboardController extends Controller
     public function donorDashboard(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
         $period = $this->period($request);
+        if (! app(DataScopeService::class)->canAccessAll($request->user())) {
+            return response()->json([
+                'success' => true,
+                'scope' => 'personal',
+                'period' => $period['label'],
+                'summary' => ['total_donors' => 0, 'total_grants' => 0, 'total_budget' => 0, 'total_actual' => 0, 'total_committed' => 0, 'total_available' => 0, 'overall_utilization' => 0],
+                'donors' => [],
+                'grants' => [],
+            ]);
+        }
+
         $donors = \App\Models\Master\Donor::query()->with(['grantAgreements'])->get();
         $grants = \App\Models\Master\GrantAgreement::query()->with(['donor', 'currency', 'projects'])->get();
 
@@ -252,6 +298,10 @@ class ReportsDashboardController extends Controller
     public function reports(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
         $period = $this->period($request);
+        if (! app(DataScopeService::class)->canAccessAll($request->user())) {
+            return $this->personalReports($request, $period);
+        }
+
         $projectId = $request->input('project_id');
         $budgetRows = $budgetService->summary($request->only(['project_id', 'grant_agreement_id', 'budget_category_id']));
         $postedLines = $this->postedLines($period['start'], $period['end'], $projectId);
@@ -289,12 +339,60 @@ class ReportsDashboardController extends Controller
     }
 
     /**
+     * A staff member may have reports.view for their operational report, but
+     * must not receive organisation-wide AP, AR, bank, donor, or GL values.
+     */
+    private function personalReports(Request $request, array $period): JsonResponse
+    {
+        $expenses = ExpenseRequest::query()
+            ->where('requester_id', $request->user()->id)
+            ->when($period['start'], fn (Builder $q) => $q->whereDate('request_date', '>=', $period['start']))
+            ->when($period['end'], fn (Builder $q) => $q->whereDate('request_date', '<=', $period['end']))
+            ->latest('id')
+            ->get();
+
+        $total = (float) $expenses->sum('total_amount');
+        $rows = $expenses->map(fn (ExpenseRequest $expense) => [
+            'request_id' => $expense->id,
+            'reference' => $expense->request_number,
+            'date' => $expense->request_date?->toDateString(),
+            'description' => $expense->description,
+            'status' => $expense->status,
+            'amount' => (float) $expense->total_amount,
+        ])->values();
+
+        return response()->json([
+            'success' => true,
+            'scope' => 'personal',
+            'period' => $period['label'],
+            'financial_statement' => ['rows' => [], 'totals_by_type' => []],
+            'balance_sheet' => ['rows' => [], 'totals_by_type' => []],
+            'budget_vs_actual' => ['totals' => ['approved_budget' => 0, 'actual' => 0, 'committed' => 0, 'available' => 0, 'utilization_percent' => 0], 'rows' => []],
+            'ap_aging' => ['buckets' => []],
+            'ar_aging' => ['buckets' => []],
+            'cash_bank' => ['total_balance' => 0, 'accounts' => []],
+            'procurement' => ['summary' => [], 'rows' => []],
+            'expense' => ['total' => $total, 'rows' => $rows],
+            'recent_transactions' => $rows,
+        ]);
+    }
+
+    /**
      * Returns cumulative balance sheet balances. Depreciation journals posted by
      * FixedAssetController are included automatically in the asset and expense
      * account balances, so the report always reflects the current net book value.
      */
     public function balanceSheet(Request $request): JsonResponse
     {
+        if (! app(DataScopeService::class)->canAccessAll($request->user())) {
+            return response()->json([
+                'success' => true,
+                'scope' => 'personal',
+                'as_of' => $request->filled('as_of') ? CarbonImmutable::parse($request->string('as_of'))->toDateString() : CarbonImmutable::now()->toDateString(),
+                'data' => ['rows' => [], 'totals_by_type' => []],
+            ]);
+        }
+
         $asOf = $request->filled('as_of')
             ? CarbonImmutable::parse($request->string('as_of'))->endOfDay()
             : CarbonImmutable::now()->endOfDay();
@@ -308,6 +406,14 @@ class ReportsDashboardController extends Controller
 
     public function forecast(Request $request): JsonResponse
     {
+        if (! app(DataScopeService::class)->canAccessAll($request->user())) {
+            return response()->json([
+                'success' => true,
+                'scope' => 'personal',
+                'data' => ['months' => [], 'average_monthly_expense' => 0, 'next_month_projection' => 0, 'method' => 'not_available_for_personal_scope'],
+            ]);
+        }
+
         $months = max(3, min(12, (int) $request->input('months', 6)));
         $from = CarbonImmutable::now()->startOfMonth()->subMonths($months - 1);
         $rows = JournalLine::query()->whereHas('journal', fn (Builder $q) => $q->where('status', 'posted')->whereDate('journal_date', '>=', $from))->with('journal:id,journal_date')->get();

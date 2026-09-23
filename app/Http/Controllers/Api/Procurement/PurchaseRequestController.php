@@ -7,6 +7,7 @@ use App\Models\Budget\BudgetCommitment;
 use App\Models\Procurement\PurchaseRequest;
 use App\Services\Budget\BudgetMonitoringService;
 use App\Services\Settings\SystemPolicyService;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -146,22 +147,27 @@ class PurchaseRequestController extends Controller
         ]);
     }
 
-    public function submit(Request $request, PurchaseRequest $purchaseRequest): JsonResponse
+    public function submit(Request $request, PurchaseRequest $purchaseRequest, ApprovalWorkflowService $workflow): JsonResponse
     {
         $this->authorizeScope($request, $purchaseRequest);
 
+        $workflow->start('procurement', $purchaseRequest, (float) $purchaseRequest->total_amount, $request->user()->id);
         return $this->transition($purchaseRequest, 'draft', 'submitted', [
             'submitted_by' => request()->user()->id,
             'submitted_at' => now(),
         ], 'Purchase request berhasil disubmit.');
     }
 
-    public function approve(PurchaseRequest $purchaseRequest, BudgetMonitoringService $budgetService, SystemPolicyService $policies): JsonResponse
+    public function approve(Request $request, PurchaseRequest $purchaseRequest, BudgetMonitoringService $budgetService, SystemPolicyService $policies, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($purchaseRequest->status !== 'submitted') {
             throw ValidationException::withMessages([
                 'status' => 'Purchase request harus berstatus submitted untuk approval.',
             ]);
+        }
+        $approval = $workflow->approve('procurement', $purchaseRequest, $request->user(), $request->input('notes'));
+        if ($approval['managed'] && ! $approval['completed']) {
+            return response()->json(['success' => true, 'message' => "Approval tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($purchaseRequest->fresh()->load($this->with))]);
         }
 
         foreach ($purchaseRequest->lines as $line) {
@@ -214,6 +220,7 @@ class PurchaseRequestController extends Controller
                 'status' => 'Purchase request hanya dapat direject dari status submitted atau approved.',
             ]);
         }
+        app(ApprovalWorkflowService::class)->reject('procurement', $purchaseRequest, request()->user(), (string) request('notes', 'Rejected'));
 
         $purchaseRequest = DB::transaction(function () use ($purchaseRequest) {
             $purchaseRequest->update([

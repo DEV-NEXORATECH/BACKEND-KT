@@ -8,6 +8,8 @@ use App\Models\Asset\FixedAsset;
 use App\Models\Master\AssetCategory;
 use App\Models\Master\ChartOfAccount;
 use App\Services\Accounting\AccountingPeriodService;
+use App\Services\Rbac\DataScopeService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,7 +30,7 @@ class FixedAssetController extends Controller
             'created_by',
             'project_id',
             'organization_id',
-            ['asset.view', 'asset.create', 'asset.capitalize', 'asset.depreciate', 'asset.transfer', 'asset.dispose']
+            []
         );
 
         $assets = $query
@@ -61,6 +63,7 @@ class FixedAssetController extends Controller
             'accumulated_depreciation' => 0,
             'net_book_value' => $cost,
             'status' => 'draft',
+            'created_by' => $request->user()->id,
         ])->load($this->with);
 
         return response()->json(['success' => true, 'message' => 'Fixed asset berhasil dibuat.', 'data' => $this->format($asset)], Response::HTTP_CREATED);
@@ -68,6 +71,7 @@ class FixedAssetController extends Controller
 
     public function capitalize(FixedAsset $fixedAsset): JsonResponse
     {
+        $this->ensureAssetScope(request(), $fixedAsset);
         app(AccountingPeriodService::class)->ensureOpen($fixedAsset->acquisition_date->toDateString(), 'acquisition_date');
         if ($fixedAsset->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'Asset hanya dapat dikapitalisasi dari draft.']);
@@ -105,6 +109,7 @@ class FixedAssetController extends Controller
 
     public function depreciate(Request $request, FixedAsset $fixedAsset): JsonResponse
     {
+        $this->ensureAssetScope($request, $fixedAsset);
         if (! in_array($fixedAsset->status, ['active', 'transferred'], true)) {
             throw ValidationException::withMessages(['status' => 'Asset harus active/transferred untuk depresiasi.']);
         }
@@ -157,6 +162,7 @@ class FixedAssetController extends Controller
 
     public function transfer(Request $request, FixedAsset $fixedAsset): JsonResponse
     {
+        $this->ensureAssetScope($request, $fixedAsset);
         $data = $request->validate(['location' => ['nullable', 'string', 'max:150'], 'custodian_id' => ['nullable', 'integer', 'exists:employees,id']]);
         $fixedAsset->update([...$data, 'status' => 'transferred']);
 
@@ -165,6 +171,7 @@ class FixedAssetController extends Controller
 
     public function dispose(Request $request, FixedAsset $fixedAsset): JsonResponse
     {
+        $this->ensureAssetScope($request, $fixedAsset);
         if ($fixedAsset->status === 'disposed') {
             throw ValidationException::withMessages(['status' => 'Asset sudah disposed.']);
         }
@@ -192,11 +199,12 @@ class FixedAssetController extends Controller
         $depreciationDate = $request->input('depreciation_date', now()->toDateString());
         app(AccountingPeriodService::class)->ensureOpen($depreciationDate, 'depreciation_date');
 
-        $activeAssets = FixedAsset::query()
+        $activeAssetsQuery = FixedAsset::query()
             ->whereIn('status', ['active', 'transferred'])
             ->where('depreciation_method', '!=', 'none')
-            ->where('net_book_value', '>', 0)
-            ->get();
+            ->where('net_book_value', '>', 0);
+        app(DataScopeService::class)->applyScope($activeAssetsQuery, $request->user(), 'created_by', 'project_id', 'organization_id', []);
+        $activeAssets = $activeAssetsQuery->get();
 
         $processedCount = 0;
         $totalDepreciationAmount = 0;
@@ -271,6 +279,7 @@ class FixedAssetController extends Controller
         foreach ($data['items'] as $item) {
             $asset = FixedAsset::find($item['fixed_asset_id']);
             if ($asset) {
+                $this->ensureAssetScope($request, $asset);
                 $notes = "Opname {$data['opname_date']} [Status Fisik: {$item['physical_status']}]: ".($item['notes'] ?? 'Tidak ada catatan');
                 $asset->update([
                     'notes' => $asset->notes ? $asset->notes." | ".$notes : $notes,
@@ -312,6 +321,17 @@ class FixedAssetController extends Controller
     private function nextAssetCode(): string
     {
         return 'FA-'.now()->format('YmdHis').'-'.random_int(100, 999);
+    }
+
+    private function ensureAssetScope(Request $request, FixedAsset $asset): void
+    {
+        if (app(DataScopeService::class)->canAccessAll($request->user())) {
+            return;
+        }
+
+        if ((int) $asset->created_by !== (int) $request->user()->id) {
+            throw new AuthorizationException('Tidak boleh mengakses aset milik pengguna lain.');
+        }
     }
 
     private function format(FixedAsset $asset): array

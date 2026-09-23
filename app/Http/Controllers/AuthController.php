@@ -22,7 +22,7 @@ class AuthController extends Controller
             ->where('email', $credentials['email'])
             ->first();
 
-        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+        if (! $user || ! $user->is_active || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['Email atau password tidak sesuai.'],
             ]);

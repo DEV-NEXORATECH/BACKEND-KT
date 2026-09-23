@@ -28,7 +28,7 @@ class AccountsPayableController extends Controller
             'created_by',
             null,
             null,
-            ['ap.post', 'ap.pay', 'ap.view']
+            []
         );
 
         $invoices = $query->latest('id')->get();
@@ -157,6 +157,7 @@ class AccountsPayableController extends Controller
                 'reference' => $data['reference'] ?? null,
                 'status' => 'paid',
                 'journal_id' => $journal->id,
+                'created_by' => request()->user()->id,
             ]);
 
             BankTransaction::create([
@@ -182,14 +183,20 @@ class AccountsPayableController extends Controller
         return response()->json(['success' => true, 'message' => 'Payment berhasil dicatat dan bank transaction dibuat.', 'data' => $payment], Response::HTTP_CREATED);
     }
 
-    public function payments(): JsonResponse
+    public function payments(Request $request): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => Payment::with(['supplierInvoice:id,invoice_number', 'bankAccount:id,bank_name,account_number'])->latest('id')->get()]);
+        $query = Payment::with(['supplierInvoice:id,invoice_number', 'bankAccount:id,bank_name,account_number']);
+        app(\App\Services\Rbac\DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null);
+        return response()->json(['success' => true, 'data' => $query->latest('id')->get()]);
     }
 
-    public function bankTransactions(): JsonResponse
+    public function bankTransactions(Request $request): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => BankTransaction::with(['bankAccount:id,bank_name,account_number'])->latest('transaction_date')->latest('id')->get()]);
+        $query = BankTransaction::with(['bankAccount:id,bank_name,account_number']);
+        if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
+            $query->whereHas('payment', fn ($payment) => $payment->where('created_by', $request->user()->id));
+        }
+        return response()->json(['success' => true, 'data' => $query->latest('transaction_date')->latest('id')->get()]);
     }
 
     public function importBankTransactions(Request $request): JsonResponse

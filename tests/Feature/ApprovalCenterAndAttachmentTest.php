@@ -96,4 +96,25 @@ class ApprovalCenterAndAttachmentTest extends TestCase
         $downloadResp = $this->getJson("/api/v1/attachments/expense/{$expense->id}/0");
         $downloadResp->assertOk();
     }
+
+    public function test_batch_approval_cannot_bypass_module_permission(): void
+    {
+        $role = Role::create(['name' => 'Read-only approval user', 'slug' => 'approval-read-only']);
+        $role->permissions()->attach(Permission::create(['name' => 'View approvals', 'slug' => 'expenses-approvals.view']));
+        $user = User::factory()->create(['role_id' => $role->id]);
+        $expense = ExpenseRequest::create([
+            'request_number' => 'EXP-NO-BYPASS-001', 'requester_id' => $user->id,
+            'expense_type' => 'reimbursement', 'request_date' => '2026-09-23',
+            'description' => 'Must not be approved', 'status' => 'submitted', 'total_amount' => 100,
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/approval-center/batch-action', [
+                'action' => 'approve',
+                'items' => [['module' => 'expense', 'id' => $expense->id]],
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('expense_requests', ['id' => $expense->id, 'status' => 'submitted']);
+    }
 }

@@ -40,30 +40,13 @@ class DataScopeService
             return $query;
         }
 
-        $employee = $user->employee;
+        // Project currently has no employee/department ownership columns. Until
+        // project assignment is modelled explicitly, owner-only is the secure
+        // fallback: it neither leaks records nor emits invalid SQL columns.
+        if ($ownerColumn === null) {
+            return $query->whereRaw('1 = 0');
+        }
 
-        return $query->where(function (Builder $sub) use ($user, $employee, $ownerColumn, $projectColumn, $orgColumn) {
-            $hasCondition = false;
-
-            if ($ownerColumn !== null) {
-                $sub->where($ownerColumn, $user->id);
-                $hasCondition = true;
-            }
-
-            if ($employee && $employee->id && $ownerColumn !== null && $ownerColumn !== 'employee_id') {
-                $sub->orWhere('employee_id', $employee->id);
-            }
-
-            if ($projectColumn !== null && $employee && $employee->department_id) {
-                $sub->orWhereHas('project', function (Builder $pQuery) use ($employee) {
-                    $pQuery->where('department_id', $employee->department_id)
-                        ->orWhere('manager_employee_id', $employee->id);
-                });
-            }
-
-            if (! $hasCondition) {
-                $sub->whereRaw('1 = 1');
-            }
-        });
+        return $query->where($ownerColumn, $user->id);
     }
 }

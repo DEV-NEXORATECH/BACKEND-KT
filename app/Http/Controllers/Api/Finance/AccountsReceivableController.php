@@ -57,7 +57,7 @@ class AccountsReceivableController extends Controller
             'created_by',
             'project_id',
             'organization_id',
-            ['ar.view', 'ar.post', 'ar.receive']
+            []
         );
         $invoices = $query->latest('id')->get();
 
@@ -82,6 +82,7 @@ class AccountsReceivableController extends Controller
                 'description' => $payload['description'] ?? null,
                 'status' => 'draft',
                 'total_amount' => collect($payload['lines'])->sum('total_amount'),
+                'created_by' => request()->user()->id,
             ]);
             $this->syncLines($invoice, $payload['lines']);
 
@@ -201,6 +202,7 @@ class AccountsReceivableController extends Controller
                 'reference' => $data['reference'] ?? null,
                 'status' => 'paid',
                 'journal_id' => $journal->id,
+                'created_by' => request()->user()->id,
             ]);
 
             BankTransaction::create([

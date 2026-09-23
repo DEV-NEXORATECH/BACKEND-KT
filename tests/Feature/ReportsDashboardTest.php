@@ -76,7 +76,7 @@ class ReportsDashboardTest extends TestCase
 
     private function fixture(): array
     {
-        $role = Role::create(['name' => 'Report Role', 'slug' => 'report-role']);
+        $role = Role::create(['name' => 'Finance', 'slug' => 'finance']);
         foreach (['dashboard.view', 'reports.view'] as $permission) {
             $role->permissions()->attach(Permission::create(['name' => $permission, 'slug' => $permission]));
         }

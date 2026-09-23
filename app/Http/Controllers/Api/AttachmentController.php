@@ -11,6 +11,7 @@ use App\Models\Procurement\GoodsReceipt;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
+use App\Services\Rbac\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -151,8 +152,15 @@ class AttachmentController extends Controller
             abort(Response::HTTP_FORBIDDEN, 'Tidak memiliki permission untuk mengakses lampiran modul ini.');
         }
 
-        if ($module === 'expense' && ! $request->user()->hasAnyPermission(['expense.approve', 'expense.post', 'expense.pay']) && (int) $entity->requester_id !== (int) $request->user()->id) {
-            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengakses lampiran expense milik user lain.');
+        if (! app(DataScopeService::class)->canAccessAll($request->user())) {
+            $ownerColumn = match ($module) {
+                'expense', 'pr' => 'requester_id',
+                'ap', 'invoice', 'po', 'grn', 'journal', 'tax', 'asset' => 'created_by',
+                default => null,
+            };
+            if ($ownerColumn === null || ! isset($entity->{$ownerColumn}) || (int) $entity->{$ownerColumn} !== (int) $request->user()->id) {
+                abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengakses lampiran transaksi milik pengguna lain.');
+            }
         }
     }
 }

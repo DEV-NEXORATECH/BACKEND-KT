@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Master\Activity;
+use App\Models\Master\ApprovalMatrix;
 use App\Models\Master\Department;
 use App\Models\Master\Employee;
 use App\Models\Master\Project;
@@ -19,6 +20,7 @@ class TimesheetWorkflowTest extends TestCase
     public function test_timesheet_can_be_submitted_and_approved_with_staff_scope(): void
     {
         [$staff, $approver, $employee, $project, $activity] = $this->fixture();
+        ApprovalMatrix::create(['module' => 'timesheet', 'level' => 1, 'min_amount' => 0, 'role_id' => $approver->role_id, 'is_active' => true]);
 
         $create = $this->actingAs($staff, 'sanctum')
             ->postJson('/api/v1/timesheets/entries', [

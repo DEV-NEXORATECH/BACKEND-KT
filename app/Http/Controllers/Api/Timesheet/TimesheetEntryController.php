@@ -7,6 +7,7 @@ use App\Models\Master\Activity;
 use App\Models\Master\Employee;
 use App\Models\Master\Project;
 use App\Models\Timesheet\TimesheetEntry;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -81,7 +82,7 @@ class TimesheetEntryController extends Controller
         return response()->json(['success' => true, 'message' => 'Timesheet entry berhasil diperbarui.', 'data' => $this->format($timesheetEntry->fresh($this->with))]);
     }
 
-    public function submit(Request $request, TimesheetEntry $timesheetEntry): JsonResponse
+    public function submit(Request $request, TimesheetEntry $timesheetEntry, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($timesheetEntry->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'Timesheet harus draft untuk submit.']);
@@ -91,26 +92,35 @@ class TimesheetEntryController extends Controller
         }
 
         $timesheetEntry->update(['status' => 'submitted', 'submitted_by' => $request->user()->id, 'submitted_at' => now()]);
+        $workflow->start('timesheet', $timesheetEntry, (float) $timesheetEntry->hours, $request->user()->id);
 
         return response()->json(['success' => true, 'message' => 'Timesheet berhasil disubmit.', 'data' => $this->format($timesheetEntry->fresh($this->with))]);
     }
 
-    public function approve(Request $request, TimesheetEntry $timesheetEntry): JsonResponse
+    public function approve(Request $request, TimesheetEntry $timesheetEntry, ApprovalWorkflowService $workflow): JsonResponse
     {
-        return $this->decide($request, $timesheetEntry, 'approved');
+        return $this->decide($request, $timesheetEntry, 'approved', $workflow);
     }
 
-    public function reject(Request $request, TimesheetEntry $timesheetEntry): JsonResponse
+    public function reject(Request $request, TimesheetEntry $timesheetEntry, ApprovalWorkflowService $workflow): JsonResponse
     {
-        return $this->decide($request, $timesheetEntry, 'rejected');
+        return $this->decide($request, $timesheetEntry, 'rejected', $workflow);
     }
 
-    private function decide(Request $request, TimesheetEntry $timesheetEntry, string $decision): JsonResponse
+    private function decide(Request $request, TimesheetEntry $timesheetEntry, string $decision, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($timesheetEntry->status !== 'submitted') {
             throw ValidationException::withMessages(['status' => 'Timesheet harus submitted untuk approval.']);
         }
         $data = $request->validate(['notes' => ['nullable', 'string']]);
+        if ($decision === 'approved') {
+            $approval = $workflow->approve('timesheet', $timesheetEntry, $request->user(), $data['notes'] ?? null);
+            if ($approval['managed'] && ! $approval['completed']) {
+                return response()->json(['success' => true, 'message' => "Approval tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($timesheetEntry->fresh($this->with))]);
+            }
+        } else {
+            $workflow->reject('timesheet', $timesheetEntry, $request->user(), $data['notes'] ?? 'Rejected');
+        }
         $field = $decision === 'approved' ? 'approved' : 'rejected';
 
         $timesheetEntry->update([

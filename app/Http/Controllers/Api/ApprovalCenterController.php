@@ -314,11 +314,21 @@ class ApprovalCenterController extends Controller
             'action' => ['required', 'string', 'in:approve,reject'],
             'notes' => ['nullable', 'string', 'max:500'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.module' => ['required', 'string'],
+            'items.*.module' => ['required', 'string', 'in:expense,pr,po,cba,scn,journal,timesheet,asset'],
             'items.*.id' => ['required', 'integer'],
         ]);
 
         $action = $validated['action'];
+        // This endpoint invokes domain controller methods directly. Route
+        // middleware on the original endpoint is therefore not in the call
+        // path, so enforce each action permission before processing anything.
+        foreach ($validated['items'] as $item) {
+            $permission = $this->approvalPermission($item['module']);
+            if (! $request->user()->hasPermission($permission)) {
+                abort(403, "Tidak memiliki permission {$permission} untuk approval {$item['module']}.");
+            }
+        }
+
         $processedCount = 0;
         $errors = [];
 
@@ -342,7 +352,7 @@ class ApprovalCenterController extends Controller
                         $exp = ExpenseRequest::find($id);
                         if ($exp) {
                             if ($action === 'approve') {
-                                $expenseController->approve($exp);
+                                $expenseController->approve($request, $exp, app(\App\Services\Budget\BudgetMonitoringService::class), app(\App\Services\Settings\SystemPolicyService::class), app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
                                 $expenseController->reject($request, $exp);
                             }
@@ -354,9 +364,9 @@ class ApprovalCenterController extends Controller
                         $pr = PurchaseRequest::find($id);
                         if ($pr) {
                             if ($action === 'approve') {
-                                $prController->approve($pr);
+                                $prController->approve($request, $pr, app(\App\Services\Budget\BudgetMonitoringService::class), app(\App\Services\Settings\SystemPolicyService::class), app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
-                                $prController->reject($request, $pr);
+                                $prController->reject($pr);
                             }
                             $processedCount++;
                         }
@@ -412,9 +422,9 @@ class ApprovalCenterController extends Controller
                         $ts = TimesheetEntry::find($id);
                         if ($ts) {
                             if ($action === 'approve') {
-                                $timesheetController->approve($ts);
+                                $timesheetController->approve($request, $ts, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
-                                $timesheetController->reject($request, $ts);
+                                $timesheetController->reject($request, $ts, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             }
                             $processedCount++;
                         }
@@ -444,5 +454,19 @@ class ApprovalCenterController extends Controller
             'processed_count' => $processedCount,
             'errors' => $errors,
         ]);
+    }
+
+    private function approvalPermission(string $module): string
+    {
+        return match ($module) {
+            'expense' => 'expense.approve',
+            'pr' => 'procurement.pr.approve',
+            'po' => 'procurement.po.approve',
+            'cba' => 'procurement.cba.approve',
+            'scn' => 'procurement.pr.approve',
+            'journal' => 'accounting.journal.post',
+            'timesheet' => 'timesheet.approve',
+            'asset' => 'asset.capitalize',
+        };
     }
 }

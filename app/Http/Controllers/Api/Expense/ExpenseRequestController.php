@@ -13,6 +13,7 @@ use App\Models\Master\ChartOfAccount;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Budget\BudgetMonitoringService;
 use App\Services\Settings\SystemPolicyService;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -64,10 +65,11 @@ class ExpenseRequestController extends Controller
         return response()->json(['success' => true, 'message' => 'Expense request berhasil dibuat.', 'data' => $this->format($expense)], Response::HTTP_CREATED);
     }
 
-    public function submit(Request $request, ExpenseRequest $expenseRequest, SystemPolicyService $policies): JsonResponse
+    public function submit(Request $request, ExpenseRequest $expenseRequest, SystemPolicyService $policies, ApprovalWorkflowService $workflow): JsonResponse
     {
         $this->authorizeScope($request, $expenseRequest);
         $this->ensureReceiptIfRequired($expenseRequest, $policies);
+        $workflow->start('expense', $expenseRequest, (float) $expenseRequest->total_amount, $request->user()->id);
 
         return $this->transition($expenseRequest, 'draft', 'submitted', [
             'submitted_by' => request()->user()->id,
@@ -110,10 +112,14 @@ class ExpenseRequestController extends Controller
         return Storage::disk('local')->download($path, $downloadName);
     }
 
-    public function approve(ExpenseRequest $expenseRequest, BudgetMonitoringService $budgetService, SystemPolicyService $policies): JsonResponse
+    public function approve(Request $request, ExpenseRequest $expenseRequest, BudgetMonitoringService $budgetService, SystemPolicyService $policies, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($expenseRequest->status !== 'submitted') {
             throw ValidationException::withMessages(['status' => 'Expense harus submitted untuk approval.']);
+        }
+        $approval = $workflow->approve('expense', $expenseRequest, $request->user(), $request->input('notes'));
+        if ($approval['managed'] && ! $approval['completed']) {
+            return response()->json(['success' => true, 'message' => "Approval tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
         }
 
         foreach ($expenseRequest->lines as $line) {
@@ -141,6 +147,7 @@ class ExpenseRequestController extends Controller
         if (! in_array($expenseRequest->status, ['submitted', 'approved'], true)) {
             throw ValidationException::withMessages(['status' => 'Expense tidak dapat direject dari status saat ini.']);
         }
+        app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request->user(), $data['notes']);
 
         $expenseRequest->update([
             'status' => 'rejected',
@@ -276,6 +283,7 @@ class ExpenseRequestController extends Controller
                 'reference' => $data['reference'] ?? null,
                 'status' => 'paid',
                 'journal_id' => $journal->id,
+                'created_by' => request()->user()->id,
             ]);
 
             BankTransaction::create([
