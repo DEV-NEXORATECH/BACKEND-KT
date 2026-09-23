@@ -392,6 +392,8 @@ class DatabaseSeeder extends Seeder
 
         // Run Master Data Seeder
         $this->call(MasterDataSeeder::class);
+        $this->call(DepartmentSeeder::class);
         $this->call(BudgetAlertThresholdSeeder::class);
+        $this->call(UserSeeder::class);
     }
 }
