@@ -52,6 +52,9 @@ class PurchaseOrder extends Model
         return $this->hasMany(SupplierInvoice::class);
     }
 
+    public function amendments(): HasMany { return $this->hasMany(PoAmendment::class); }
+    public function vendorEvaluations(): HasMany { return $this->hasMany(VendorEvaluation::class); }
+
     public function getTotalAmountAttribute(): string
     {
         return number_format((float) $this->lines->sum('total_amount'), 2, '.', '');

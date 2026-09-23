@@ -66,20 +66,28 @@ class AdvancedProcurementTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.status', 'approved');
 
-        $this->postJson("/api/v1/procurement/cba/{$cbaId}/purchase-orders", [
+        $poId = $this->postJson("/api/v1/procurement/cba/{$cbaId}/purchase-orders", [
             'po_date' => '2026-09-23',
             'contract_number' => 'CON-001',
             'contract_date' => '2026-09-23',
         ])
             ->assertCreated()
             ->assertJsonPath('data.vendor_name', $vendorB->name)
-            ->assertJsonPath('data.contract_number', 'CON-001');
+            ->assertJsonPath('data.contract_number', 'CON-001')
+            ->json('data.id');
+
+        $this->postJson("/api/v1/procurement/purchase-orders/{$poId}/approve")->assertOk();
+        $amendment = $this->postJson("/api/v1/procurement/purchase-orders/{$poId}/amendments", ['terms' => 'Delivery within 14 days', 'reason' => 'Supplier delivery schedule revised.'])
+            ->assertCreated()->assertJsonPath('data.status', 'pending_approval');
+        $this->postJson('/api/v1/procurement/po-amendments/'.$amendment->json('data.id').'/approve')->assertOk();
+        $this->postJson("/api/v1/procurement/purchase-orders/{$poId}/vendor-evaluations", ['quality_score' => 5, 'delivery_score' => 4, 'price_score' => 4, 'service_score' => 5])
+            ->assertCreated()->assertJsonPath('data.overall_score', '4.5');
     }
 
     private function fixture(): array
     {
         $role = Role::create(['name' => 'Advanced Procurement Role', 'slug' => 'advanced-procurement-role']);
-        foreach (['procurement.rfq.create', 'procurement.cba.create', 'procurement.cba.approve', 'procurement.po.create'] as $permission) {
+        foreach (['procurement.rfq.create', 'procurement.cba.create', 'procurement.cba.approve', 'procurement.po.create', 'procurement.po.approve'] as $permission) {
             $role->permissions()->attach(Permission::firstOrCreate(['slug' => $permission], ['name' => $permission]));
         }
         $user = User::factory()->create(['role_id' => $role->id]);

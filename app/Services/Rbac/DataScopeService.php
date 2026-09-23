@@ -77,4 +77,20 @@ class DataScopeService
 
         return $query;
     }
+
+    /** Apply owner-or-assigned-project scope through a model relationship. */
+    public function applyRelatedProjectScope(Builder $query, User $user, string $ownerColumn, string $relationPath): Builder
+    {
+        if ($this->canAccessAll($user)) {
+            return $query;
+        }
+
+        $projectIds = $this->accessibleProjectIds($user);
+        return $query->where(function (Builder $inner) use ($ownerColumn, $relationPath, $projectIds, $user) {
+            $inner->where($ownerColumn, $user->id);
+            if ($projectIds !== []) {
+                $inner->orWhereHas($relationPath, fn (Builder $related) => $related->whereIn('project_id', $projectIds));
+            }
+        });
+    }
 }

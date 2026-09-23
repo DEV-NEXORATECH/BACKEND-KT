@@ -50,6 +50,15 @@ class FixedAssetWorkflowTest extends TestCase
 
         $this->assertDatabaseHas('asset_depreciations', ['fixed_asset_id' => $assetId, 'amount' => 100]);
 
+        $this->postJson('/api/v1/assets/fixed-assets/bulk-depreciate', [
+            'depreciation_date' => '2026-09-30',
+        ])
+            ->assertOk()
+            ->assertJsonPath('processed_count', 0)
+            ->assertJsonPath('skipped_count', 1);
+
+        $this->assertDatabaseCount('asset_depreciations', 1);
+
         $this->postJson("/api/v1/assets/fixed-assets/{$assetId}/transfer", [
             'location' => 'Jakarta Field Office',
         ])

@@ -17,11 +17,13 @@ use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
 use App\Services\Budget\BudgetMonitoringService;
 use App\Services\Rbac\DataScopeService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 class ReportsDashboardController extends Controller
 {
@@ -404,6 +406,32 @@ class ReportsDashboardController extends Controller
         ]);
     }
 
+    /** Download an official Profit & Loss PDF from posted journal data only. */
+    public function profitLossPdf(Request $request): Response
+    {
+        $this->ensureExportScope($request);
+        $period = $this->period($request);
+        $rows = $this->financialStatement($this->postedLines($period['start'], $period['end'], $request->input('project_id')))['rows'];
+        $this->auditExport($request, 'profit_loss_pdf', count($rows));
+
+        return Pdf::loadView('reports.profit-loss-pdf', [
+            'rows' => collect($rows),
+            'period_label' => $this->periodLabel($period),
+        ])->setPaper('a4')->download('laporan-laba-rugi-'.now()->format('YmdHis').'.pdf');
+    }
+
+    /** Download an official balance sheet PDF as of the selected reporting date. */
+    public function balanceSheetPdf(Request $request): Response
+    {
+        $this->ensureExportScope($request);
+        $asOf = $request->filled('as_of') ? CarbonImmutable::parse($request->string('as_of'))->toDateString() : CarbonImmutable::now()->toDateString();
+        $data = $this->balanceSheetData($asOf);
+        $this->auditExport($request, 'balance_sheet_pdf', count($data['accounts']));
+
+        return Pdf::loadView('reports.balance-sheet-pdf', ['data' => $data, 'as_of' => $asOf])
+            ->setPaper('a4')->download('neraca-'.now()->format('YmdHis').'.pdf');
+    }
+
     public function forecast(Request $request): JsonResponse
     {
         if (! app(DataScopeService::class)->canAccessAll($request->user())) {
@@ -435,6 +463,36 @@ class ReportsDashboardController extends Controller
                 'end_date' => $end?->toDateString(),
             ],
         ];
+    }
+
+    private function ensureExportScope(Request $request): void
+    {
+        if (! app(DataScopeService::class)->canAccessAll($request->user())) {
+            abort(Response::HTTP_FORBIDDEN, 'Export laporan keuangan organisasi tidak tersedia untuk scope personal.');
+        }
+    }
+
+    private function auditExport(Request $request, string $format, int $rows): void
+    {
+        \App\Models\AuditLog::create([
+            'user_id' => $request->user()->id,
+            'module' => 'reports',
+            'platform' => strtolower($request->header('X-Client-Platform', 'web')),
+            'action' => 'EXPORT',
+            'entity_type' => self::class,
+            'entity_id' => null,
+            'previous_values' => null,
+            'new_values' => ['format' => $format, 'rows' => $rows],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+    }
+
+    private function periodLabel(array $period): string
+    {
+        $start = $period['start']?->format('d/m/Y') ?? 'Awal';
+        $end = $period['end']?->format('d/m/Y') ?? 'Saat ini';
+        return "{$start} s.d. {$end}";
     }
 
     private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null)

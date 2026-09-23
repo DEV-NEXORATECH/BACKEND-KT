@@ -9,6 +9,7 @@ use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\Rfq;
 use App\Models\Procurement\VendorQuotation;
 use App\Services\Rbac\DataScopeService;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,7 @@ class AdvancedProcurementController extends Controller
     public function rfqs(Request $request): JsonResponse
     {
         $query = Rfq::with(['purchaseRequest:id,pr_number,status', 'vendors:id,code,name', 'quotations.vendor:id,code,name', 'cba.selectedVendor:id,code,name']);
-        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'purchaseRequest.project_id', null, ['procurement.rfq.view']);
+        app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
         return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn (Rfq $rfq) => $this->formatRfq($rfq))]);
     }
 
@@ -46,6 +47,7 @@ class AdvancedProcurementController extends Controller
                 'submission_deadline' => $data['submission_deadline'] ?? null,
                 'terms' => $data['terms'] ?? null,
                 'status' => 'issued',
+                'created_by' => request()->user()->id,
             ]);
             $rfq->vendors()->sync(collect($data['vendor_ids'])->mapWithKeys(fn ($id) => [$id => ['status' => 'invited']])->all());
 
@@ -141,12 +143,23 @@ class AdvancedProcurementController extends Controller
         return response()->json(['success' => true, 'message' => 'CBA berhasil dibuat.', 'data' => $this->formatCba($cba)], Response::HTTP_CREATED);
     }
 
-    public function approveCba(ComparativeBidAnalysis $cba): JsonResponse
+    public function submitCba(Request $request, ComparativeBidAnalysis $cba, ApprovalWorkflowService $workflow): JsonResponse
+    {
+        if ($cba->status !== 'draft') throw ValidationException::withMessages(['status' => 'Hanya CBA draft yang dapat diajukan approval.']);
+        $run = $workflow->start('cba', $cba, (float) ($cba->selectedQuotation?->total_amount ?? 0), $request->user()->id);
+        return response()->json(['success' => true, 'workflow_managed' => (bool) $run, 'message' => $run ? 'CBA diajukan ke Approval Matrix.' : 'Tidak ada Approval Matrix CBA aktif; CBA siap diapprove.', 'data' => $this->formatCba($cba->fresh(['rfq.purchaseRequest:id,pr_number', 'selectedVendor:id,code,name', 'selectedQuotation']))]);
+    }
+
+    public function approveCba(Request $request, ComparativeBidAnalysis $cba, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($cba->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'Hanya CBA draft yang dapat diapprove.']);
         }
-        $cba->update(['status' => 'approved', 'approved_by' => request()->user()->id, 'approved_at' => now()]);
+        $amount = (float) ($cba->selectedQuotation?->total_amount ?? 0);
+        $approval = $workflow->approve('cba', $cba, $request->user(), $request->input('notes'));
+        if (! $approval['managed'] && $workflow->requiresApproval('cba', $cba, $amount)) throw ValidationException::withMessages(['approval' => 'CBA harus disubmit ke Approval Matrix sebelum approval.']);
+        if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Approval CBA tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->formatCba($cba->fresh(['rfq.purchaseRequest:id,pr_number', 'selectedVendor:id,code,name', 'selectedQuotation']))]);
+        $cba->update(['status' => 'approved', 'approved_by' => $request->user()->id, 'approved_at' => now()]);
 
         return response()->json(['success' => true, 'message' => 'CBA berhasil diapprove.', 'data' => $this->formatCba($cba->fresh(['rfq.purchaseRequest:id,pr_number', 'selectedVendor:id,code,name', 'selectedQuotation']))]);
     }
@@ -178,6 +191,7 @@ class AdvancedProcurementController extends Controller
                 'contract_date' => $data['contract_date'] ?? null,
                 'terms' => $data['terms'] ?? $cba->selectedQuotation?->terms,
                 'status' => 'draft',
+                'created_by' => request()->user()->id,
             ]);
 
             foreach ($pr->lines as $line) {

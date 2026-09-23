@@ -110,10 +110,20 @@ class ProcessApprovalEscalations extends Command
 
         foreach ($byPermission as $permission => $items) {
             $approvers = User::query()
+                ->where('is_active', true)
                 ->whereHas('role.permissions', fn ($q) => $q->where('slug', $permission))
                 ->get();
 
             foreach ($approvers as $approver) {
+                $alreadyReminded = \App\Models\Notification::query()
+                    ->where('user_id', $approver->id)
+                    ->where('type', 'approval')
+                    ->where('action_url', '/approvals')
+                    ->whereDate('created_at', now()->toDateString())
+                    ->exists();
+                if ($alreadyReminded) {
+                    continue;
+                }
                 \App\Models\Notification::create([
                     'user_id' => $approver->id,
                     'title' => 'Reminder persetujuan',

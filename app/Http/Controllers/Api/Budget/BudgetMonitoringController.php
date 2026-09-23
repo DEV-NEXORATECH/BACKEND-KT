@@ -28,7 +28,7 @@ class BudgetMonitoringController extends Controller
             ->when($filters['grant_agreement_id'] ?? null, fn (Builder $q, $id) => $q->where('grant_agreement_id', $id))
             ->when($filters['budget_category_id'] ?? null, fn (Builder $q, $id) => $q->where('budget_category_id', $id));
 
-        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'project_id', null, ['budget.view']);
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'project_id', null, []);
 
         $filters['budget_line_ids'] = $query->pluck('id')->all();
 

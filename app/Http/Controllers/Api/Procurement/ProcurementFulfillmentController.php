@@ -7,7 +7,10 @@ use App\Models\Procurement\GoodsReceipt;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
+use App\Models\Procurement\PoAmendment;
+use App\Models\Procurement\VendorEvaluation;
 use App\Services\Rbac\DataScopeService;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +19,44 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ProcurementFulfillmentController extends Controller
 {
+    public function amendments(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
+    {
+        $this->ensureRelatedScope($request, PurchaseOrder::class, $purchaseOrder->id, 'created_by', 'purchaseRequest');
+        return response()->json(['success' => true, 'data' => $purchaseOrder->amendments()->latest('version')->get()]);
+    }
+
+    public function createAmendment(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
+    {
+        $this->ensureRelatedScope($request, PurchaseOrder::class, $purchaseOrder->id, 'created_by', 'purchaseRequest');
+        if ($purchaseOrder->status !== 'approved') throw ValidationException::withMessages(['status' => 'Amendment hanya dapat dibuat untuk PO approved.']);
+        $data = $request->validate(['contract_number' => ['nullable', 'string', 'max:80'], 'contract_date' => ['nullable', 'date'], 'terms' => ['nullable', 'string'], 'reason' => ['required', 'string', 'max:2000']]);
+        $changed = collect(['contract_number', 'contract_date', 'terms'])->filter(fn ($field) => array_key_exists($field, $data) && (string) $purchaseOrder->getAttribute($field) !== (string) $data[$field])->mapWithKeys(fn ($field) => [$field => ['old' => $purchaseOrder->getAttribute($field), 'new' => $data[$field]]])->all();
+        if ($changed === []) throw ValidationException::withMessages(['changes' => 'Tidak ada perubahan kontrak yang diajukan.']);
+        $version = (int) $purchaseOrder->amendments()->max('version') + 1;
+        $amendment = $purchaseOrder->amendments()->create(['amendment_number' => $purchaseOrder->po_number.'-AMD-'.str_pad((string) $version, 2, '0', STR_PAD_LEFT), 'version' => $version, 'changes' => $changed, 'reason' => $data['reason'], 'status' => 'pending_approval', 'created_by' => $request->user()->id]);
+        return response()->json(['success' => true, 'message' => 'PO amendment diajukan untuk approval.', 'data' => $amendment], Response::HTTP_CREATED);
+    }
+
+    public function approveAmendment(Request $request, PoAmendment $poAmendment): JsonResponse
+    {
+        $po = $poAmendment->purchaseOrder;
+        $this->ensureRelatedScope($request, PurchaseOrder::class, $po->id, 'created_by', 'purchaseRequest');
+        if ($poAmendment->status !== 'pending_approval') throw ValidationException::withMessages(['status' => 'Amendment tidak menunggu approval.']);
+        $changes = collect($poAmendment->changes)->mapWithKeys(fn ($value, $field) => [$field => $value['new']])->all();
+        DB::transaction(function () use ($po, $poAmendment, $changes, $request) { $po->update([...$changes, 'updated_by' => $request->user()->id]); $poAmendment->update(['status' => 'approved', 'approved_by' => $request->user()->id, 'approved_at' => now()]); });
+        return response()->json(['success' => true, 'message' => 'PO amendment berhasil diapprove.', 'data' => $poAmendment->fresh()]);
+    }
+
+    public function evaluateVendor(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
+    {
+        $this->ensureRelatedScope($request, PurchaseOrder::class, $purchaseOrder->id, 'created_by', 'purchaseRequest');
+        $data = $request->validate(['goods_receipt_id' => ['nullable', 'integer', 'exists:goods_receipts,id'], 'quality_score' => ['required', 'integer', 'between:1,5'], 'delivery_score' => ['required', 'integer', 'between:1,5'], 'price_score' => ['required', 'integer', 'between:1,5'], 'service_score' => ['required', 'integer', 'between:1,5'], 'evaluator_notes' => ['nullable', 'string', 'max:2000']]);
+        if (! $purchaseOrder->vendor_id) throw ValidationException::withMessages(['vendor' => 'PO belum memiliki vendor.']);
+        if (! empty($data['goods_receipt_id']) && ! $purchaseOrder->goodsReceipts()->whereKey($data['goods_receipt_id'])->exists()) throw ValidationException::withMessages(['goods_receipt_id' => 'GRN harus berasal dari PO yang sama.']);
+        $data['vendor_id'] = $purchaseOrder->vendor_id; $data['purchase_order_id'] = $purchaseOrder->id; $data['overall_score'] = round(collect(['quality_score','delivery_score','price_score','service_score'])->avg(fn ($key) => $data[$key]), 1); $data['evaluated_by'] = $request->user()->id;
+        $evaluation = VendorEvaluation::create($data);
+        return response()->json(['success' => true, 'message' => 'Evaluasi vendor berhasil dicatat.', 'data' => $evaluation->load('vendor:id,code,name')], Response::HTTP_CREATED);
+    }
     public function processOptions(): JsonResponse
     {
         return response()->json(['success' => true, 'data' => [
@@ -29,17 +70,19 @@ class ProcurementFulfillmentController extends Controller
     public function goodsReceipts(Request $request): JsonResponse
     {
         $query = GoodsReceipt::with('purchaseOrder:id,po_number');
-        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'purchaseOrder.project_id', null, ['procurement.grn.view']);
+        app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseOrder.purchaseRequest');
         return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn ($grn) => ['id' => $grn->id, 'grn_number' => $grn->grn_number, 'receipt_date' => $grn->receipt_date?->toDateString(), 'purchase_order' => $grn->purchaseOrder?->po_number, 'status' => $grn->status])]);
     }
 
-    public function showGoodsReceipt(GoodsReceipt $goodsReceipt): JsonResponse
+    public function showGoodsReceipt(Request $request, GoodsReceipt $goodsReceipt): JsonResponse
     {
+        $this->ensureRelatedScope($request, GoodsReceipt::class, $goodsReceipt->id, 'created_by', 'purchaseOrder.purchaseRequest');
         return response()->json(['success' => true, 'data' => $this->formatGrn($goodsReceipt->load(['purchaseOrder:id,po_number', 'lines.purchaseOrderLine']))]);
     }
 
     public function updateGoodsReceipt(Request $request, GoodsReceipt $goodsReceipt): JsonResponse
     {
+        $this->ensureRelatedScope($request, GoodsReceipt::class, $goodsReceipt->id, 'created_by', 'purchaseOrder.purchaseRequest');
         if ($goodsReceipt->status === 'cancelled') throw ValidationException::withMessages(['status' => 'GRN sudah dibatalkan.']);
         $data = $request->validate(['receipt_date' => ['sometimes', 'date'], 'notes' => ['nullable', 'string'], 'lines' => ['sometimes', 'array', 'min:1'], 'lines.*.purchase_order_line_id' => ['required_with:lines', 'integer', 'exists:purchase_order_lines,id'], 'lines.*.received_quantity' => ['required_with:lines', 'numeric', 'min:0.01']]);
         if (isset($data['lines'])) {
@@ -52,8 +95,9 @@ class ProcurementFulfillmentController extends Controller
         return response()->json(['success' => true, 'message' => 'GRN berhasil diperbarui.', 'data' => $this->formatGrn($goodsReceipt->fresh(['purchaseOrder:id,po_number', 'lines.purchaseOrderLine']))]);
     }
 
-    public function cancelGoodsReceipt(GoodsReceipt $goodsReceipt): JsonResponse
+    public function cancelGoodsReceipt(Request $request, GoodsReceipt $goodsReceipt): JsonResponse
     {
+        $this->ensureRelatedScope($request, GoodsReceipt::class, $goodsReceipt->id, 'created_by', 'purchaseOrder.purchaseRequest');
         if ($goodsReceipt->status === 'cancelled') throw ValidationException::withMessages(['status' => 'GRN sudah dibatalkan.']);
         if (SupplierInvoice::query()->where('goods_receipt_id', $goodsReceipt->id)->whereNotIn('status', ['cancelled'])->exists()) throw ValidationException::withMessages(['status' => 'GRN yang sudah direferensikan invoice tidak dapat dibatalkan.']);
         $goodsReceipt->update(['status' => 'cancelled']);
@@ -63,17 +107,19 @@ class ProcurementFulfillmentController extends Controller
     public function supplierInvoices(Request $request): JsonResponse
     {
         $query = SupplierInvoice::with(['purchaseOrder:id,po_number', 'vendor:id,code,name']);
-        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'purchaseOrder.project_id', null, ['procurement.invoice.view', 'ap.view']);
+        app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseOrder.purchaseRequest');
         return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn ($invoice) => ['id' => $invoice->id, 'invoice_number' => $invoice->invoice_number, 'invoice_date' => $invoice->invoice_date?->toDateString(), 'purchase_order' => $invoice->purchaseOrder?->po_number, 'vendor' => $invoice->vendor?->name, 'match_status' => $invoice->match_status, 'status' => $invoice->status, 'total_amount' => $invoice->total_amount])]);
     }
 
-    public function showSupplierInvoice(SupplierInvoice $supplierInvoice): JsonResponse
+    public function showSupplierInvoice(Request $request, SupplierInvoice $supplierInvoice): JsonResponse
     {
+        $this->ensureRelatedScope($request, SupplierInvoice::class, $supplierInvoice->id, 'created_by', 'purchaseOrder.purchaseRequest');
         return response()->json(['success' => true, 'data' => $this->formatInvoice($supplierInvoice->load(['purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'vendor:id,code,name', 'lines']))]);
     }
 
     public function updateSupplierInvoice(Request $request, SupplierInvoice $supplierInvoice): JsonResponse
     {
+        $this->ensureRelatedScope($request, SupplierInvoice::class, $supplierInvoice->id, 'created_by', 'purchaseOrder.purchaseRequest');
         if (! in_array($supplierInvoice->status, ['draft', 'matched'], true)) throw ValidationException::withMessages(['status' => 'Invoice hanya dapat diubah saat draft atau matched.']);
         $data = $request->validate(['invoice_date' => ['sometimes', 'date'], 'due_date' => ['nullable', 'date'], 'notes' => ['nullable', 'string'], 'lines' => ['sometimes', 'array', 'min:1'], 'lines.*.purchase_order_line_id' => ['required_with:lines', 'integer', 'exists:purchase_order_lines,id'], 'lines.*.item_description' => ['required_with:lines', 'string', 'max:255'], 'lines.*.quantity' => ['required_with:lines', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required_with:lines', 'numeric', 'min:0.01']]);
         if (isset($data['lines'])) {
@@ -89,8 +135,9 @@ class ProcurementFulfillmentController extends Controller
         return response()->json(['success' => true, 'message' => 'Supplier invoice berhasil diperbarui.', 'data' => $this->formatInvoice($supplierInvoice->fresh(['purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'vendor:id,code,name', 'lines']))]);
     }
 
-    public function cancelSupplierInvoice(SupplierInvoice $supplierInvoice): JsonResponse
+    public function cancelSupplierInvoice(Request $request, SupplierInvoice $supplierInvoice): JsonResponse
     {
+        $this->ensureRelatedScope($request, SupplierInvoice::class, $supplierInvoice->id, 'created_by', 'purchaseOrder.purchaseRequest');
         if (in_array($supplierInvoice->status, ['posted', 'paid', 'cancelled'], true)) throw ValidationException::withMessages(['status' => 'Invoice tidak dapat dibatalkan dari status saat ini.']);
         $supplierInvoice->update(['status' => 'cancelled']);
         return response()->json(['success' => true, 'message' => 'Supplier invoice berhasil dibatalkan.', 'data' => $this->formatInvoice($supplierInvoice->fresh(['purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'vendor:id,code,name', 'lines']))]);
@@ -99,28 +146,31 @@ class ProcurementFulfillmentController extends Controller
     public function purchaseOrders(Request $request): JsonResponse
     {
         $query = PurchaseOrder::with(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']);
-        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'purchaseRequest.project_id', null, ['procurement.po.view']);
+        app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
         return response()->json([
             'success' => true,
             'data' => $query->latest('id')->get()->map(fn ($po) => $this->formatPo($po)),
         ]);
     }
 
-    public function showPurchaseOrder(PurchaseOrder $purchaseOrder): JsonResponse
+    public function showPurchaseOrder(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
     {
+        $this->ensureRelatedScope($request, PurchaseOrder::class, $purchaseOrder->id, 'created_by', 'purchaseRequest');
         return response()->json(['success' => true, 'data' => $this->formatPo($purchaseOrder->load(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']))]);
     }
 
     public function updatePurchaseOrder(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
     {
+        $this->ensureRelatedScope($request, PurchaseOrder::class, $purchaseOrder->id, 'created_by', 'purchaseRequest');
         if ($purchaseOrder->status !== 'draft') throw ValidationException::withMessages(['status' => 'PO hanya dapat diubah saat draft.']);
         $data = $request->validate(['po_date' => ['sometimes', 'date'], 'contract_number' => ['nullable', 'string', 'max:80'], 'contract_date' => ['nullable', 'date'], 'terms' => ['nullable', 'string']]);
         $purchaseOrder->update($data);
         return response()->json(['success' => true, 'message' => 'PO berhasil diperbarui.', 'data' => $this->formatPo($purchaseOrder->fresh(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']))]);
     }
 
-    public function cancelPurchaseOrder(PurchaseOrder $purchaseOrder): JsonResponse
+    public function cancelPurchaseOrder(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
     {
+        $this->ensureRelatedScope($request, PurchaseOrder::class, $purchaseOrder->id, 'created_by', 'purchaseRequest');
         if (! in_array($purchaseOrder->status, ['draft', 'approved'], true)) throw ValidationException::withMessages(['status' => 'PO tidak dapat dibatalkan dari status saat ini.']);
         if ($purchaseOrder->goodsReceipts()->exists() || $purchaseOrder->supplierInvoices()->exists()) throw ValidationException::withMessages(['status' => 'PO yang sudah memiliki GRN atau invoice tidak dapat dibatalkan.']);
         $purchaseOrder->update(['status' => 'cancelled']);
@@ -146,6 +196,7 @@ class ProcurementFulfillmentController extends Controller
                 'po_date' => $data['po_date'],
                 'terms' => $data['terms'] ?? null,
                 'status' => 'draft',
+                'created_by' => request()->user()->id,
             ]);
 
             foreach ($purchaseRequest->lines as $line) {
@@ -166,11 +217,22 @@ class ProcurementFulfillmentController extends Controller
         return response()->json(['success' => true, 'message' => 'PO berhasil dibuat dari PR.', 'data' => $this->formatPo($po)], Response::HTTP_CREATED);
     }
 
-    public function approvePo(PurchaseOrder $purchaseOrder): JsonResponse
+    public function submitPo(Request $request, PurchaseOrder $purchaseOrder, ApprovalWorkflowService $workflow): JsonResponse
+    {
+        if ($purchaseOrder->status !== 'draft') throw ValidationException::withMessages(['status' => 'Hanya PO draft yang dapat diajukan approval.']);
+        $run = $workflow->start('po', $purchaseOrder, (float) $purchaseOrder->total_amount, $request->user()->id);
+        return response()->json(['success' => true, 'workflow_managed' => (bool) $run, 'message' => $run ? 'PO diajukan ke Approval Matrix.' : 'Tidak ada Approval Matrix PO aktif; PO siap diapprove.', 'data' => $this->formatPo($purchaseOrder->fresh(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']))]);
+    }
+
+    public function approvePo(Request $request, PurchaseOrder $purchaseOrder, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($purchaseOrder->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'Hanya PO draft yang dapat diapprove.']);
         }
+
+        $approval = $workflow->approve('po', $purchaseOrder, $request->user(), $request->input('notes'));
+        if (! $approval['managed'] && $workflow->requiresApproval('po', $purchaseOrder, (float) $purchaseOrder->total_amount)) throw ValidationException::withMessages(['approval' => 'PO harus disubmit ke Approval Matrix sebelum approval.']);
+        if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Approval PO tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->formatPo($purchaseOrder->fresh(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']))]);
 
         $purchaseOrder->update([
             'status' => 'approved',
@@ -183,6 +245,7 @@ class ProcurementFulfillmentController extends Controller
 
     public function createGrn(PurchaseOrder $purchaseOrder, Request $request): JsonResponse
     {
+        $this->ensureRelatedScope($request, PurchaseOrder::class, $purchaseOrder->id, 'created_by', 'purchaseRequest');
         if ($purchaseOrder->status !== 'approved') {
             throw ValidationException::withMessages(['status' => 'GRN hanya dapat dibuat dari PO approved.']);
         }
@@ -205,6 +268,7 @@ class ProcurementFulfillmentController extends Controller
                 'status' => 'received',
                 'received_by' => request()->user()->id,
                 'received_at' => now(),
+                'created_by' => request()->user()->id,
             ]);
 
             foreach ($data['lines'] as $line) {
@@ -219,6 +283,7 @@ class ProcurementFulfillmentController extends Controller
 
     public function createInvoice(PurchaseOrder $purchaseOrder, Request $request): JsonResponse
     {
+        $this->ensureRelatedScope($request, PurchaseOrder::class, $purchaseOrder->id, 'created_by', 'purchaseRequest');
         if ($purchaseOrder->status !== 'approved') {
             throw ValidationException::withMessages(['status' => 'Supplier invoice hanya dapat dibuat dari PO approved.']);
         }
@@ -248,6 +313,7 @@ class ProcurementFulfillmentController extends Controller
                 'purchase_order_id' => $purchaseOrder->id,
                 'vendor_id' => $purchaseOrder->vendor_id,
                 'status' => 'draft',
+                'created_by' => request()->user()->id,
                 'match_status' => 'unchecked',
                 'total_amount' => 0,
             ]);
@@ -266,8 +332,9 @@ class ProcurementFulfillmentController extends Controller
         return response()->json(['success' => true, 'message' => 'Supplier invoice berhasil dibuat.', 'data' => $this->formatInvoice($invoice)], Response::HTTP_CREATED);
     }
 
-    public function threeWayMatch(SupplierInvoice $supplierInvoice): JsonResponse
+    public function threeWayMatch(Request $request, SupplierInvoice $supplierInvoice): JsonResponse
     {
+        $this->ensureRelatedScope($request, SupplierInvoice::class, $supplierInvoice->id, 'created_by', 'purchaseOrder.purchaseRequest');
         if ($supplierInvoice->status === 'posted' || $supplierInvoice->status === 'paid') {
             throw ValidationException::withMessages(['status' => 'Invoice yang sudah diposting atau dibayar tidak dapat di-match ulang.']);
         }
@@ -319,6 +386,13 @@ class ProcurementFulfillmentController extends Controller
             $received = (float) $purchaseOrder->goodsReceipts()->where('status', '!=', 'cancelled')->when($ignoreGoodsReceiptId, fn ($q) => $q->where('id', '!=', $ignoreGoodsReceiptId))->with('lines')->get()->sum(fn ($grn) => (float) $grn->lines->where('purchase_order_line_id', $line['purchase_order_line_id'])->sum('received_quantity'));
             if ($received + (float) $line['received_quantity'] > $ordered) throw ValidationException::withMessages(['lines' => 'Jumlah penerimaan melebihi quantity PO.']);
         }
+    }
+
+    private function ensureRelatedScope(Request $request, string $model, int $id, string $ownerColumn, string $relationPath): void
+    {
+        $query = $model::query()->whereKey($id);
+        app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), $ownerColumn, $relationPath);
+        if (! $query->exists()) abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengakses dokumen procurement ini.');
     }
 
     private function formatPo(PurchaseOrder $po): array

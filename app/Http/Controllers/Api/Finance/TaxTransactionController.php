@@ -53,7 +53,7 @@ class TaxTransactionController extends Controller
             ->when($request->filled('tax_id'), fn (Builder $query) => $query->where('tax_id', $request->integer('tax_id')))
             ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')));
 
-        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, ['tax.manage']);
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, []);
 
         $items = $query->latest('transaction_date')
             ->latest('id')
@@ -77,7 +77,6 @@ class TaxTransactionController extends Controller
             'npwp' => ['nullable', 'string', 'max:30'],
             'e_faktur_number' => ['nullable', 'string', 'max:30'],
             'e_bupot_number' => ['nullable', 'string', 'max:30'],
-            'status' => ['nullable', 'in:draft,reported,cancelled'],
             'notes' => ['nullable', 'string'],
         ]);
 
@@ -102,11 +101,42 @@ class TaxTransactionController extends Controller
             'npwp' => $data['npwp'] ?? null,
             'e_faktur_number' => $data['e_faktur_number'] ?? null,
             'e_bupot_number' => $data['e_bupot_number'] ?? null,
-            'status' => $data['status'] ?? 'draft',
+            'status' => 'draft',
             'notes' => $data['notes'] ?? null,
+            'created_by' => $request->user()->id,
         ])->load('tax:id,code,name,tax_type,rate_percent');
 
         return response()->json(['success' => true, 'message' => 'Tax transaction berhasil dicatat.', 'data' => $this->format($item)], Response::HTTP_CREATED);
+    }
+
+    /** Record the external tax filing reference before a transaction is reported/exported. */
+    public function markReported(Request $request, TaxTransaction $taxTransaction): JsonResponse
+    {
+        $query = TaxTransaction::whereKey($taxTransaction->id);
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, []);
+        if (! $query->exists()) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh melaporkan transaksi pajak ini.');
+        }
+        if ($taxTransaction->status !== 'draft') {
+            return response()->json(['success' => true, 'message' => 'Transaksi pajak sudah dilaporkan.', 'data' => $this->format($taxTransaction->load('tax:id,code,name,tax_type,rate_percent'))]);
+        }
+
+        $data = $request->validate([
+            'e_faktur_reference' => ['nullable', 'string', 'max:100'],
+            'e_bupot_reference' => ['nullable', 'string', 'max:100'],
+            'e_faktur_number' => ['nullable', 'string', 'max:30'],
+            'e_bupot_number' => ['nullable', 'string', 'max:30'],
+            'notes' => ['nullable', 'string'],
+        ]);
+        if (! array_filter([$data['e_faktur_reference'] ?? null, $data['e_bupot_reference'] ?? null, $data['e_faktur_number'] ?? null, $data['e_bupot_number'] ?? null])) {
+            return response()->json(['success' => false, 'message' => 'Referensi e-Faktur atau e-Bupot wajib diisi sebelum pelaporan.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $previous = ['status' => $taxTransaction->status];
+        $taxTransaction->update([...$data, 'status' => 'reported', 'reported_by' => $request->user()->id, 'reported_at' => now(), 'updated_by' => $request->user()->id]);
+        \App\Models\AuditLog::create(['user_id' => $request->user()->id, 'module' => 'tax', 'platform' => strtolower($request->header('X-Client-Platform', 'web')), 'action' => 'REPORT', 'entity_type' => TaxTransaction::class, 'entity_id' => $taxTransaction->id, 'previous_values' => $previous, 'new_values' => ['status' => 'reported'], 'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
+
+        return response()->json(['success' => true, 'message' => 'Transaksi pajak ditandai sudah dilaporkan.', 'data' => $this->format($taxTransaction->fresh('tax:id,code,name,tax_type,rate_percent'))]);
     }
 
     /**
@@ -119,12 +149,14 @@ class TaxTransactionController extends Controller
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
             ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
-            ->where('status', '!=', 'cancelled');
+            ->where('status', 'reported');
 
-        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, ['tax.manage']);
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, []);
 
         $items = $query->orderBy('transaction_date')
             ->get();
+
+        \App\Models\AuditLog::create(['user_id' => $request->user()->id, 'module' => 'tax', 'platform' => strtolower($request->header('X-Client-Platform', 'web')), 'action' => 'EXPORT', 'entity_type' => TaxTransaction::class, 'entity_id' => null, 'previous_values' => null, 'new_values' => ['format' => 'djp_csv', 'rows' => $items->count()], 'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
 
         $filename = 'djp_export_' . now()->format('Ymd_His') . '.csv';
 
@@ -179,7 +211,7 @@ class TaxTransactionController extends Controller
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
             ->where('status', '!=', 'cancelled');
 
-        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, ['tax.manage']);
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, []);
 
         $items = $query->get();
 

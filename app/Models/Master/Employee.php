@@ -14,10 +14,11 @@ class Employee extends Model
 
     protected $table = 'employees';
 
-    protected $fillable = ['employee_id_number', 'name', 'email', 'department_id', 'office_location_id', 'position', 'bank_name', 'bank_account_number', 'bank_account_holder', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['employee_id_number', 'name', 'email', 'department_id', 'office_location_id', 'position', 'hourly_cost_rate', 'bank_name', 'bank_account_number', 'bank_account_holder', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'hourly_cost_rate' => 'decimal:2',
     ];
 
     public function department()

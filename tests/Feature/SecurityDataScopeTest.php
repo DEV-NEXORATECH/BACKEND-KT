@@ -5,6 +5,10 @@ namespace Tests\Feature;
 use App\Models\Master\BudgetCategory;
 use App\Models\Master\BudgetLine;
 use App\Models\Asset\FixedAsset;
+use App\Models\Procurement\Rfq;
+use App\Models\Procurement\PurchaseRequest;
+use App\Models\ProjectAssignment;
+use App\Models\Master\Project;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -127,6 +131,47 @@ class SecurityDataScopeTest extends TestCase
 
         $this->postJson("/api/v1/assets/fixed-assets/{$asset->id}/capitalize")
             ->assertForbidden();
+    }
+
+    public function test_procurement_view_permission_does_not_bypass_owner_scope(): void
+    {
+        [$userA, $userB] = $this->usersWithRole(['procurement.rfq.view']);
+        $purchaseRequest = PurchaseRequest::create([
+            'pr_number' => 'PR-SCOPE-001', 'request_date' => '2026-09-23',
+            'requester_id' => $userA->id, 'justification' => 'RFQ scope fixture', 'status' => 'approved', 'created_by' => $userA->id,
+        ]);
+        Rfq::create([
+            'purchase_request_id' => $purchaseRequest->id,
+            'rfq_number' => 'RFQ-SCOPE-001',
+            'rfq_date' => '2026-09-23',
+            'status' => 'issued',
+            'created_by' => $userA->id,
+        ]);
+
+        $this->actingAs($userB, 'sanctum')
+            ->getJson('/api/v1/procurement/rfqs')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this->actingAs($userA, 'sanctum')
+            ->getJson('/api/v1/procurement/rfqs')
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
+    }
+
+    public function test_project_assignment_grants_scoped_procurement_visibility(): void
+    {
+        [$userA, $budgetHolder] = $this->usersWithRole(['procurement.rfq.view']);
+        $project = Project::create(['code' => 'PRJ-SCOPE', 'name' => 'Assigned Project', 'is_active' => true]);
+        $purchaseRequest = PurchaseRequest::create(['pr_number' => 'PR-ASSIGNED-001', 'request_date' => '2026-09-23', 'requester_id' => $userA->id, 'project_id' => $project->id, 'justification' => 'Assigned visibility', 'status' => 'approved', 'created_by' => $userA->id]);
+        Rfq::create(['purchase_request_id' => $purchaseRequest->id, 'rfq_number' => 'RFQ-ASSIGNED-001', 'rfq_date' => '2026-09-23', 'status' => 'issued', 'created_by' => $userA->id]);
+        ProjectAssignment::create(['user_id' => $budgetHolder->id, 'project_id' => $project->id, 'role' => 'budget_holder', 'is_active' => true]);
+
+        $this->actingAs($budgetHolder, 'sanctum')
+            ->getJson('/api/v1/procurement/rfqs')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.rfq_number', 'RFQ-ASSIGNED-001');
     }
 
     private function usersWithRole(array $permissions): array
