@@ -59,7 +59,7 @@ class ExpenseWorkflowTest extends TestCase
 
     public function test_required_receipt_can_be_uploaded_before_submission(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         [$user, $budgetLine, $category] = $this->fixture();
 
         $expenseId = $this->actingAs($user, 'sanctum')->postJson('/api/v1/expenses/requests', [
@@ -73,9 +73,13 @@ class ExpenseWorkflowTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonValidationErrors('attachments');
 
-        $this->post("/api/v1/expenses/requests/{$expenseId}/attachments", [
+        $upload = $this->post("/api/v1/expenses/requests/{$expenseId}/attachments", [
             'file' => UploadedFile::fake()->create('receipt.pdf', 50, 'application/pdf'),
         ])->assertCreated()->assertJsonCount(1, 'data.attachments');
+
+        $this->get("/api/v1/expenses/requests/{$expenseId}/attachments/0")
+            ->assertOk()
+            ->assertDownload('receipt.pdf');
 
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/submit")
             ->assertOk()
@@ -85,7 +89,7 @@ class ExpenseWorkflowTest extends TestCase
     private function fixture(): array
     {
         $role = Role::create(['name' => 'Expense Role', 'slug' => 'expense-role']);
-        foreach (['expense.create', 'expense.submit', 'expense.approve', 'expense.post', 'expense.pay'] as $permission) {
+        foreach (['expense.view', 'expense.create', 'expense.submit', 'expense.approve', 'expense.post', 'expense.pay'] as $permission) {
             $role->permissions()->attach(Permission::create(['name' => $permission, 'slug' => $permission]));
         }
         $user = User::factory()->create(['role_id' => $role->id]);

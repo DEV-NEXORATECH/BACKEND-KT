@@ -15,8 +15,10 @@ use App\Services\Budget\BudgetMonitoringService;
 use App\Services\Settings\SystemPolicyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -83,11 +85,29 @@ class ExpenseRequestController extends Controller
         $data = $request->validate([
             'file' => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,xls,xlsx,doc,docx'],
         ]);
-        $path = $data['file']->store("expense-attachments/{$expenseRequest->id}", 'public');
-        $attachments = array_values(array_unique([...(array) $expenseRequest->attachments, Storage::disk('public')->url($path)]));
+        $file = $data['file'];
+        $extension = strtolower($file->getClientOriginalExtension());
+        $filename = Str::uuid().'_'.Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME)).'.'.$extension;
+        $path = $file->storeAs("expense-attachments/{$expenseRequest->id}", $filename, 'local');
+        $attachments = array_values(array_unique([...(array) $expenseRequest->attachments, $path]));
         $expenseRequest->update(['attachments' => $attachments]);
 
         return response()->json(['success' => true, 'message' => 'Lampiran berhasil diunggah.', 'data' => $this->format($expenseRequest->fresh($this->with))], Response::HTTP_CREATED);
+    }
+
+    public function downloadAttachment(Request $request, ExpenseRequest $expenseRequest, int $index): StreamedResponse
+    {
+        $this->authorizeScope($request, $expenseRequest);
+        $path = $expenseRequest->attachments[$index] ?? null;
+        $prefix = "expense-attachments/{$expenseRequest->id}/";
+        if (! is_string($path) || ! str_starts_with($path, $prefix) || ! Storage::disk('local')->exists($path)) {
+            abort(Response::HTTP_NOT_FOUND, 'Lampiran tidak ditemukan.');
+        }
+
+        $filename = basename($path);
+        $downloadName = str_contains($filename, '_') ? Str::after($filename, '_') : $filename;
+
+        return Storage::disk('local')->download($path, $downloadName);
     }
 
     public function approve(ExpenseRequest $expenseRequest, BudgetMonitoringService $budgetService, SystemPolicyService $policies): JsonResponse
