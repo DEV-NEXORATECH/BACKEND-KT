@@ -19,7 +19,7 @@ class ApprovalWorkflowTest extends TestCase
     {
         $requesterRole = $this->role('Requester', ['expense.submit']);
         $budgetHolderRole = $this->role('Budget Holder', ['expense.approve']);
-        $financeRole = $this->role('Finance', ['expense.approve']);
+        $financeRole = $this->role('Finance', ['expense.approve', 'expense.verify']);
         $requester = User::factory()->create(['role_id' => $requesterRole->id]);
         $budgetHolder = User::factory()->create(['role_id' => $budgetHolderRole->id]);
         $finance = User::factory()->create(['role_id' => $financeRole->id]);
@@ -29,8 +29,9 @@ class ApprovalWorkflowTest extends TestCase
         $expense = ExpenseRequest::create(['request_number' => 'EXP-WF-001', 'requester_id' => $requester->id, 'expense_type' => 'reimbursement', 'request_date' => '2026-09-23', 'description' => 'Two-stage approval', 'attachments' => ['receipt.pdf'], 'total_amount' => 500, 'status' => 'draft']);
 
         $this->actingAs($requester, 'sanctum')->postJson("/api/v1/expenses/requests/{$expense->id}/submit")->assertOk();
+        $this->actingAs($finance, 'sanctum')->postJson("/api/v1/expenses/requests/{$expense->id}/verify")->assertOk()->assertJsonPath('data.status', 'verified');
         $this->actingAs($finance, 'sanctum')->postJson("/api/v1/expenses/requests/{$expense->id}/approve")->assertUnprocessable();
-        $this->actingAs($budgetHolder, 'sanctum')->postJson("/api/v1/expenses/requests/{$expense->id}/approve")->assertOk()->assertJsonPath('data.status', 'submitted');
+        $this->actingAs($budgetHolder, 'sanctum')->postJson("/api/v1/expenses/requests/{$expense->id}/approve")->assertOk()->assertJsonPath('data.status', 'verified');
         $this->actingAs($finance, 'sanctum')->postJson("/api/v1/expenses/requests/{$expense->id}/approve")->assertOk()->assertJsonPath('data.status', 'approved');
 
         $this->assertSame('approved', ApprovalWorkflowRun::query()->first()->status);

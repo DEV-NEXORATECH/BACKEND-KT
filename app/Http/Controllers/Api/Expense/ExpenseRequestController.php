@@ -114,8 +114,8 @@ class ExpenseRequestController extends Controller
 
     public function approve(Request $request, ExpenseRequest $expenseRequest, BudgetMonitoringService $budgetService, SystemPolicyService $policies, ApprovalWorkflowService $workflow): JsonResponse
     {
-        if ($expenseRequest->status !== 'submitted') {
-            throw ValidationException::withMessages(['status' => 'Expense harus submitted untuk approval.']);
+        if ($expenseRequest->status !== 'verified') {
+            throw ValidationException::withMessages(['status' => 'Expense harus diverifikasi Finance untuk approval.']);
         }
         $approval = $workflow->approve('expense', $expenseRequest, $request->user(), $request->input('notes'));
         if ($approval['managed'] && ! $approval['completed']) {
@@ -134,7 +134,7 @@ class ExpenseRequestController extends Controller
             }
         }
 
-        $expense = $this->transition($expenseRequest, 'submitted', 'approved', [
+        $expense = $this->transition($expenseRequest, 'verified', 'approved', [
             'approved_by' => request()->user()->id,
             'approved_at' => now(),
             'decision_notes' => request('notes'),
@@ -157,6 +157,13 @@ class ExpenseRequestController extends Controller
         });
 
         return $expense;
+    }
+
+    public function verify(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    {
+        if ($expenseRequest->status !== 'submitted') throw ValidationException::withMessages(['status' => 'Expense harus submitted untuk verifikasi.']);
+        $expenseRequest->update(['status' => 'verified', 'verified_by' => $request->user()->id, 'verified_at' => now(), 'decision_notes' => $request->input('notes')]);
+        return response()->json(['success' => true, 'message' => 'Expense berhasil diverifikasi Finance.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
     }
 
     public function reject(Request $request, ExpenseRequest $expenseRequest): JsonResponse

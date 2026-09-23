@@ -44,6 +44,7 @@ class ExpenseWorkflowTest extends TestCase
             ->json('data.id');
 
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/submit")->assertOk()->assertJsonPath('data.status', 'submitted');
+        $this->postJson("/api/v1/expenses/requests/{$expenseId}/verify")->assertOk()->assertJsonPath('data.status', 'verified');
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/approve")->assertOk()->assertJsonPath('data.status', 'approved');
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/post")->assertOk()->assertJsonPath('data.status', 'posted');
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/pay", [
@@ -89,7 +90,7 @@ class ExpenseWorkflowTest extends TestCase
     private function fixture(): array
     {
         $role = Role::create(['name' => 'Expense Role', 'slug' => 'expense-role']);
-        foreach (['expense.view', 'expense.create', 'expense.submit', 'expense.approve', 'expense.post', 'expense.pay'] as $permission) {
+        foreach (['expense.view', 'expense.create', 'expense.submit', 'expense.verify', 'expense.approve', 'expense.post', 'expense.pay'] as $permission) {
             $role->permissions()->attach(Permission::create(['name' => $permission, 'slug' => $permission]));
         }
         $user = User::factory()->create(['role_id' => $role->id]);
