@@ -12,9 +12,11 @@ use App\Models\Notification;
 use App\Models\Master\ChartOfAccount;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Budget\BudgetMonitoringService;
+use App\Services\Settings\SystemPolicyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -60,9 +62,10 @@ class ExpenseRequestController extends Controller
         return response()->json(['success' => true, 'message' => 'Expense request berhasil dibuat.', 'data' => $this->format($expense)], Response::HTTP_CREATED);
     }
 
-    public function submit(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    public function submit(Request $request, ExpenseRequest $expenseRequest, SystemPolicyService $policies): JsonResponse
     {
         $this->authorizeScope($request, $expenseRequest);
+        $this->ensureReceiptIfRequired($expenseRequest, $policies);
 
         return $this->transition($expenseRequest, 'draft', 'submitted', [
             'submitted_by' => request()->user()->id,
@@ -70,7 +73,24 @@ class ExpenseRequestController extends Controller
         ], 'Expense request berhasil disubmit.');
     }
 
-    public function approve(ExpenseRequest $expenseRequest, BudgetMonitoringService $budgetService): JsonResponse
+    public function uploadAttachment(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    {
+        $this->authorizeScope($request, $expenseRequest);
+        if ($expenseRequest->status !== 'draft') {
+            throw ValidationException::withMessages(['status' => 'Lampiran hanya dapat ditambahkan saat expense masih draft.']);
+        }
+
+        $data = $request->validate([
+            'file' => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,xls,xlsx,doc,docx'],
+        ]);
+        $path = $data['file']->store("expense-attachments/{$expenseRequest->id}", 'public');
+        $attachments = array_values(array_unique([...(array) $expenseRequest->attachments, Storage::disk('public')->url($path)]));
+        $expenseRequest->update(['attachments' => $attachments]);
+
+        return response()->json(['success' => true, 'message' => 'Lampiran berhasil diunggah.', 'data' => $this->format($expenseRequest->fresh($this->with))], Response::HTTP_CREATED);
+    }
+
+    public function approve(ExpenseRequest $expenseRequest, BudgetMonitoringService $budgetService, SystemPolicyService $policies): JsonResponse
     {
         if ($expenseRequest->status !== 'submitted') {
             throw ValidationException::withMessages(['status' => 'Expense harus submitted untuk approval.']);
@@ -79,7 +99,7 @@ class ExpenseRequestController extends Controller
         foreach ($expenseRequest->lines as $line) {
             if ($line->budget_line_id) {
                 $validation = $budgetService->validate($line->budget_line_id, (float) $line->amount);
-                if (! $validation['allowed']) {
+                if (! $validation['allowed'] && $policies->blocksOverBudget()) {
                     throw ValidationException::withMessages(['budget_line_id' => "{$line->description}: {$validation['message']}"]);
                 }
             }
@@ -113,9 +133,10 @@ class ExpenseRequestController extends Controller
         return response()->json(['success' => true, 'message' => 'Expense request berhasil direject.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
     }
 
-    public function resubmit(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    public function resubmit(Request $request, ExpenseRequest $expenseRequest, SystemPolicyService $policies): JsonResponse
     {
         $this->authorizeScope($request, $expenseRequest);
+        $this->ensureReceiptIfRequired($expenseRequest, $policies);
 
         return $this->transition($expenseRequest, 'rejected', 'submitted', [
             'submitted_by' => $request->user()->id,
@@ -316,6 +337,15 @@ class ExpenseRequestController extends Controller
     {
         if (! $this->canAccessAll($request) && (int) $expenseRequest->requester_id !== (int) $request->user()->id) {
             abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengakses expense request user lain.');
+        }
+    }
+
+    private function ensureReceiptIfRequired(ExpenseRequest $expenseRequest, SystemPolicyService $policies): void
+    {
+        if ($policies->requiresExpenseReceipt() && empty($expenseRequest->attachments)) {
+            throw ValidationException::withMessages([
+                'attachments' => 'Lampiran/receipt wajib diunggah sebelum expense diajukan.',
+            ]);
         }
     }
 

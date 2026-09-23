@@ -12,6 +12,8 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ExpenseWorkflowTest extends TestCase
@@ -29,6 +31,7 @@ class ExpenseWorkflowTest extends TestCase
                 'request_date' => '2026-09-20',
                 'currency_code' => 'IDR',
                 'description' => 'Mobile reimbursement',
+                'attachments' => ['https://example.test/receipt-mob-req-001.pdf'],
                 'lines' => [[
                     'expense_category_id' => $category->id,
                     'budget_line_id' => $budgetLine->id,
@@ -52,6 +55,31 @@ class ExpenseWorkflowTest extends TestCase
 
         $this->assertDatabaseHas('journals', ['reference' => 'MOB-REQ-001', 'status' => 'posted']);
         $this->assertDatabaseHas('bank_transactions', ['credit' => 150, 'status' => 'matched']);
+    }
+
+    public function test_required_receipt_can_be_uploaded_before_submission(): void
+    {
+        Storage::fake('public');
+        [$user, $budgetLine, $category] = $this->fixture();
+
+        $expenseId = $this->actingAs($user, 'sanctum')->postJson('/api/v1/expenses/requests', [
+            'expense_type' => 'reimbursement',
+            'request_date' => '2026-09-20',
+            'description' => 'Receipt-controlled expense',
+            'lines' => [['expense_category_id' => $category->id, 'budget_line_id' => $budgetLine->id, 'description' => 'Transport', 'amount' => 10]],
+        ])->assertCreated()->json('data.id');
+
+        $this->postJson("/api/v1/expenses/requests/{$expenseId}/submit")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('attachments');
+
+        $this->post("/api/v1/expenses/requests/{$expenseId}/attachments", [
+            'file' => UploadedFile::fake()->create('receipt.pdf', 50, 'application/pdf'),
+        ])->assertCreated()->assertJsonCount(1, 'data.attachments');
+
+        $this->postJson("/api/v1/expenses/requests/{$expenseId}/submit")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'submitted');
     }
 
     private function fixture(): array

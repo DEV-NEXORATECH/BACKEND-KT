@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Budget\BudgetCommitment;
 use App\Models\Procurement\PurchaseRequest;
 use App\Services\Budget\BudgetMonitoringService;
+use App\Services\Settings\SystemPolicyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -155,7 +156,7 @@ class PurchaseRequestController extends Controller
         ], 'Purchase request berhasil disubmit.');
     }
 
-    public function approve(PurchaseRequest $purchaseRequest, BudgetMonitoringService $budgetService): JsonResponse
+    public function approve(PurchaseRequest $purchaseRequest, BudgetMonitoringService $budgetService, SystemPolicyService $policies): JsonResponse
     {
         if ($purchaseRequest->status !== 'submitted') {
             throw ValidationException::withMessages([
@@ -165,7 +166,7 @@ class PurchaseRequestController extends Controller
 
         foreach ($purchaseRequest->lines as $line) {
             $validation = $budgetService->validate($line->budget_line_id, (float) $line->total_amount);
-            if (! $validation['allowed']) {
+            if (! $validation['allowed'] && $policies->blocksOverBudget()) {
                 throw ValidationException::withMessages([
                     'budget_line_id' => "{$line->item_description}: {$validation['message']}",
                 ]);

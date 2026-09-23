@@ -2,8 +2,8 @@
 
 namespace App\Services\Accounting;
 
-use App\Models\ApplicationSetting;
 use App\Models\Master\AccountingPeriod;
+use App\Services\Settings\SystemPolicyService;
 use Illuminate\Validation\ValidationException;
 
 /** Prevent financial postings from being created in a closed accounting period. */
@@ -11,9 +11,7 @@ class AccountingPeriodService
 {
     public function ensureOpen(string $date, string $field = 'transaction_date'): void
     {
-        $policy = ApplicationSetting::query()->where('key', 'approval_budget_policy')->first();
-        $settings = $policy?->value ?? [];
-        if (($settings['hard_lock_closed_periods'] ?? true) === false) {
+        if (! app(SystemPolicyService::class)->locksClosedPeriods()) {
             return;
         }
 
