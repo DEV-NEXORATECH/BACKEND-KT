@@ -123,6 +123,84 @@ class TimesheetEntryController extends Controller
         return response()->json(['success' => true, 'message' => "Timesheet berhasil {$decision}.", 'data' => $this->format($timesheetEntry->fresh($this->with))]);
     }
 
+    public function postLaborCost(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'timesheet_ids' => ['required', 'array', 'min:1'],
+            'timesheet_ids.*' => ['required', 'integer', 'exists:timesheet_entries,id'],
+            'hourly_rate' => ['nullable', 'numeric', 'min:1'],
+            'posting_date' => ['nullable', 'date'],
+        ]);
+
+        $postingDate = $data['posting_date'] ?? now()->toDateString();
+        $defaultRate = (float) ($data['hourly_rate'] ?? 100000); // Default Rp 100.000 / jam
+
+        $entries = TimesheetEntry::whereIn('id', $data['timesheet_ids'])
+            ->where('status', 'approved')
+            ->get();
+
+        if ($entries->isEmpty()) {
+            throw ValidationException::withMessages(['timesheet_ids' => 'Tidak ada timesheet berstatus approved yang dipilih.']);
+        }
+
+        $laborAccount = \App\Models\Master\ChartOfAccount::where('account_type', 'expense')->where('is_header', false)->first();
+        $payableAccount = \App\Models\Master\ChartOfAccount::where('account_type', 'liability')->where('is_header', false)->first();
+
+        if (! $laborAccount || ! $payableAccount) {
+            throw ValidationException::withMessages(['account' => 'COA expense/liability untuk labor cost belum tersedia.']);
+        }
+
+        $postedCount = 0;
+        $totalCost = 0;
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($entries, $postingDate, $defaultRate, $laborAccount, $payableAccount, &$postedCount, &$totalCost) {
+            foreach ($entries as $entry) {
+                $cost = round((float) $entry->hours * $defaultRate, 2);
+                $journal = \App\Models\Accounting\Journal::create([
+                    'journal_number' => 'LABOR-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                    'journal_date' => $postingDate,
+                    'journal_type' => 'manual',
+                    'reference' => 'TS-'.$entry->id,
+                    'description' => 'Alokasi biaya jam kerja: '.$entry->description,
+                    'status' => 'posted',
+                    'posted_by' => request()->user()->id,
+                    'posted_at' => now(),
+                ]);
+
+                $journal->lines()->create([
+                    'account_id' => $laborAccount->id,
+                    'project_id' => $entry->project_id,
+                    'donor_id' => $entry->donor_id,
+                    'program_id' => $entry->program_id,
+                    'department_id' => $entry->department_id,
+                    'line_description' => 'Labor cost ('.$entry->hours.' jam)',
+                    'debit' => $cost,
+                    'credit' => 0,
+                    'line_order' => 1,
+                ]);
+
+                $journal->lines()->create([
+                    'account_id' => $payableAccount->id,
+                    'line_description' => 'Accrued labor cost',
+                    'debit' => 0,
+                    'credit' => $cost,
+                    'line_order' => 2,
+                ]);
+
+                $entry->update(['status' => 'posted']);
+                $postedCount++;
+                $totalCost += $cost;
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => "Berhasil memposting alokasi biaya tenaga kerja untuk {$postedCount} timesheet.",
+            'posted_count' => $postedCount,
+            'total_cost' => $totalCost,
+        ]);
+    }
+
     private function validatePayload(Request $request): array
     {
         return $request->validate([

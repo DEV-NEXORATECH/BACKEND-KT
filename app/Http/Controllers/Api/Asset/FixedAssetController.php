@@ -187,6 +187,105 @@ class FixedAssetController extends Controller
         return response()->json(['success' => true, 'message' => 'Asset berhasil disposed dan jurnal pelepasan diposting.', 'data' => $this->format($asset)]);
     }
 
+    public function bulkDepreciate(Request $request): JsonResponse
+    {
+        $depreciationDate = $request->input('depreciation_date', now()->toDateString());
+        app(AccountingPeriodService::class)->ensureOpen($depreciationDate, 'depreciation_date');
+
+        $activeAssets = FixedAsset::query()
+            ->whereIn('status', ['active', 'transferred'])
+            ->where('depreciation_method', '!=', 'none')
+            ->where('net_book_value', '>', 0)
+            ->get();
+
+        $processedCount = 0;
+        $totalDepreciationAmount = 0;
+
+        foreach ($activeAssets as $asset) {
+            try {
+                $category = $asset->category;
+                $depreciationAccount = $category?->depreciationGlAccount ?: ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
+                $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
+
+                if (! $depreciationAccount || ! $accumulatedAccount) {
+                    continue;
+                }
+
+                $remaining = round((float) $asset->net_book_value, 2);
+                $lifeMonths = max(1, (int) $asset->useful_life_months);
+                $monthly = $asset->depreciation_method === 'declining_balance'
+                    ? round($remaining * (2 / $lifeMonths), 2)
+                    : round((float) $asset->acquisition_cost / $lifeMonths, 2);
+                $amount = min($monthly, $remaining);
+
+                if ($amount <= 0) {
+                    continue;
+                }
+
+                DB::transaction(function () use ($asset, $depreciationDate, $amount, $depreciationAccount, $accumulatedAccount) {
+                    $journal = Journal::create([
+                        'journal_number' => 'BULKDEP-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                        'journal_date' => $depreciationDate,
+                        'journal_type' => 'adjustment',
+                        'reference' => $asset->asset_code,
+                        'description' => 'Bulk Depreciation '.$asset->asset_name,
+                        'status' => 'posted',
+                        'posted_by' => request()->user()->id,
+                        'posted_at' => now(),
+                    ]);
+                    $journal->lines()->create(['account_id' => $depreciationAccount->id, 'project_id' => $asset->project_id, 'donor_id' => $asset->donor_id, 'program_id' => $asset->program_id, 'line_description' => 'Bulk Depreciation expense', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
+                    $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Accumulated depreciation', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
+
+                    $accumulated = round((float) $asset->accumulated_depreciation + $amount, 2);
+                    $nbv = max(0, round((float) $asset->acquisition_cost - $accumulated, 2));
+                    $asset->depreciations()->create(['depreciation_date' => $depreciationDate, 'amount' => $amount, 'accumulated_depreciation' => $accumulated, 'net_book_value' => $nbv, 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
+                    $asset->update(['accumulated_depreciation' => $accumulated, 'net_book_value' => $nbv]);
+                });
+
+                $processedCount++;
+                $totalDepreciationAmount += $amount;
+            } catch (\Throwable) {
+                // Continue
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Bulk penyusutan selesai untuk {$processedCount} aset.",
+            'processed_count' => $processedCount,
+            'total_amount' => round($totalDepreciationAmount, 2),
+        ]);
+    }
+
+    public function stockOpname(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'opname_date' => ['required', 'date'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.fixed_asset_id' => ['required', 'integer', 'exists:fixed_assets,id'],
+            'items.*.physical_status' => ['required', 'string', 'in:good,damaged,missing'],
+            'items.*.notes' => ['nullable', 'string'],
+        ]);
+
+        $updatedCount = 0;
+        foreach ($data['items'] as $item) {
+            $asset = FixedAsset::find($item['fixed_asset_id']);
+            if ($asset) {
+                $notes = "Opname {$data['opname_date']} [Status Fisik: {$item['physical_status']}]: ".($item['notes'] ?? 'Tidak ada catatan');
+                $asset->update([
+                    'notes' => $asset->notes ? $asset->notes." | ".$notes : $notes,
+                ]);
+                $updatedCount++;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Hasil stock opname fisik berhasil dicatat untuk {$updatedCount} aset.",
+            'updated_count' => $updatedCount,
+        ]);
+    }
+
     private function validatePayload(Request $request): array
     {
         return $request->validate([

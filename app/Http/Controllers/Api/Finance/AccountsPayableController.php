@@ -230,6 +230,16 @@ class AccountsPayableController extends Controller
         return response()->json(['success' => true, 'message' => 'Status rekonsiliasi diperbarui.', 'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number'])]);
     }
 
+    public function unmatchBankTransaction(BankTransaction $bankTransaction): JsonResponse
+    {
+        $bankTransaction->update(['status' => 'unmatched']);
+        return response()->json([
+            'success' => true,
+            'message' => 'Rekonsiliasi bank berhasil dibatalkan.',
+            'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number']),
+        ]);
+    }
+
     private function formatInvoice(SupplierInvoice $invoice): array
     {
         return [

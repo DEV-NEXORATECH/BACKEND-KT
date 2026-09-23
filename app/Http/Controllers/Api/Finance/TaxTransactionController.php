@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TaxTransactionController extends Controller
 {
@@ -68,6 +69,9 @@ class TaxTransactionController extends Controller
             'is_inclusive' => ['nullable', 'boolean'],
             'e_faktur_reference' => ['nullable', 'string', 'max:100'],
             'e_bupot_reference' => ['nullable', 'string', 'max:100'],
+            'npwp' => ['nullable', 'string', 'max:30'],
+            'e_faktur_number' => ['nullable', 'string', 'max:30'],
+            'e_bupot_number' => ['nullable', 'string', 'max:30'],
             'status' => ['nullable', 'in:draft,reported,cancelled'],
             'notes' => ['nullable', 'string'],
         ]);
@@ -88,11 +92,73 @@ class TaxTransactionController extends Controller
             'gross_amount' => $calculation['gross_amount'],
             'e_faktur_reference' => $data['e_faktur_reference'] ?? null,
             'e_bupot_reference' => $data['e_bupot_reference'] ?? null,
+            'npwp' => $data['npwp'] ?? null,
+            'e_faktur_number' => $data['e_faktur_number'] ?? null,
+            'e_bupot_number' => $data['e_bupot_number'] ?? null,
             'status' => $data['status'] ?? 'draft',
             'notes' => $data['notes'] ?? null,
         ])->load('tax:id,code,name,tax_type,rate_percent');
 
         return response()->json(['success' => true, 'message' => 'Tax transaction berhasil dicatat.', 'data' => $this->format($item)], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Export tax transactions as CSV file formatted for DJP Online import.
+     */
+    public function exportDjp(Request $request): StreamedResponse
+    {
+        $items = TaxTransaction::query()
+            ->with('tax:id,code,name,tax_type,rate_percent')
+            ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
+            ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
+            ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('transaction_date')
+            ->get();
+
+        $filename = 'djp_export_' . now()->format('Ymd_His') . '.csv';
+
+        return response()->streamDownload(function () use ($items) {
+            $handle = fopen('php://output', 'w');
+
+            // BOM for UTF-8 Excel compatibility
+            fwrite($handle, "\xEF\xBB\xBF");
+
+            // Header row matching DJP Online CSV import format
+            fputcsv($handle, [
+                'Tanggal', 'Jenis Pajak', 'Kode Pajak', 'Arah',
+                'NPWP Lawan', 'No Faktur/Bupot', 'Referensi',
+                'DPP (Rp)', 'Tarif (%)', 'PPh/PPN (Rp)',
+                'Bruto (Rp)', 'Neto (Rp)', 'Status', 'Catatan',
+            ]);
+
+            foreach ($items as $item) {
+                $fakturOrBupot = $item->e_faktur_number
+                    ?: ($item->e_bupot_number ?: ($item->e_faktur_reference ?: $item->e_bupot_reference));
+
+                fputcsv($handle, [
+                    $item->transaction_date?->format('d/m/Y'),
+                    $item->tax?->tax_type ?? '',
+                    $item->tax?->code ?? '',
+                    $item->direction,
+                    $item->npwp ?? '',
+                    $fakturOrBupot ?? '',
+                    $item->reference ?? '',
+                    number_format((float) $item->taxable_amount, 2, '.', ''),
+                    number_format((float) $item->tax_rate, 4, '.', ''),
+                    number_format((float) $item->tax_amount, 2, '.', ''),
+                    number_format((float) $item->gross_amount, 2, '.', ''),
+                    number_format((float) $item->net_amount, 2, '.', ''),
+                    $item->status,
+                    $item->notes ?? '',
+                ]);
+            }
+
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
     }
 
     public function report(Request $request): JsonResponse
@@ -233,6 +299,9 @@ class TaxTransactionController extends Controller
             'gross_amount' => $item->gross_amount,
             'e_faktur_reference' => $item->e_faktur_reference,
             'e_bupot_reference' => $item->e_bupot_reference,
+            'npwp' => $item->npwp,
+            'e_faktur_number' => $item->e_faktur_number,
+            'e_bupot_number' => $item->e_bupot_number,
             'status' => $item->status,
             'notes' => $item->notes,
         ];

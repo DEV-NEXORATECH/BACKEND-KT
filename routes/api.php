@@ -213,6 +213,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('bank-transactions', [AccountsPayableController::class, 'bankTransactions'])->middleware('permission:banking.view');
         Route::post('bank-transactions/import', [AccountsPayableController::class, 'importBankTransactions'])->middleware('permission:banking.view');
         Route::post('bank-transactions/{bankTransaction}/reconcile', [AccountsPayableController::class, 'reconcileBankTransaction'])->middleware('permission:banking.view');
+        Route::post('bank-transactions/{bankTransaction}/unmatch', [AccountsPayableController::class, 'unmatchBankTransaction'])->middleware('permission:banking.view');
     });
 
     Route::prefix('v1/tax')->group(function () {
@@ -227,6 +228,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1/timesheets')->group(function () {
         Route::get('entries', [TimesheetEntryController::class, 'index'])->middleware('permission:timesheet.view');
         Route::post('entries', [TimesheetEntryController::class, 'store'])->middleware('permission:timesheet.create');
+        Route::post('entries/post-labor-cost', [TimesheetEntryController::class, 'postLaborCost'])->middleware('permission:timesheet.approve');
         Route::put('entries/{timesheetEntry}', [TimesheetEntryController::class, 'update'])->middleware('permission:timesheet.update');
         Route::post('entries/{timesheetEntry}/submit', [TimesheetEntryController::class, 'submit'])->middleware('permission:timesheet.submit');
         Route::post('entries/{timesheetEntry}/approve', [TimesheetEntryController::class, 'approve'])->middleware('permission:timesheet.approve');
@@ -236,6 +238,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1/assets')->group(function () {
         Route::get('fixed-assets', [FixedAssetController::class, 'index'])->middleware('permission:asset.view');
         Route::post('fixed-assets', [FixedAssetController::class, 'store'])->middleware('permission:asset.create');
+        Route::post('fixed-assets/bulk-depreciate', [FixedAssetController::class, 'bulkDepreciate'])->middleware('permission:asset.depreciate');
+        Route::post('fixed-assets/stock-opname', [FixedAssetController::class, 'stockOpname'])->middleware('permission:asset.view');
         Route::post('fixed-assets/{fixedAsset}/capitalize', [FixedAssetController::class, 'capitalize'])->middleware('permission:asset.capitalize');
         Route::post('fixed-assets/{fixedAsset}/depreciate', [FixedAssetController::class, 'depreciate'])->middleware('permission:asset.depreciate');
         Route::post('fixed-assets/{fixedAsset}/transfer', [FixedAssetController::class, 'transfer'])->middleware('permission:asset.transfer');
