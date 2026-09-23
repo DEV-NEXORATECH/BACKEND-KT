@@ -23,7 +23,7 @@ class TaxTransactionController extends Controller
                 ->where('is_active', true)
                 ->orderBy('tax_type')
                 ->orderBy('code')
-                ->get(['id', 'code', 'name', 'tax_type', 'rate_percent']),
+                ->get(['id', 'code', 'name', 'tax_type', 'rate_percent', 'description']),
         ]);
     }
 

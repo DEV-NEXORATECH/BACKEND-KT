@@ -48,7 +48,7 @@ class MasterDataSeeder extends Seeder
     {
         // 1. Currencies (Base foundation)
         $idr = Currency::updateOrCreate(['code' => 'IDR'], [
-            'name' => 'Indonesian Rupiah',
+            'name' => 'Indonesian Rupiah / Rupiah',
             'symbol' => 'Rp',
             'decimal_places' => 0,
             'is_base_currency' => true,
@@ -56,9 +56,33 @@ class MasterDataSeeder extends Seeder
         ]);
 
         $usd = Currency::updateOrCreate(['code' => 'USD'], [
-            'name' => 'United States Dollar',
+            'name' => 'US Dollar',
             'symbol' => '$',
             'decimal_places' => 2,
+            'is_base_currency' => false,
+            'is_active' => true,
+        ]);
+
+        $gbp = Currency::updateOrCreate(['code' => 'GBP'], [
+            'name' => 'British Pound Sterling',
+            'symbol' => '£',
+            'decimal_places' => 2,
+            'is_base_currency' => false,
+            'is_active' => true,
+        ]);
+
+        $nok = Currency::updateOrCreate(['code' => 'NOK'], [
+            'name' => 'Norwegian Krone',
+            'symbol' => 'kr',
+            'decimal_places' => 2,
+            'is_base_currency' => false,
+            'is_active' => true,
+        ]);
+
+        $jpy = Currency::updateOrCreate(['code' => 'JPY'], [
+            'name' => 'Japanese Yen',
+            'symbol' => '¥',
+            'decimal_places' => 0,
             'is_base_currency' => false,
             'is_active' => true,
         ]);
@@ -71,26 +95,35 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        // Exchange Rates
-        ExchangeRate::updateOrCreate([
-            'date' => now()->toDateString(),
-            'from_currency_id' => $usd->id,
-            'to_currency_id' => $idr->id,
-        ], [
-            'rate' => 16250.000000,
-            'source' => 'Bank Indonesia JISDOR',
+        $aud = Currency::updateOrCreate(['code' => 'AUD'], [
+            'name' => 'Australian Dollar',
+            'symbol' => 'A$',
+            'decimal_places' => 2,
+            'is_base_currency' => false,
             'is_active' => true,
         ]);
 
-        ExchangeRate::updateOrCreate([
-            'date' => now()->toDateString(),
-            'from_currency_id' => $eur->id,
-            'to_currency_id' => $idr->id,
-        ], [
-            'rate' => 17800.000000,
-            'source' => 'Bank Indonesia JISDOR',
-            'is_active' => true,
-        ]);
+        // Exchange Rates to Base Currency (IDR)
+        $rates = [
+            ['from' => $usd, 'rate' => 16250.000000],
+            ['from' => $eur, 'rate' => 17800.000000],
+            ['from' => $gbp, 'rate' => 21200.000000],
+            ['from' => $nok, 'rate' => 1520.000000],
+            ['from' => $jpy, 'rate' => 108.000000],
+            ['from' => $aud, 'rate' => 10600.000000],
+        ];
+
+        foreach ($rates as $r) {
+            ExchangeRate::updateOrCreate([
+                'date' => now()->toDateString(),
+                'from_currency_id' => $r['from']->id,
+                'to_currency_id' => $idr->id,
+            ], [
+                'rate' => $r['rate'],
+                'source' => 'Bank Indonesia JISDOR',
+                'is_active' => true,
+            ]);
+        }
 
         // 2. Organization & Structure
         $org = Organization::updateOrCreate(['code' => 'KT-ID'], [
@@ -125,33 +158,54 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        $deptProg = Department::updateOrCreate(['code' => 'DEPT-PROG'], [
+        $jakartaOffice = OfficeLocation::updateOrCreate(['code' => 'RO-JKT'], [
             'organization_id' => $org->id,
-            'name' => 'Program & Operational',
-            'manager_name' => 'Denny Bhatara',
+            'name' => 'Kantor Jakarta',
+            'address' => 'Jakarta',
+            'pic_name' => 'Siti Aminah',
+            'phone' => null,
+            'email' => 'siti@contoh.org',
+            'is_head_office' => false,
             'is_active' => true,
         ]);
 
-        $deptFin = Department::updateOrCreate(['code' => 'DEPT-FIN'], [
+        $deptFin = Department::updateOrCreate(['code' => 'Fin'], [
             'organization_id' => $org->id,
-            'name' => 'Finance & Administration',
+            'name' => 'Finance',
             'manager_name' => 'Syaifani Auliana Havid',
             'is_active' => true,
         ]);
 
-        $deptComms = Department::updateOrCreate(['code' => 'DEPT-COMMS'], [
+        $deptCamp = Department::updateOrCreate(['code' => 'CPG'], [
             'organization_id' => $org->id,
-            'name' => 'Communications',
-            'manager_name' => 'Sarah Rosemery Megumi',
+            'name' => 'Campaigner',
+            'manager_name' => 'Abil Ahmad Akbar',
             'is_active' => true,
         ]);
 
-        $deptCamp = Department::updateOrCreate(['code' => 'DEPT-CAMP'], [
+        $deptComms = Department::updateOrCreate(['code' => 'COM'], [
             'organization_id' => $org->id,
-            'name' => 'Campaigner',
-            'manager_name' => 'Abil Achmad Akbar',
+            'name' => 'Communication',
+            'manager_name' => 'Sarah Rosemery Megumi W',
             'is_active' => true,
         ]);
+
+        $deptProc = Department::updateOrCreate(['code' => 'PRC'], [
+            'organization_id' => $org->id,
+            'name' => 'Procurement & Adm',
+            'manager_name' => 'Riki Suryandi',
+            'is_active' => true,
+        ]);
+
+        $deptProg = Department::updateOrCreate(['code' => 'OPS'], [
+            'organization_id' => $org->id,
+            'name' => 'Operational',
+            'manager_name' => 'Denny Bhatara',
+            'is_active' => true,
+        ]);
+
+        // Permanently remove legacy DEPT-* departments
+        Department::withTrashed()->whereIn('code', ['DEPT-PROG', 'DEPT-FIN', 'DEPT-COMMS', 'DEPT-CAMP'])->forceDelete();
 
         CostCenter::updateOrCreate(['code' => 'CC-OPS'], [
             'organization_id' => $org->id,
@@ -194,37 +248,43 @@ class MasterDataSeeder extends Seeder
             ]);
         }
 
-        // 4. Chart of Accounts (Standard NGO)
+        // 4. Chart of Accounts
+        \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
+        \DB::table('journal_lines')->truncate();
+        \DB::table('journals')->truncate();
+        ChartOfAccount::truncate();
+        \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
+
         $coaList = [
-            ['code' => '1000', 'name' => 'ASSETS', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => true],
-            ['code' => '1100', 'name' => 'Cash & Cash Equivalents', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => true, 'parent_code' => '1000'],
-            ['code' => '1110', 'name' => 'Kas Kecil Bogor', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '1100'],
-            ['code' => '1120', 'name' => 'Bank Mandiri IDR Operational', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '1100'],
-            ['code' => '1121', 'name' => 'Bank BCA USD Grant Account', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '1100'],
-            ['code' => '1130', 'name' => 'Uang Muka Kerja / Staff Advance', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '1100'],
-            ['code' => '1200', 'name' => 'Fixed Assets', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => true, 'parent_code' => '1000'],
-            ['code' => '1210', 'name' => 'Peralatan Kantor & Komputer', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '1200'],
-            ['code' => '1290', 'name' => 'Akumulasi Penyusutan Peralatan', 'account_type' => 'asset', 'normal_balance' => 'credit', 'level' => 3, 'is_header' => false, 'parent_code' => '1200'],
-
-            ['code' => '2000', 'name' => 'LIABILITIES', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => true],
-            ['code' => '2100', 'name' => 'Current Liabilities', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 2, 'is_header' => true, 'parent_code' => '2000'],
-            ['code' => '2110', 'name' => 'Hutang Usaha / Accounts Payable', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 3, 'is_header' => false, 'parent_code' => '2100'],
-            ['code' => '2120', 'name' => 'Hutang Pajak PPh 21/23', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 3, 'is_header' => false, 'parent_code' => '2100'],
-
-            ['code' => '3000', 'name' => 'NET ASSETS / FUND BALANCE', 'account_type' => 'equity', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => true],
-            ['code' => '3100', 'name' => 'Unrestricted Net Assets', 'account_type' => 'equity', 'normal_balance' => 'credit', 'level' => 2, 'is_header' => false, 'parent_code' => '3000'],
-            ['code' => '3200', 'name' => 'Temporarily Restricted Net Assets', 'account_type' => 'equity', 'normal_balance' => 'credit', 'level' => 2, 'is_header' => false, 'parent_code' => '3000'],
-
-            ['code' => '4000', 'name' => 'GRANT REVENUE & FUNDING', 'account_type' => 'revenue', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => true],
-            ['code' => '4100', 'name' => 'Grant Revenue - Institutional Donors', 'account_type' => 'revenue', 'normal_balance' => 'credit', 'level' => 2, 'is_header' => false, 'parent_code' => '4000'],
-            ['code' => '4200', 'name' => 'Donasi Publik & Lainnya', 'account_type' => 'revenue', 'normal_balance' => 'credit', 'level' => 2, 'is_header' => false, 'parent_code' => '4000'],
-
-            ['code' => '5000', 'name' => 'PROGRAM & OPERATIONAL EXPENSES', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => true],
-            ['code' => '5100', 'name' => 'Personnel & Staff Expenses', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '5000'],
-            ['code' => '5200', 'name' => 'Direct Activity & Workshop Expenses', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '5000'],
-            ['code' => '5300', 'name' => 'Travel, Per Diem & Accommodation', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '5000'],
-            ['code' => '5400', 'name' => 'Office Rent & Utilities', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '5000'],
-            ['code' => '5500', 'name' => 'Beban Penyusutan Aset', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '5000'],
+            ['code' => '10000', 'name' => 'BANK AND CASH', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => true, 'parent_code' => null],
+            ['code' => '10100', 'name' => 'Cash', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => true, 'parent_code' => '10000'],
+            ['code' => '10110', 'name' => 'Petty Cash', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10100'],
+            ['code' => '10120', 'name' => 'Cash on Hand', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10100'],
+            ['code' => '10200', 'name' => 'BANK BNI', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => true, 'parent_code' => '10000'],
+            ['code' => '10210', 'name' => 'BNI Sekretariat 1 - 460924325', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10212', 'name' => 'BNI Norad EIA - 737971179', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10213', 'name' => 'BNI Norad Fern - 7379666219', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10214', 'name' => 'BNI Norad Samdhana - 628472846', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10215', 'name' => 'BNI Packard - 583418434', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10216', 'name' => 'BNI TET - 460924700', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10217', 'name' => 'BNI FGMC EIA - 1821056816', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10218', 'name' => 'BNI USAID - 182156678', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10219', 'name' => 'BNI Waterloo - 1785559365', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10220', 'name' => 'BNI Sekretariat 3 - 460924700', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10221', 'name' => 'BNI Sekretariat 4 - 737966602', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10222', 'name' => 'BNI Sekretariat 5 - 1785559592', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10223', 'name' => 'BNI Sekretariat 2 - 1821056678', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10224', 'name' => 'BNI FCDO UK Embassy - 583418434', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10225', 'name' => 'BNI FGMC EIA 2 - 1821056816', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10226', 'name' => 'BNI Waterloo 2 - 1785559365', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10227', 'name' => 'BNI Tifa Foundation -  460924700', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10200'],
+            ['code' => '10300', 'name' => 'BANK CIMBNIAGA', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => true, 'parent_code' => '10000'],
+            ['code' => '10310', 'name' => 'Cimbniaga Sekretariat', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '10300'],
+            ['code' => '10400', 'name' => 'Bilyet/Giro BNI (Deposito)', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '10000'],
+            ['code' => '10500', 'name' => 'Bilyet/Giro Cimbniaga (Deposito)', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '10000'],
+            ['code' => '11000', 'name' => 'ACCOUNTS RECEIVABLE', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => true, 'parent_code' => null],
+            ['code' => '11400', 'name' => 'AR PROJECT', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => true, 'parent_code' => '11000'],
+            ['code' => '11410', 'name' => 'AR FGMC EIA', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '11400'],
         ];
 
         $createdCoa = [];
@@ -243,49 +303,197 @@ class MasterDataSeeder extends Seeder
         }
 
         // 5. Taxes
-        $ppn = Tax::updateOrCreate(['code' => 'PPN-11'], [
-            'name' => 'Pajak Pertambahan Nilai 11%',
+        Tax::where('code', 'PPN-11')->update(['code' => 'PPN11']);
+        Tax::where('code', 'PPH-23')->update(['code' => 'PPh 23']);
+
+        $ppn = Tax::updateOrCreate(['code' => 'PPN11'], [
+            'name' => 'PPN',
             'tax_type' => 'PPN',
             'rate_percent' => 11.00,
+            'description' => 'Tarif PPN 11.00%',
+            'sales_gl_account_id' => $createdCoa['2120']->id ?? null,
+            'purchase_gl_account_id' => $createdCoa['1150']->id ?? null,
             'is_active' => true,
         ]);
 
-        $pph21 = Tax::updateOrCreate(['code' => 'PPH-21'], [
-            'name' => 'PPh Pasal 21 Tenaga Ahli / Konsultan',
-            'tax_type' => 'PPH21',
-            'rate_percent' => 5.00,
+        $pph21Staff = Tax::updateOrCreate(['code' => 'PPh 21 – Staff'], [
+            'name' => 'PPh 21',
+            'tax_type' => 'Staff / Employee',
+            'rate_percent' => 0.00,
+            'description' => 'Mengikuti ketentuan tarif TER (Tarif Efektif Rata-rata) sesuai status dan penghasilan',
             'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
             'is_active' => true,
         ]);
 
-        $pph23 = Tax::updateOrCreate(['code' => 'PPH-23'], [
-            'name' => 'PPh Pasal 23 Jasa & Sewa',
-            'tax_type' => 'PPH23',
+        $pph21NonStaff = Tax::updateOrCreate(['code' => 'PPh 21 – Non Staff'], [
+            'name' => 'PPh 21',
+            'tax_type' => 'Non-Employee / Professional',
+            'rate_percent' => 0.00,
+            'description' => 'Mengikuti ketentuan PPh 21 untuk bukan pegawai; menggunakan dasar pengenaan pajak sesuai ketentuan yang berlaku',
+            'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
+            'is_active' => true,
+        ]);
+
+        $pph23 = Tax::updateOrCreate(['code' => 'PPh 23'], [
+            'name' => 'PPh 23',
+            'tax_type' => 'Corporate / Service Income',
             'rate_percent' => 2.00,
+            'description' => '2% untuk jenis penghasilan yang dikenakan tarif 2%',
             'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
             'is_active' => true,
         ]);
+
+        $pph42 = Tax::updateOrCreate(['code' => 'PPh 4(2)'], [
+            'name' => 'PPh Final Pasal 4(2)',
+            'tax_type' => 'Rental of Building/Land',
+            'rate_percent' => 10.00,
+            'description' => '10% untuk persewaan tanah dan/atau bangunan',
+            'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
+            'is_active' => true,
+        ]);
+
+        // Clean up legacy PPH-21 code if still present and separate
+        Tax::where('code', 'PPH-21')->update(['is_active' => false]);
 
         // 6. Bank Accounts & Petty Cash
-        $bankMandiri = BankAccount::updateOrCreate(['account_number' => '133-00-1234567-8'], [
-            'organization_id' => $org->id,
-            'bank_name' => 'Bank Mandiri',
-            'account_name' => 'Perkumpulan Kaoem Telapak',
-            'swift_code' => 'BMRIIDJA',
-            'currency_id' => $idr->id,
-            'gl_account_id' => $createdCoa['1120']->id ?? null,
-            'is_active' => true,
-        ]);
+        // Clean up legacy dummy bank accounts
+        BankAccount::whereIn('account_number', ['133-00-1234567-8', '889-01-987654-3', '1234567890'])->forceDelete();
 
-        $bankBcaUsd = BankAccount::updateOrCreate(['account_number' => '889-01-987654-3'], [
-            'organization_id' => $org->id,
-            'bank_name' => 'Bank BCA USD',
-            'account_name' => 'Perkumpulan Kaoem Telapak - Grant Pool',
-            'swift_code' => 'CENAIDJA',
-            'currency_id' => $usd->id,
-            'gl_account_id' => $createdCoa['1121']->id ?? null,
-            'is_active' => true,
-        ]);
+        $bankAccountsData = [
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '1785559365',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Waterloo',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '1785559592',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Sekretariat 5 (Montpelier)',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '1821056678',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Sekretariat 2 (Internal)',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '1821056816',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Fgmc',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '460924325',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Sekretariat 1',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '460924700',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Tifa',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '583418434',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'FCDO',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '583982730',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Kosong',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '628472846',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Samdhana',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '737966602',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Sekretariat 4 (Kosong)',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '7379666219',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Norad Fern',
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '737971179',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Norad EIA',
+            ],
+            [
+                'bank_name' => 'CIMB',
+                'account_number' => '800193159700',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => 'BNIAIDJA',
+                'description' => null,
+            ],
+            [
+                'bank_name' => 'BNI',
+                'account_number' => '2058550328',
+                'account_name' => 'Perkumpulan Kaoem Telapak',
+                'swift_code' => null,
+                'description' => 'Norek Deposito',
+            ],
+        ];
+
+        $bankAccountCoaMap = [
+            '1785559365' => '10219', // Waterloo
+            '1785559592' => '10222', // Sekretariat 5 (Montpelier)
+            '1821056678' => '10223', // Sekretariat 2 (Internal)
+            '1821056816' => '10217', // Fgmc
+            '460924325'  => '10210', // Sekretariat 1
+            '460924700'  => '10227', // Tifa
+            '583418434'  => '10224', // FCDO
+            '583982730'  => '10200', // Kosong (General BNI)
+            '628472846'  => '10214', // Samdhana
+            '737966602'  => '10221', // Sekretariat 4 (Kosong)
+            '7379666219' => '10213', // Norad Fern
+            '737971179'  => '10212', // Norad EIA
+            '800193159700'=> '10310', // CIMB Sekretariat
+            '2058550328' => '10400', // Norek Deposito
+        ];
+
+        $createdBankAccounts = [];
+        foreach ($bankAccountsData as $ba) {
+            $coaCode = $bankAccountCoaMap[$ba['account_number']] ?? '10200';
+            $createdBankAccounts[$ba['account_number']] = BankAccount::updateOrCreate(
+                ['account_number' => $ba['account_number']],
+                [
+                    'organization_id' => $org->id,
+                    'bank_name' => $ba['bank_name'],
+                    'account_name' => $ba['account_name'],
+                    'swift_code' => $ba['swift_code'],
+                    'description' => $ba['description'],
+                    'currency_id' => $idr->id,
+                    'gl_account_id' => $createdCoa[$coaCode]->id ?? null,
+                    'is_active' => true,
+                ]
+            );
+        }
 
         PettyCash::updateOrCreate(['code' => 'PC-BGR'], [
             'organization_id' => $org->id,
@@ -294,29 +502,29 @@ class MasterDataSeeder extends Seeder
             'custodian_name' => 'Dina Amalia (Kasir)',
             'currency_id' => $idr->id,
             'limit_amount' => 10000000,
-            'gl_account_id' => $createdCoa['1110']->id ?? null,
+            'gl_account_id' => $createdCoa['10110']->id ?? null,
             'is_active' => true,
         ]);
 
         // 7. Payment Methods
         PaymentMethod::updateOrCreate(['code' => 'PM-BT'], [
-            'name' => 'Bank Transfer (Mandiri/BCA)',
+            'name' => 'Bank Transfer (BNI/CIMB)',
             'type' => 'bank_transfer',
-            'default_gl_account_id' => $createdCoa['1120']->id ?? null,
+            'default_gl_account_id' => $createdCoa['10200']->id ?? null,
             'is_active' => true,
         ]);
 
         PaymentMethod::updateOrCreate(['code' => 'PM-PC'], [
             'name' => 'Petty Cash Payout',
             'type' => 'petty_cash',
-            'default_gl_account_id' => $createdCoa['1110']->id ?? null,
+            'default_gl_account_id' => $createdCoa['10110']->id ?? null,
             'is_active' => true,
         ]);
 
         PaymentMethod::updateOrCreate(['code' => 'PM-CARD'], [
             'name' => 'Corporate Credit Card',
             'type' => 'corporate_card',
-            'default_gl_account_id' => $createdCoa['2110']->id ?? null,
+            'default_gl_account_id' => null,
             'is_active' => true,
         ]);
 
@@ -358,6 +566,8 @@ class MasterDataSeeder extends Seeder
         ]);
 
         // 9. Grant Agreements
+        $grantBankAccountId = $createdBankAccounts['800193159700']->id ?? (reset($createdBankAccounts)->id ?? null);
+
         $grantFord = GrantAgreement::updateOrCreate(['grant_no' => 'GRT-2026-FORD-01'], [
             'donor_id' => $donorFord->id,
             'funding_source_id' => $fundFoundation->id,
@@ -367,7 +577,7 @@ class MasterDataSeeder extends Seeder
             'currency_id' => $usd->id,
             'grant_value' => 350000.00,
             'exchange_rate_contract' => 16000.000000,
-            'bank_account_id' => $bankBcaUsd->id,
+            'bank_account_id' => $grantBankAccountId,
             'status' => 'active',
             'is_active' => true,
         ]);
@@ -381,7 +591,7 @@ class MasterDataSeeder extends Seeder
             'currency_id' => $usd->id,
             'grant_value' => 500000.00,
             'exchange_rate_contract' => 16200.000000,
-            'bank_account_id' => $bankBcaUsd->id,
+            'bank_account_id' => $grantBankAccountId,
             'status' => 'active',
             'is_active' => true,
         ]);
@@ -538,11 +748,13 @@ class MasterDataSeeder extends Seeder
                 'name' => 'Siti Aminah',
                 'email' => 'siti@contoh.org',
                 'department_id' => $deptFin->id,
-                'office_location_id' => $headOffice->id,
+                'office_location_id' => $jakartaOffice->id,
                 'position' => 'Finance Staff',
                 'bank_name' => 'BCA',
                 'bank_account_number' => '1234567890',
                 'bank_account_holder' => 'Siti Aminah',
+                'project_bank_name' => null,
+                'project_bank_account_number' => null,
             ],
             [
                 'employee_id_number' => 'ID00012',
@@ -554,6 +766,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BCA',
                 'bank_account_number' => '8720327709',
                 'bank_account_holder' => 'Abil Achmad Akbar',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1328161380',
             ],
             [
                 'employee_id_number' => 'ID00026',
@@ -565,6 +779,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BCA',
                 'bank_account_number' => '2170405890',
                 'bank_account_holder' => 'Agetha Tri Lestari',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1857330913',
             ],
             [
                 'employee_id_number' => 'ID00030',
@@ -576,6 +792,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'Mandiri',
                 'bank_account_number' => '1380014928753',
                 'bank_account_holder' => 'Ayu Perwitosari',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1943417991',
             ],
             [
                 'employee_id_number' => 'ID00004',
@@ -587,6 +805,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BNI',
                 'bank_account_number' => '0261317272',
                 'bank_account_holder' => 'Denny Bhatara',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1328152977',
             ],
             [
                 'employee_id_number' => 'ID00031',
@@ -598,6 +818,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BRI',
                 'bank_account_number' => '703801009299539',
                 'bank_account_holder' => 'Febry Ronaldo Ginting',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1951204007',
             ],
             [
                 'employee_id_number' => 'ID00003',
@@ -609,6 +831,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BNI',
                 'bank_account_number' => '1239014175',
                 'bank_account_holder' => 'Indra Nuwinata',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => null,
             ],
             [
                 'employee_id_number' => 'ID00005',
@@ -620,6 +844,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BNI',
                 'bank_account_number' => '0904746383',
                 'bank_account_holder' => 'Munip',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1328157487',
             ],
             [
                 'employee_id_number' => 'ID00022',
@@ -631,6 +857,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BCA',
                 'bank_account_number' => '0213876543',
                 'bank_account_holder' => 'Renaldi Sastra Kusumah Aji',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1819551430',
             ],
             [
                 'employee_id_number' => 'ID00015',
@@ -642,6 +870,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BCA',
                 'bank_account_number' => '1830445354',
                 'bank_account_holder' => 'Riki Suryandi',
+                'project_bank_name' => 'BCA',
+                'project_bank_account_number' => '7175203613',
             ],
             [
                 'employee_id_number' => 'ID00002',
@@ -653,6 +883,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BNI',
                 'bank_account_number' => '0904850510',
                 'bank_account_holder' => 'Sarah Rosemery Megumi',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1328158130',
             ],
             [
                 'employee_id_number' => 'ID00023',
@@ -664,6 +896,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BCA',
                 'bank_account_number' => '8100872677',
                 'bank_account_holder' => 'Syaifani Auliana Havid',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1819551441',
             ],
             [
                 'employee_id_number' => 'ID00021',
@@ -675,6 +909,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BCA',
                 'bank_account_number' => '5420751429',
                 'bank_account_holder' => 'Veni Oktarini Siregar',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1819578576',
             ],
             [
                 'employee_id_number' => 'ID00027',
@@ -686,6 +922,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'CIMB NIAGA',
                 'bank_account_number' => '705220122400',
                 'bank_account_holder' => 'Winda Apriyani',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1859299528',
             ],
             [
                 'employee_id_number' => 'ID00019',
@@ -697,6 +935,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BNI',
                 'bank_account_number' => '0497474429',
                 'bank_account_holder' => 'Ziadatunnisa Ilmi Latifa',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1817587130',
             ],
             [
                 'employee_id_number' => 'ID00017',
@@ -708,6 +948,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BNI',
                 'bank_account_number' => '0758254090',
                 'bank_account_holder' => 'Zufar Fauzan Erimant',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '1817587390',
             ],
             [
                 'employee_id_number' => 'ID00035',
@@ -719,6 +961,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BCA',
                 'bank_account_number' => '4260489084',
                 'bank_account_holder' => 'M. Irbah Miftakhul Huda',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '2024679499',
             ],
             [
                 'employee_id_number' => 'ID00034',
@@ -730,6 +974,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BCA',
                 'bank_account_number' => '8950752948',
                 'bank_account_holder' => 'Arif Candra Prasetya',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => '2024676602',
             ],
             [
                 'employee_id_number' => 'ID00036',
@@ -741,6 +987,8 @@ class MasterDataSeeder extends Seeder
                 'bank_name' => 'BNI',
                 'bank_account_number' => '966601651',
                 'bank_account_holder' => 'Leorana Sihotang',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => null,
             ],
             [
                 'employee_id_number' => 'ID00037',
@@ -749,9 +997,11 @@ class MasterDataSeeder extends Seeder
                 'department_id' => $deptFin->id,
                 'office_location_id' => $headOffice->id,
                 'position' => 'Finance Officer',
-                'bank_name' => 'BNI',
+                'bank_name' => null,
                 'bank_account_number' => '003624997783',
                 'bank_account_holder' => 'Winda Astuti',
+                'project_bank_name' => 'BNI',
+                'project_bank_account_number' => null,
             ],
             [
                 'employee_id_number' => 'EMP-TBC-01',
@@ -760,9 +1010,11 @@ class MasterDataSeeder extends Seeder
                 'department_id' => $deptCamp->id,
                 'office_location_id' => $headOffice->id,
                 'position' => 'Sr. Campaigner',
-                'bank_name' => 'TBC',
-                'bank_account_number' => 'TBC',
+                'bank_name' => null,
+                'bank_account_number' => null,
                 'bank_account_holder' => 'Kwee Viena Lestari Tanjung',
+                'project_bank_name' => 'TBC',
+                'project_bank_account_number' => null,
             ],
             [
                 'employee_id_number' => 'EMP-TBC-02',
@@ -771,9 +1023,11 @@ class MasterDataSeeder extends Seeder
                 'department_id' => $deptCamp->id,
                 'office_location_id' => $headOffice->id,
                 'position' => 'Sr. Campaigner',
-                'bank_name' => 'TBC',
-                'bank_account_number' => 'TBC',
+                'bank_name' => null,
+                'bank_account_number' => null,
                 'bank_account_holder' => 'TBC',
+                'project_bank_name' => 'TBC',
+                'project_bank_account_number' => null,
             ],
         ];
 
@@ -1151,7 +1405,7 @@ class MasterDataSeeder extends Seeder
                 'budget_line_id' => $blFord1->id,
                 'line_order' => 1,
             ], [
-                'account_id' => $createdCoa['5200']->id ?? 1,
+                'account_id' => $createdCoa['11410']->id ?? ChartOfAccount::first()->id,
                 'donor_id' => $grantFord->donor_id ?? null,
                 'project_id' => $blFord1->project_id,
                 'line_description' => 'Biaya Konsumsi, Akomodasi & Paket Training',
@@ -1163,8 +1417,8 @@ class MasterDataSeeder extends Seeder
                 'journal_id' => $j1->id,
                 'line_order' => 2,
             ], [
-                'account_id' => $createdCoa['1110']->id ?? 2,
-                'line_description' => 'Pembayaran via Bank Mandiri Utama',
+                'account_id' => $createdCoa['10210']->id ?? ChartOfAccount::first()->id,
+                'line_description' => 'Pembayaran via BNI Sekretariat 1',
                 'debit' => 0,
                 'credit' => 22500000.00,
             ]);

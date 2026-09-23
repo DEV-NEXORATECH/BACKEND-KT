@@ -2,12 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Models\Menu;
-use App\Models\Permission;
-use App\Models\Role;
-use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -16,25 +11,14 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        $roles = collect([
-            ['slug' => 'super-admin', 'name' => 'SUPER ADMIN'],
-            ['slug' => 'admin-system-owner', 'name' => 'ADMIN / SYSTEM OWNER'],
-            ['slug' => 'finance', 'name' => 'FINANCE'],
-            ['slug' => 'finance-manager', 'name' => 'FINANCE MANAGER'],
-            ['slug' => 'budget-holder', 'name' => 'BUDGET HOLDER'],
-            ['slug' => 'manager', 'name' => 'MANAGER'],
-            ['slug' => 'procurement', 'name' => 'PROCUREMENT'],
-            ['slug' => 'staff', 'name' => 'STAFF'],
-            ['slug' => 'executive-director', 'name' => 'Executive Director'],
-            ['slug' => 'board-director', 'name' => 'Board of Trustees'],
-            ['slug' => 'project-manager', 'name' => 'Project Manager'],
-            ['slug' => 'finance-officer', 'name' => 'Finance Officer'],
-        ])->mapWithKeys(fn ($role) => [
-            $role['slug'] => Role::updateOrCreate(
-                ['slug' => $role['slug']],
-                ['name' => $role['name']],
-            ),
+        $this->call([
+            RoleSeeder::class,
+            MasterDataSeeder::class,
+            DepartmentSeeder::class,
+            BudgetAlertThresholdSeeder::class,
+            UserSeeder::class,
         ]);
+<<<<<<< HEAD
 
         $permissionsList = [
             ['name' => 'View dashboard', 'slug' => 'dashboard.view'],
@@ -455,5 +439,7 @@ class DatabaseSeeder extends Seeder
         // Run Master Data Seeder
         $this->call(MasterDataSeeder::class);
         $this->call(BudgetAlertThresholdSeeder::class);
+=======
+>>>>>>> be42f08fa6f7d14428c85dd1c42fead06d995dd8
     }
 }

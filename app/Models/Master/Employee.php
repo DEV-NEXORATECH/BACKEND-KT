@@ -14,7 +14,28 @@ class Employee extends Model
 
     protected $table = 'employees';
 
+<<<<<<< HEAD
     protected $fillable = ['employee_id_number', 'name', 'email', 'department_id', 'office_location_id', 'position_id', 'position', 'hourly_cost_rate', 'bank_name', 'bank_account_number', 'bank_account_holder', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+=======
+    protected $fillable = [
+        'employee_id_number',
+        'name',
+        'email',
+        'department_id',
+        'office_location_id',
+        'position',
+        'hourly_cost_rate',
+        'bank_name',
+        'bank_account_number',
+        'bank_account_holder',
+        'project_bank_name',
+        'project_bank_account_number',
+        'is_active',
+        'created_by',
+        'updated_by',
+        'deleted_by',
+    ];
+>>>>>>> be42f08fa6f7d14428c85dd1c42fead06d995dd8
 
     protected $casts = [
         'is_active' => 'boolean',
