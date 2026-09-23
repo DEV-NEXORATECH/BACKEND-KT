@@ -321,6 +321,7 @@ class ProcurementFulfillmentController extends Controller
             'po_number' => $po->po_number,
             'purchase_request_id' => $po->purchase_request_id,
             'pr_number' => $po->purchaseRequest?->pr_number,
+            'vendor_id' => $po->vendor_id,
             'vendor_name' => $po->vendor?->name,
             'po_date' => $po->po_date?->toDateString(),
             'status' => $po->status,

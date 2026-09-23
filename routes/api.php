@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Budget\BudgetMonitoringController;
 use App\Http\Controllers\Api\Procurement\PurchaseRequestController;
 use App\Http\Controllers\Api\Procurement\ProcurementFulfillmentController;
 use App\Http\Controllers\Api\Procurement\AdvancedProcurementController;
+use App\Http\Controllers\Api\Procurement\ProcurementDocumentController;
 use App\Http\Controllers\Api\Procurement\SupplierContractNotificationController;
 use App\Http\Controllers\Api\Finance\AccountsPayableController;
 use App\Http\Controllers\Api\Finance\AccountsReceivableController;
@@ -131,6 +132,11 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1/procurement')->group(function () {
+        Route::get('purchase-requests/{purchaseRequest}/pdf', [ProcurementDocumentController::class, 'purchaseRequest'])->middleware('permission:procurement.pr.view');
+        Route::get('purchase-orders/{purchaseOrder}/pdf', [ProcurementDocumentController::class, 'purchaseOrder'])->middleware('permission:procurement.po.view');
+        Route::get('goods-receipts/{goodsReceipt}/pdf', [ProcurementDocumentController::class, 'goodsReceipt'])->middleware('permission:procurement.grn.view');
+        Route::get('supplier-invoices/{supplierInvoice}/pdf', [ProcurementDocumentController::class, 'supplierInvoice'])->middleware('permission:procurement.invoice.view');
+        Route::get('scns/{supplierContractNotification}/pdf', [ProcurementDocumentController::class, 'scn'])->middleware('permission:procurement.pr.view');
         Route::get('processes/options', [ProcurementFulfillmentController::class, 'processOptions'])->middleware('permission:procurement.po.view');
         Route::get('goods-receipts', [ProcurementFulfillmentController::class, 'goodsReceipts'])->middleware('permission:procurement.grn.view');
         Route::get('goods-receipts/{goodsReceipt}', [ProcurementFulfillmentController::class, 'showGoodsReceipt'])->middleware('permission:procurement.grn.view');
