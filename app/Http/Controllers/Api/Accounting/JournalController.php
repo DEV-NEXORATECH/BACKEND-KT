@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api\Accounting;
 
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
-use App\Models\Master\AccountingPeriod;
+use App\Services\Accounting\AccountingPeriodService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -301,17 +301,7 @@ class JournalController extends Controller
 
     private function guardOpenPeriod(string $date): void
     {
-        $closedPeriodExists = AccountingPeriod::query()
-            ->where('status', 'closed')
-            ->whereDate('start_date', '<=', $date)
-            ->whereDate('end_date', '>=', $date)
-            ->exists();
-
-        if ($closedPeriodExists) {
-            throw ValidationException::withMessages([
-                'journal_date' => 'Tanggal journal berada pada accounting period yang sudah closed.',
-            ]);
-        }
+        app(AccountingPeriodService::class)->ensureOpen($date, 'journal_date');
     }
 
     private function nextJournalNumber(string $prefix = 'JV'): string

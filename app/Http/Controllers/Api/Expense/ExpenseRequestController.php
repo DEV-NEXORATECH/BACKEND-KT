@@ -10,6 +10,7 @@ use App\Models\Finance\Payment;
 use App\Models\Master\BankAccount;
 use App\Models\Notification;
 use App\Models\Master\ChartOfAccount;
+use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Budget\BudgetMonitoringService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -124,6 +125,7 @@ class ExpenseRequestController extends Controller
 
     public function post(ExpenseRequest $expenseRequest): JsonResponse
     {
+        app(AccountingPeriodService::class)->ensureOpen($expenseRequest->request_date->toDateString(), 'request_date');
         if ($expenseRequest->status !== 'approved') {
             throw ValidationException::withMessages(['status' => 'Expense harus approved sebelum posting.']);
         }
@@ -193,6 +195,7 @@ class ExpenseRequestController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             'reference' => ['nullable', 'string', 'max:100'],
         ]);
+        app(AccountingPeriodService::class)->ensureOpen($data['payment_date'], 'payment_date');
 
         $outstanding = round((float) $expenseRequest->total_amount - (float) $expenseRequest->paid_amount, 2);
         if ((float) $data['amount'] > $outstanding) {

@@ -9,6 +9,7 @@ use App\Models\Finance\Payment;
 use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Procurement\SupplierInvoice;
+use App\Services\Accounting\AccountingPeriodService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +32,7 @@ class AccountsPayableController extends Controller
 
     public function postInvoice(SupplierInvoice $supplierInvoice): JsonResponse
     {
+        app(AccountingPeriodService::class)->ensureOpen($supplierInvoice->invoice_date->toDateString(), 'invoice_date');
         if (! in_array($supplierInvoice->match_status, ['matched', 'partial_match'], true)) {
             throw ValidationException::withMessages(['match_status' => 'Invoice harus matched atau partial match sebelum posting AP.']);
         }
@@ -105,6 +107,7 @@ class AccountsPayableController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             'reference' => ['nullable', 'string', 'max:100'],
         ]);
+        app(AccountingPeriodService::class)->ensureOpen($data['payment_date'], 'payment_date');
 
         $outstanding = round((float) $supplierInvoice->total_amount - (float) $supplierInvoice->paid_amount, 2);
         if ((float) $data['amount'] > $outstanding) {

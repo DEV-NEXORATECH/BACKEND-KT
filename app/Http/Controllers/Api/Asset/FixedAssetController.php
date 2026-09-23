@@ -7,6 +7,7 @@ use App\Models\Accounting\Journal;
 use App\Models\Asset\FixedAsset;
 use App\Models\Master\AssetCategory;
 use App\Models\Master\ChartOfAccount;
+use App\Services\Accounting\AccountingPeriodService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -58,6 +59,7 @@ class FixedAssetController extends Controller
 
     public function capitalize(FixedAsset $fixedAsset): JsonResponse
     {
+        app(AccountingPeriodService::class)->ensureOpen($fixedAsset->acquisition_date->toDateString(), 'acquisition_date');
         if ($fixedAsset->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'Asset hanya dapat dikapitalisasi dari draft.']);
         }
@@ -101,6 +103,7 @@ class FixedAssetController extends Controller
             throw ValidationException::withMessages(['depreciation_method' => 'Asset category tidak menggunakan depresiasi.']);
         }
         $data = $request->validate(['depreciation_date' => ['required', 'date'], 'amount' => ['nullable', 'numeric', 'min:0.01']]);
+        app(AccountingPeriodService::class)->ensureOpen($data['depreciation_date'], 'depreciation_date');
         $category = $fixedAsset->category;
         $depreciationAccount = $category?->depreciationGlAccount ?: ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
         $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
@@ -157,6 +160,7 @@ class FixedAssetController extends Controller
             throw ValidationException::withMessages(['status' => 'Asset sudah disposed.']);
         }
         $data = $request->validate(['disposed_date' => ['required', 'date'], 'disposal_reason' => ['required', 'string']]);
+        app(AccountingPeriodService::class)->ensureOpen($data['disposed_date'], 'disposed_date');
         $category = $fixedAsset->category;
         $assetAccount = $category?->assetGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('is_header', false)->first();
         $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();

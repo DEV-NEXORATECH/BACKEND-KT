@@ -10,6 +10,7 @@ use App\Models\Finance\Payment;
 use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\Customer;
+use App\Services\Accounting\AccountingPeriodService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -83,6 +84,7 @@ class AccountsReceivableController extends Controller
 
     public function postInvoice(CustomerInvoice $customerInvoice): JsonResponse
     {
+        app(AccountingPeriodService::class)->ensureOpen($customerInvoice->invoice_date->toDateString(), 'invoice_date');
         if ($customerInvoice->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'Customer invoice hanya bisa diposting dari draft.']);
         }
@@ -148,6 +150,7 @@ class AccountsReceivableController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             'reference' => ['nullable', 'string', 'max:100'],
         ]);
+        app(AccountingPeriodService::class)->ensureOpen($data['payment_date'], 'payment_date');
 
         $outstanding = round((float) $customerInvoice->total_amount - (float) $customerInvoice->received_amount, 2);
         if ((float) $data['amount'] > $outstanding) {

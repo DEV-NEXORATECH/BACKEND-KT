@@ -22,6 +22,8 @@ use App\Http\Controllers\Api\Timesheet\TimesheetEntryController;
 use App\Http\Controllers\Api\Asset\FixedAssetController;
 use App\Http\Controllers\Api\ReportsDashboardController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\SystemSettingsController;
 use App\Http\Controllers\Api\CustomReportController;
 use App\Http\Controllers\Api\AutomationController;
 use App\Http\Controllers\Api\SavedReportController;
@@ -83,6 +85,11 @@ Route::options('/{any}', function () {
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
+    Route::get('/me/profile', [ProfileController::class, 'show']);
+    Route::put('/me/profile', [ProfileController::class, 'update']);
+    Route::put('/me/password', [ProfileController::class, 'changePassword']);
+    Route::get('/v1/settings', [SystemSettingsController::class, 'show'])->middleware('permission:settings.manage');
+    Route::put('/v1/settings', [SystemSettingsController::class, 'update'])->middleware('permission:settings.manage');
     Route::get('/rbac/me', [RbacController::class, 'me']);
     Route::get('/menus', [MenuController::class, 'index'])->middleware('permission:master-menu.view');
     Route::apiResource('/menus', MenuController::class)->except(['show'])->middleware('permission:master-menu.manage');
