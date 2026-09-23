@@ -8,6 +8,7 @@ use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 abstract class BaseMasterController extends Controller
 {
@@ -146,7 +147,9 @@ abstract class BaseMasterController extends Controller
     public function template()
     {
         $model = new $this->modelClass;
-        $columns = array_values(array_filter($model->getFillable(), fn ($column) => ! in_array($column, ['id', 'created_at', 'updated_at', 'deleted_at'])));
+        $columns = array_values(array_filter($model->getFillable(), fn ($column) => ! in_array($column, [
+            'id', 'created_at', 'updated_at', 'deleted_at', 'created_by', 'updated_by', 'deleted_by',
+        ], true)));
         return response(implode(',', $columns)."\n", 200, [
             'Content-Type' => 'text/csv; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="'.strtolower(class_basename($this->modelClass)).'-template.csv"',
@@ -158,14 +161,62 @@ abstract class BaseMasterController extends Controller
         $request->validate(['file' => ['required', 'file', 'mimes:csv,txt', 'max:10240']]);
         $handle = fopen($request->file('file')->getRealPath(), 'r');
         $headers = array_map(fn ($header) => trim((string) $header), fgetcsv($handle) ?: []);
-        $fillable = array_flip((new $this->modelClass)->getFillable());
+        $model = new $this->modelClass;
+        $fillableColumns = array_values(array_filter($model->getFillable(), fn ($column) => ! in_array($column, [
+            'id', 'created_at', 'updated_at', 'deleted_at', 'created_by', 'updated_by', 'deleted_by',
+        ], true)));
+        $fillable = array_flip($fillableColumns);
+        $identityColumns = array_values(array_filter([
+            'code', 'slug', 'email', 'nik', 'nip', 'account_number', 'number', 'name',
+        ], fn ($column) => isset($fillable[$column])));
+        $seen = [];
         $created = 0;
+        $skipped = 0;
+        $errors = [];
         while (($row = fgetcsv($handle)) !== false) {
             $payload = [];
-            foreach ($headers as $index => $header) if ($header !== '' && isset($fillable[$header])) $payload[$header] = $row[$index] ?? null;
-            if ($payload) { ($this->modelClass)::create($payload); $created++; }
+            foreach ($headers as $index => $header) {
+                if ($header !== '' && isset($fillable[$header])) {
+                    $value = $row[$index] ?? null;
+                    $payload[$header] = is_string($value) ? trim($value) : $value;
+                }
+            }
+            $payload = array_filter($payload, static fn ($value) => $value !== null && $value !== '');
+            if (! $payload) continue;
+
+            $identityColumn = null;
+            $identityValue = null;
+            foreach ($identityColumns as $column) {
+                if (isset($payload[$column]) && $payload[$column] !== '') {
+                    $identityColumn = $column;
+                    $identityValue = (string) $payload[$column];
+                    break;
+                }
+            }
+            $fingerprint = $identityColumn
+                ? $identityColumn.'|'.mb_strtolower($identityValue)
+                : md5(json_encode($payload));
+            if (isset($seen[$fingerprint]) || ($identityColumn && ($this->modelClass)::query()->where($identityColumn, $identityValue)->exists())) {
+                $skipped++;
+                $seen[$fingerprint] = true;
+                continue;
+            }
+
+            try {
+                ($this->modelClass)::create($payload);
+                $seen[$fingerprint] = true;
+                $created++;
+            } catch (Throwable $exception) {
+                $skipped++;
+                if (count($errors) < 5) $errors[] = $exception->getMessage();
+            }
         }
         fclose($handle);
-        return response()->json(['success' => true, 'message' => "{$created} data berhasil diimport.", 'data' => ['created' => $created]]);
+        $message = "{$created} data berhasil diimport, {$skipped} data duplikat/tidak valid dilewati.";
+        return response()->json(['success' => true, 'message' => $message, 'data' => [
+            'created' => $created,
+            'skipped' => $skipped,
+            'errors' => $errors,
+        ]]);
     }
 }
