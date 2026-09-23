@@ -19,6 +19,7 @@ class StoreBankAccountRequest extends FormRequest
             'account_number' => 'required|string|max:50|unique:bank_accounts,account_number',
             'account_name' => 'required|string|max:150',
             'swift_code' => 'nullable|string|max:30',
+            'description' => 'nullable|string|max:255',
             'currency_id' => 'required|integer|exists:currencies,id',
             'gl_account_id' => 'nullable|integer|exists:chart_of_accounts,id',
             'is_active' => 'boolean',

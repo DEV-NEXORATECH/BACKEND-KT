@@ -23,6 +23,8 @@ class UpdateEmployeeRequest extends FormRequest
             'bank_name' => 'nullable|string|max:100',
             'bank_account_number' => 'nullable|string|max:50',
             'bank_account_holder' => 'nullable|string|max:150',
+            'project_bank_name' => 'nullable|string|max:100',
+            'project_bank_account_number' => 'nullable|string|max:50',
             'is_active' => 'boolean',
         ];
     }

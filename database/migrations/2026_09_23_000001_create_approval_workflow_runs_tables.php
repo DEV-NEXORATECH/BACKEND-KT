@@ -34,7 +34,7 @@ return new class extends Migration {
             $table->timestamp('action_at')->nullable();
             $table->text('notes')->nullable();
             $table->timestamps();
-            $table->index(['approval_workflow_run_id', 'level', 'status']);
+            $table->index(['approval_workflow_run_id', 'level', 'status'], 'awa_run_lvl_status_idx');
         });
     }
 

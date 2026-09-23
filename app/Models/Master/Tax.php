@@ -14,7 +14,19 @@ class Tax extends Model
 
     protected $table = 'taxes';
 
-    protected $fillable = ['code', 'name', 'tax_type', 'rate_percent', 'sales_gl_account_id', 'purchase_gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = [
+        'code',
+        'name',
+        'tax_type',
+        'rate_percent',
+        'description',
+        'sales_gl_account_id',
+        'purchase_gl_account_id',
+        'is_active',
+        'created_by',
+        'updated_by',
+        'deleted_by',
+    ];
 
     protected $casts = [
         'is_active' => 'boolean',

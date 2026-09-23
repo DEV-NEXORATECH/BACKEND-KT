@@ -14,7 +14,7 @@ class BankAccount extends Model
 
     protected $table = 'bank_accounts';
 
-    protected $fillable = ['organization_id', 'bank_name', 'account_number', 'account_name', 'swift_code', 'currency_id', 'gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['organization_id', 'bank_name', 'account_number', 'account_name', 'swift_code', 'description', 'currency_id', 'gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
