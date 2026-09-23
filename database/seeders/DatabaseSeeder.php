@@ -25,6 +25,10 @@ class DatabaseSeeder extends Seeder
             ['slug' => 'manager', 'name' => 'MANAGER'],
             ['slug' => 'procurement', 'name' => 'PROCUREMENT'],
             ['slug' => 'staff', 'name' => 'STAFF'],
+            ['slug' => 'executive-director', 'name' => 'Executive Director'],
+            ['slug' => 'board-director', 'name' => 'Board of Trustees'],
+            ['slug' => 'project-manager', 'name' => 'Project Manager'],
+            ['slug' => 'finance-officer', 'name' => 'Finance Officer'],
         ])->mapWithKeys(fn ($role) => [
             $role['slug'] => Role::updateOrCreate(
                 ['slug' => $role['slug']],
@@ -227,6 +231,25 @@ class DatabaseSeeder extends Seeder
             'timesheet.update',
             'timesheet.submit',
         ])->pluck('id'));
+
+        $approverPermissions = [
+            'dashboard.view',
+            'funding-projects.view',
+            'budget.view',
+            'budget.validate',
+            'expenses-approvals.view',
+            'expenses.approve',
+            'expense.view',
+            'procurement.pr.view',
+            'procurement.pr.approve',
+            'reports.view',
+            'timesheet.view',
+            'timesheet.approve',
+        ];
+        $roles->get('project-manager')?->permissions()->sync($permissions->only($approverPermissions)->pluck('id'));
+        $roles->get('finance-officer')?->permissions()->sync($permissions->only($approverPermissions)->pluck('id'));
+        $roles->get('executive-director')?->permissions()->sync($permissions->only($approverPermissions)->pluck('id'));
+        $roles->get('board-director')?->permissions()->sync($permissions->only($approverPermissions)->pluck('id'));
 
         $menuDefinitions = [
             ['title' => 'Dashboard', 'slug' => 'dashboard', 'path' => '/dashboard', 'icon' => 'dashboard', 'sort_order' => 10],

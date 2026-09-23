@@ -110,10 +110,18 @@ class ProcessApprovalEscalations extends Command
 
         foreach ($byPermission as $permission => $items) {
             $approvers = User::query()
-                ->whereHas('roles.permissions', fn ($q) => $q->where('name', $permission))
+                ->whereHas('role.permissions', fn ($q) => $q->where('slug', $permission))
                 ->get();
 
             foreach ($approvers as $approver) {
+                \App\Models\Notification::create([
+                    'user_id' => $approver->id,
+                    'title' => 'Reminder persetujuan',
+                    'message' => "Terdapat " . count($items) . " pengajuan yang menunggu persetujuan Anda lebih dari {$days} hari.",
+                    'type' => 'approval',
+                    'action_url' => '/approvals',
+                ]);
+
                 $approver->notify(new ApprovalReminderNotification(
                     pendingItems: $items->all(),
                     overdueDays: $days,

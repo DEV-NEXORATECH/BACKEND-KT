@@ -23,6 +23,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role_id',
+        'employee_id',
         'is_active',
     ];
 
@@ -57,7 +58,9 @@ class User extends Authenticatable
 
     public function employee()
     {
-        return $this->hasOne(\App\Models\Master\Employee::class, 'email', 'email');
+        return $this->employee_id
+            ? $this->belongsTo(\App\Models\Master\Employee::class, 'employee_id')
+            : $this->hasOne(\App\Models\Master\Employee::class, 'email', 'email');
     }
 
     public function hasPermission(string $permission): bool
