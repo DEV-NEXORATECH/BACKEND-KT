@@ -21,10 +21,19 @@ class FixedAssetController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $assets = FixedAsset::query()
-            ->with($this->with)
-            ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
-            ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', $request->integer('project_id')))
+        $query = FixedAsset::query()->with($this->with);
+        app(\App\Services\Rbac\DataScopeService::class)->applyScope(
+            $query,
+            $request->user(),
+            'created_by',
+            'project_id',
+            'organization_id',
+            ['asset.view', 'asset.create', 'asset.capitalize', 'asset.depreciate', 'asset.transfer', 'asset.dispose']
+        );
+
+        $assets = $query
+            ->when($request->filled('status'), fn (Builder $q) => $q->where('status', $request->string('status')))
+            ->when($request->filled('project_id'), fn (Builder $q) => $q->where('project_id', $request->integer('project_id')))
             ->latest('id')
             ->get();
 

@@ -27,6 +27,8 @@ use App\Http\Controllers\Api\SystemSettingsController;
 use App\Http\Controllers\Api\CustomReportController;
 use App\Http\Controllers\Api\AutomationController;
 use App\Http\Controllers\Api\SavedReportController;
+use App\Http\Controllers\Api\ApprovalCenterController;
+use App\Http\Controllers\Api\AttachmentController;
 
 // Master Controllers
 use App\Http\Controllers\Api\Master\OrganizationController;
@@ -112,6 +114,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/v1/reports/custom/saved/{savedReport}', [SavedReportController::class, 'destroy'])->middleware('permission:reports.view');
     Route::post('/v1/automation/run', [AutomationController::class, 'run'])->middleware('permission:reports.view');
     Route::get('/v1/donors/dashboard', [ReportsDashboardController::class, 'donorDashboard'])->middleware('permission:reports.view');
+
+    Route::prefix('v1/approval-center')->group(function () {
+        Route::get('/pending', [ApprovalCenterController::class, 'pending']);
+        Route::post('/batch-action', [ApprovalCenterController::class, 'batchAction']);
+    });
+
+    Route::prefix('v1/attachments')->group(function () {
+        Route::post('/upload', [AttachmentController::class, 'upload']);
+        Route::get('/{module}/{id}/{index}', [AttachmentController::class, 'download']);
+    });
 
     Route::prefix('v1/notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);

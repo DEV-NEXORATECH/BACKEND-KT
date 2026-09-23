@@ -48,9 +48,18 @@ class AccountsReceivableController extends Controller
         return response()->json(['success' => true, 'message' => 'Customer berhasil dibuat.', 'data' => $customer], Response::HTTP_CREATED);
     }
 
-    public function invoices(): JsonResponse
+    public function invoices(Request $request): JsonResponse
     {
-        $invoices = CustomerInvoice::query()->with($this->with)->latest('id')->get();
+        $query = CustomerInvoice::query()->with($this->with);
+        app(\App\Services\Rbac\DataScopeService::class)->applyScope(
+            $query,
+            $request->user(),
+            'created_by',
+            'project_id',
+            'organization_id',
+            ['ar.view', 'ar.post', 'ar.receive']
+        );
+        $invoices = $query->latest('id')->get();
 
         return response()->json(['success' => true, 'data' => $invoices->map(fn (CustomerInvoice $invoice) => $this->formatInvoice($invoice))]);
     }

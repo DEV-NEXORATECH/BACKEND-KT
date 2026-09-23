@@ -18,11 +18,20 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AccountsPayableController extends Controller
 {
-    public function invoices(): JsonResponse
+    public function invoices(Request $request): JsonResponse
     {
-        $invoices = SupplierInvoice::with(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines.purchaseOrderLine.budgetLine.glAccount'])
-            ->latest('id')
-            ->get();
+        $query = SupplierInvoice::with(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines.purchaseOrderLine.budgetLine.glAccount']);
+        
+        app(\App\Services\Rbac\DataScopeService::class)->applyScope(
+            $query,
+            $request->user(),
+            'created_by',
+            null,
+            null,
+            ['ap.post', 'ap.pay', 'ap.view']
+        );
+
+        $invoices = $query->latest('id')->get();
 
         return response()->json([
             'success' => true,
