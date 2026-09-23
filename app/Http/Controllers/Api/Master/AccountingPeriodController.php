@@ -6,6 +6,7 @@ use App\Models\Master\AccountingPeriod;
 use App\Http\Requests\Master\StoreAccountingPeriodRequest;
 use App\Http\Requests\Master\UpdateAccountingPeriodRequest;
 use App\Http\Resources\Master\AccountingPeriodResource;
+use Illuminate\Http\Request;
 
 class AccountingPeriodController extends BaseMasterController
 {
@@ -15,4 +16,19 @@ class AccountingPeriodController extends BaseMasterController
     protected string $updateRequestClass = UpdateAccountingPeriodRequest::class;
     protected array $searchableColumns = ['name'];
     protected array $defaultWith = ['fiscalYear'];
+
+    public function close(Request $request, $id)
+    {
+        $period = AccountingPeriod::findOrFail($id);
+        $period->update(['status' => 'closed', 'is_active' => false]);
+        return response()->json(['success' => true, 'message' => 'Accounting period berhasil ditutup.', 'data' => $period->fresh()]);
+    }
+
+    public function reopen(Request $request, $id)
+    {
+        $data = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
+        $period = AccountingPeriod::findOrFail($id);
+        $period->update(['status' => 'open', 'is_active' => true]);
+        return response()->json(['success' => true, 'message' => 'Accounting period dibuka kembali.', 'data' => [...$period->fresh()->toArray(), 'reopen_reason' => $data['reason']]]);
+    }
 }

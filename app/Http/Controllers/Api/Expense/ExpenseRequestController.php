@@ -31,6 +31,11 @@ class ExpenseRequestController extends Controller
     {
         $items = ExpenseRequest::with($this->with)
             ->when(! $this->canAccessAll($request), fn ($query) => $query->where('requester_id', $request->user()->id))
+            ->when($request->filled('donor_id'), fn ($query) => $query->where('donor_id', $request->integer('donor_id')))
+            ->when($request->filled('grant_agreement_id'), fn ($query) => $query->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+            ->when($request->filled('program_id'), fn ($query) => $query->where('program_id', $request->integer('program_id')))
+            ->when($request->filled('project_id'), fn ($query) => $query->where('project_id', $request->integer('project_id')))
+            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->query('status')))
             ->latest('id')
             ->get();
 

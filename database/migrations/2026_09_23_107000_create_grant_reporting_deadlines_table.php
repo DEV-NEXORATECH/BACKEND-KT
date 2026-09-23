@@ -1,0 +1,3 @@
+<?php
+use Illuminate\Database\Migrations\Migration; use Illuminate\Database\Schema\Blueprint; use Illuminate\Support\Facades\Schema;
+return new class extends Migration { public function up(): void { Schema::create('grant_reporting_deadlines',function(Blueprint $t){$t->id();$t->foreignId('grant_agreement_id')->constrained('grant_agreements')->cascadeOnDelete();$t->string('report_type',100);$t->date('due_date');$t->enum('status',['upcoming','in_progress','submitted','overdue'])->default('upcoming');$t->text('notes')->nullable();$t->timestamps();$t->index(['due_date','status']);}); } public function down(): void {Schema::dropIfExists('grant_reporting_deadlines');} };

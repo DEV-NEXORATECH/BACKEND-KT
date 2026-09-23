@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\Api\Accounting\JournalController;
 use App\Http\Controllers\Api\Accounting\GeneralLedgerController;
+use App\Http\Controllers\Api\Accounting\RecurringJournalController;
 use App\Http\Controllers\Api\Budget\BudgetMonitoringController;
 use App\Http\Controllers\Api\Budget\BudgetReallocationController;
 use App\Http\Controllers\Api\Procurement\PurchaseRequestController;
@@ -69,6 +70,8 @@ use App\Http\Controllers\Api\Master\VendorCategoryController;
 use App\Http\Controllers\Api\Master\ProcurementCategoryController;
 use App\Http\Controllers\Api\Master\ProcurementItemController;
 use App\Http\Controllers\Api\Master\PositionController;
+use App\Http\Controllers\Api\Master\ProjectLogframeController;
+use App\Http\Controllers\Api\Master\GrantReportingDeadlineController;
 
 Route::get('/health', function () {
     $dbStatus = 'ok';
@@ -152,6 +155,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('v1/accounting')->group(function () {
         Route::get('general-ledger', [GeneralLedgerController::class, 'index'])->middleware('permission:accounting.view');
+        Route::apiResource('recurring-journals', RecurringJournalController::class)->only(['index','store'])->middleware('permission:accounting.journal.create');
         Route::get('journals', [JournalController::class, 'index'])->middleware('permission:accounting.journal.view');
         Route::post('journals', [JournalController::class, 'store'])->middleware('permission:accounting.journal.create');
         Route::get('journals/{journal}', [JournalController::class, 'show'])->middleware('permission:accounting.journal.view');
@@ -305,6 +309,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // V1 MASTER DATA ROUTES (30 Entities + Export + Toggle Status)
     // -------------------------------------------------------------
     Route::prefix('v1/master')->group(function () {
+        Route::apiResource('project-logframes', ProjectLogframeController::class)->middleware('permission:master-data');
+        Route::apiResource('grant-reporting-deadlines', GrantReportingDeadlineController::class)->middleware('permission:master-data');
         Route::get('roles', [RoleMenuController::class, 'options'])->middleware('permission:master-data.view');
         $masterResources = [
             'organizations' => OrganizationController::class,
@@ -343,6 +349,8 @@ Route::middleware('auth:sanctum')->group(function () {
             'asset-categories' => AssetCategoryController::class,
             'approval-matrices' => ApprovalMatrixController::class,
         ];
+        Route::post('accounting-periods/{id}/close', [AccountingPeriodController::class, 'close'])->middleware('permission:settings.manage');
+        Route::post('accounting-periods/{id}/reopen', [AccountingPeriodController::class, 'reopen'])->middleware('permission:settings.manage');
 
         foreach ($masterResources as $uri => $controller) {
             Route::get("{$uri}/template", [$controller, 'template'])->middleware('permission:master-data.view');

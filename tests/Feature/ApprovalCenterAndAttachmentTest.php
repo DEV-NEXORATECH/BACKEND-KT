@@ -18,7 +18,7 @@ class ApprovalCenterAndAttachmentTest extends TestCase
     public function test_approval_center_lists_pending_items_and_supports_batch_action(): void
     {
         $role = Role::create(['name' => 'Finance Manager', 'slug' => 'finance-manager']);
-        $permissions = collect(['expenses-approvals.view', 'expense.approve', 'expense.create', 'expense.view', 'expense.submit'])->map(fn ($slug) => Permission::create(['name' => $slug, 'slug' => $slug]));
+        $permissions = collect(['expenses-approvals.view', 'expense.approve', 'expense.verify', 'expense.create', 'expense.view', 'expense.submit'])->map(fn ($slug) => Permission::create(['name' => $slug, 'slug' => $slug]));
         $role->permissions()->sync($permissions->pluck('id'));
         $user = User::factory()->create(['role_id' => $role->id]);
 

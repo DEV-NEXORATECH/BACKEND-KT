@@ -282,6 +282,8 @@ class DatabaseSeeder extends Seeder
                     ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 184],
                     ['title' => 'Projects', 'slug' => 'master-projects', 'path' => '/master-data/projects', 'sort_order' => 185],
                     ['title' => 'Activities', 'slug' => 'master-activities', 'path' => '/master-data/activities', 'sort_order' => 186],
+                    ['title' => 'Project Logframe', 'slug' => 'master-project-logframes', 'path' => '/master-data/project-logframes', 'sort_order' => 187],
+                    ['title' => 'Grant Reporting Deadlines', 'slug' => 'master-grant-reporting-deadlines', 'path' => '/master-data/grant-reporting-deadlines', 'sort_order' => 188],
                     ['title' => 'Beneficiary Partners', 'slug' => 'master-beneficiary-partners', 'path' => '/master-data/beneficiary-partners', 'sort_order' => 187],
                 ]],
                 ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'path' => '/master-data', 'sort_order' => 19, 'children' => [
@@ -300,6 +302,7 @@ class DatabaseSeeder extends Seeder
                 ['title' => 'Donor & Grant', 'slug' => 'funding-donor-grant', 'path' => '/funding-projects/donor-grant', 'sort_order' => 21],
                 ['title' => 'Program/Project', 'slug' => 'funding-program-project', 'path' => '/funding-projects/program-project', 'sort_order' => 22],
                 ['title' => 'Budget', 'slug' => 'funding-budget', 'path' => '/funding-projects/budget', 'sort_order' => 23],
+                ['title' => 'Budget Reallocation', 'slug' => 'funding-budget-reallocation', 'path' => '/funding-projects/budget-reallocation', 'sort_order' => 24],
             ]],
             ['title' => 'Expenses & Approvals', 'slug' => 'expenses-approvals', 'path' => '/expenses-approvals', 'icon' => 'wallet', 'sort_order' => 30, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'expenses-dashboard', 'path' => '/expenses-approvals/expenses', 'sort_order' => 30],

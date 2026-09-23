@@ -378,6 +378,13 @@ class ApprovalCenterController extends Controller
                         $exp = ExpenseRequest::find($id);
                         if ($exp) {
                             if ($action === 'approve') {
+                                if ($exp->status === 'submitted') {
+                                    if (! $request->user()->hasPermission('expense.verify')) {
+                                        abort(403, 'Tidak memiliki permission expense.verify untuk memproses Finance Verification.');
+                                    }
+                                    $expenseController->verify($request, $exp);
+                                    $exp->refresh();
+                                }
                                 $expenseController->approve($request, $exp, app(\App\Services\Budget\BudgetMonitoringService::class), app(\App\Services\Settings\SystemPolicyService::class), app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
                                 $expenseController->reject($request, $exp);
