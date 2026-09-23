@@ -257,50 +257,47 @@ class DatabaseSeeder extends Seeder
         $menuDefinitions = [
             ['title' => 'Dashboard', 'slug' => 'dashboard', 'path' => '/dashboard', 'icon' => 'dashboard', 'sort_order' => 10],
             ['title' => 'Master Data', 'slug' => 'master-data', 'path' => '/master-data', 'icon' => 'database', 'sort_order' => 15, 'children' => [
-                ['title' => 'Organization & Structure', 'slug' => 'master-organization-structure', 'path' => '/master-data/organization-structure', 'sort_order' => 16, 'children' => [
+                ['title' => 'Organization & Structure', 'slug' => 'master-organization-structure', 'path' => '/master-data/organizations', 'sort_order' => 16, 'children' => [
                     ['title' => 'Organizations', 'slug' => 'master-organizations', 'path' => '/master-data/organizations', 'sort_order' => 161],
                     ['title' => 'Office Locations', 'slug' => 'master-office-locations', 'path' => '/master-data/office-locations', 'sort_order' => 162],
                     ['title' => 'Departments', 'slug' => 'master-departments', 'path' => '/master-data/departments', 'sort_order' => 163],
                     ['title' => 'Positions', 'slug' => 'master-positions', 'path' => '/master-data/positions', 'sort_order' => 165],
                     ['title' => 'Staff / Employees', 'slug' => 'master-employees', 'path' => '/master-data/employees', 'sort_order' => 166],
                 ]],
-                ['title' => 'Finance & Accounting', 'slug' => 'master-finance-accounting', 'path' => '/master-data/finance-accounting', 'sort_order' => 17, 'children' => [
+                ['title' => 'Finance & Accounting', 'slug' => 'master-finance-accounting', 'path' => '/master-data/chart-of-accounts', 'sort_order' => 17, 'children' => [
                     ['title' => 'Chart of Accounts', 'slug' => 'master-chart-of-accounts', 'path' => '/master-data/chart-of-accounts', 'sort_order' => 175],
                     ['title' => 'Account Categories', 'slug' => 'master-account-categories', 'path' => '/master-data/account-categories', 'sort_order' => 176],
                     ['title' => 'Bank Accounts', 'slug' => 'master-bank-accounts', 'path' => '/master-data/bank-accounts', 'sort_order' => 177],
                     ['title' => 'Payment Methods', 'slug' => 'master-payment-methods', 'path' => '/master-data/payment-methods', 'sort_order' => 179],
-                    ['title' => 'Fx Rates', 'slug' => 'master-fx-rates', 'path' => '/master-data/fx-rates', 'sort_order' => 172],
+                    ['title' => 'Fx Rates', 'slug' => 'master-fx-rates', 'path' => '/master-data/exchange-rates', 'sort_order' => 172],
                     ['title' => 'Currencies', 'slug' => 'master-currencies', 'path' => '/master-data/currencies', 'sort_order' => 171],
                     ['title' => 'Fiscal Years', 'slug' => 'master-fiscal-years', 'path' => '/master-data/fiscal-years', 'sort_order' => 173],
                     ['title' => 'Accounting Periods', 'slug' => 'master-accounting-periods', 'path' => '/master-data/accounting-periods', 'sort_order' => 174],
                     ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
                 ]],
-                ['title' => 'Fund/Grant Management', 'slug' => 'master-fund-grant-management', 'path' => '/master-data/fund-grant', 'sort_order' => 18, 'children' => [
+                ['title' => 'Funding & Projects', 'slug' => 'master-funding-projects', 'path' => '/master-data/funding-sources', 'sort_order' => 18, 'children' => [
                     ['title' => 'Donors', 'slug' => 'master-donors', 'path' => '/master-data/donors', 'sort_order' => 182],
                     ['title' => 'Grant/Agreements', 'slug' => 'master-grant-agreements', 'path' => '/master-data/grant-agreements', 'sort_order' => 183],
                     ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 184],
                     ['title' => 'Projects', 'slug' => 'master-projects', 'path' => '/master-data/projects', 'sort_order' => 185],
                     ['title' => 'Activities', 'slug' => 'master-activities', 'path' => '/master-data/activities', 'sort_order' => 186],
-                    ['title' => 'Budget Codes', 'slug' => 'master-budget-codes', 'path' => '/master-data/budget-codes', 'sort_order' => 187],
-                    ['title' => 'Sources of Fund (SoF)', 'slug' => 'master-sof', 'path' => '/master-data/sof', 'sort_order' => 188],
+                    ['title' => 'Budget Codes', 'slug' => 'master-budget-codes', 'path' => '/master-data/budget-lines', 'sort_order' => 187],
+                    ['title' => 'Sources of Fund (SoF)', 'slug' => 'master-sof', 'path' => '/master-data/funding-sources', 'sort_order' => 188],
                 ]],
-                ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'path' => '/master-data/budget-reporting', 'sort_order' => 19, 'children' => [
+                ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'path' => '/master-data/budget-categories', 'sort_order' => 19, 'children' => [
                     ['title' => 'Budget Categories', 'slug' => 'master-budget-categories', 'path' => '/master-data/budget-categories', 'sort_order' => 193],
-                    ['title' => 'Budget Templates', 'slug' => 'master-budget-templates', 'path' => '/master-data/budget-templates', 'sort_order' => 194],
-                    ['title' => 'Reporting Categories', 'slug' => 'master-reporting-categories', 'path' => '/master-data/reporting-categories', 'sort_order' => 195],
+                    ['title' => 'Budget Templates / Lines', 'slug' => 'master-budget-templates', 'path' => '/master-data/budget-lines', 'sort_order' => 194],
                     ['title' => 'Reporting Dimensions', 'slug' => 'master-reporting-dimensions', 'path' => '/master-data/reporting-dimensions', 'sort_order' => 191],
                 ]],
-                ['title' => 'Expenses & Assets', 'slug' => 'master-expenses-assets', 'path' => '/master-data/expenses-assets', 'sort_order' => 20, 'children' => [
+                ['title' => 'Expenses & Assets', 'slug' => 'master-expenses-assets', 'path' => '/master-data/expense-categories', 'sort_order' => 20, 'children' => [
                     ['title' => 'Expense Categories', 'slug' => 'master-expense-categories', 'path' => '/master-data/expense-categories', 'sort_order' => 201],
-                    ['title' => 'Expense Types', 'slug' => 'master-expense-types', 'path' => '/master-data/expense-types', 'sort_order' => 202],
+                    ['title' => 'Document / Expense Types', 'slug' => 'master-expense-types', 'path' => '/master-data/document-types', 'sort_order' => 202],
                     ['title' => 'Asset Categories', 'slug' => 'master-asset-categories', 'path' => '/master-data/asset-categories', 'sort_order' => 203],
-                    ['title' => 'Cash Advances', 'slug' => 'master-ca', 'path' => '/master-data/ca', 'sort_order' => 204],
-                    ['title' => 'Depreciation Rates', 'slug' => 'master-depreciation', 'path' => '/master-data/depreciation', 'sort_order' => 205],
                 ]],
-                ['title' => 'Procurement', 'slug' => 'master-procurement', 'path' => '/master-data/procurement', 'sort_order' => 21, 'children' => [
+                ['title' => 'Procurement', 'slug' => 'master-procurement', 'path' => '/master-data/vendors', 'sort_order' => 21, 'children' => [
                     ['title' => 'Vendors/Suppliers/Consultants', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 211],
                     ['title' => 'Vendor Categories', 'slug' => 'master-vendor-categories', 'path' => '/master-data/vendor-categories', 'sort_order' => 212],
-                    ['title' => 'Items/Services', 'slug' => 'master-items-services', 'path' => '/master-data/items-services', 'sort_order' => 213],
+                    ['title' => 'Items/Services', 'slug' => 'master-items-services', 'path' => '/master-data/procurement-items', 'sort_order' => 213],
                     ['title' => 'Unit of Measures', 'slug' => 'master-unit-of-measures', 'path' => '/master-data/unit-of-measures', 'sort_order' => 214],
                     ['title' => 'Procurement Categories', 'slug' => 'master-procurement-categories', 'path' => '/master-data/procurement-categories', 'sort_order' => 215],
                 ]],
@@ -418,6 +415,11 @@ class DatabaseSeeder extends Seeder
             $roles->each(fn (Role $role) => $role->menus()->detach($legacyApprovalMatrixMenu->id));
         }
 
+        // These legacy direct children made Master Data long and bypassed the
+        // six category landing pages. Keep them inactive after every seed run.
+        Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-reporting-categories', 'master-ca', 'master-depreciation'])
+            ->update(['is_active' => false]);
+
         $auditMenu = $menus->firstWhere('slug', 'audit-log');
         $regularMenuIds = $menus->reject(fn (Menu $menu) => $menu->slug === 'audit-log')->pluck('id');
         $auditPermissionId = $permissions->get('audit.view')?->id;
@@ -449,5 +451,13 @@ class DatabaseSeeder extends Seeder
         $this->call(DepartmentSeeder::class);
         $this->call(MasterMenuSeeder::class);
         $this->call(RoleSeeder::class);
+
+        // RoleSeeder supports standalone deployments, but DatabaseSeeder owns
+        // the canonical navigation. Re-apply it last so paths/titles stay in sync.
+        foreach ($menuDefinitions as $definition) {
+            $persistMenu($definition);
+        }
+        Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-reporting-categories', 'master-ca', 'master-depreciation'])
+            ->update(['is_active' => false]);
     }
 }

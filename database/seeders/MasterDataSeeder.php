@@ -7,6 +7,7 @@ use App\Models\Accounting\JournalLine;
 use App\Models\Budget\BudgetCommitment;
 use App\Models\Notification;
 use App\Models\Master\Activity;
+use App\Models\Master\AccountCategory;
 use App\Models\Master\ApprovalMatrix;
 use App\Models\Master\AssetCategory;
 use App\Models\Master\BankAccount;
@@ -249,6 +250,22 @@ class MasterDataSeeder extends Seeder
         }
 
         // 4. Chart of Accounts
+        // Account categories are maintained separately so the COA setup can
+        // classify accounts consistently from the first seed run.
+        foreach ([
+            ['code' => 'ASSET', 'name' => 'Assets', 'account_type' => 'asset'],
+            ['code' => 'LIABILITY', 'name' => 'Liabilities', 'account_type' => 'liability'],
+            ['code' => 'EQUITY', 'name' => 'Equity', 'account_type' => 'equity'],
+            ['code' => 'REVENUE', 'name' => 'Revenue', 'account_type' => 'revenue'],
+            ['code' => 'EXPENSE', 'name' => 'Expenses', 'account_type' => 'expense'],
+        ] as $category) {
+            AccountCategory::updateOrCreate(['code' => $category['code']], [
+                'name' => $category['name'],
+                'account_type' => $category['account_type'],
+                'is_active' => true,
+            ]);
+        }
+
         \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
         \DB::table('journal_lines')->truncate();
         \DB::table('journals')->truncate();
