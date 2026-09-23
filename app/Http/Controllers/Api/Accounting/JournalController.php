@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Accounting;
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
 use App\Services\Accounting\AccountingPeriodService;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -191,12 +192,14 @@ class JournalController extends Controller
         ]);
     }
 
-    public function submit(Journal $journal): JsonResponse
+    public function submit(Request $request, Journal $journal, ApprovalWorkflowService $workflow): JsonResponse
     {
-        return $this->transition($journal, 'draft', 'submitted', [
-            'submitted_by' => request()->user()->id,
+        $response = $this->transition($journal, 'draft', 'submitted', [
+            'submitted_by' => $request->user()->id,
             'submitted_at' => now(),
         ], 'Journal berhasil disubmit.');
+        $workflow->start('journal', $journal, (float) $journal->lines()->sum('debit'), $request->user()->id);
+        return $response;
     }
 
     public function review(Journal $journal): JsonResponse
@@ -207,12 +210,21 @@ class JournalController extends Controller
         ], 'Journal berhasil direview.');
     }
 
-    public function post(Journal $journal): JsonResponse
+    public function post(Request $request, Journal $journal, ApprovalWorkflowService $workflow): JsonResponse
     {
         $this->guardOpenPeriod($journal->journal_date->toDateString());
 
+        $amount = (float) $journal->lines()->sum('debit');
+        $approval = $workflow->approve('journal', $journal, $request->user(), $request->input('notes'));
+        if (! $approval['managed'] && $workflow->requiresApproval('journal', $journal, $amount)) {
+            throw ValidationException::withMessages(['approval' => 'Journal harus disubmit ke Approval Matrix sebelum posting.']);
+        }
+        if ($approval['managed'] && ! $approval['completed']) {
+            return response()->json(['success' => true, 'message' => "Approval journal tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->formatJournal($journal->fresh($this->with))]);
+        }
+
         return $this->transition($journal, 'reviewed', 'posted', [
-            'posted_by' => request()->user()->id,
+            'posted_by' => $request->user()->id,
             'posted_at' => now(),
         ], 'Journal berhasil diposting.');
     }

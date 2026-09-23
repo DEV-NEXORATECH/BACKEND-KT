@@ -72,12 +72,25 @@ class ReportsDashboardTest extends TestCase
             ->assertJsonPath('financial_statement.totals_by_type.liability', 300)
             ->assertJsonPath('ap_aging.buckets.1_30', 200)
             ->assertJsonPath('cash_bank.total_balance', -100);
+
+        $this->get('/api/v1/reports/profit-loss/pdf?end_date=2026-09-30')
+            ->assertOk()
+            ->assertDownload();
+
+        $this->post('/api/v1/reports/custom/export', [
+            'report_type' => 'project',
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-09-30',
+        ])->assertOk()
+            ->assertDownload();
+
+        $this->assertDatabaseHas('audit_logs', ['user_id' => $user->id, 'module' => 'reports', 'action' => 'EXPORT']);
     }
 
     private function fixture(): array
     {
         $role = Role::create(['name' => 'Finance', 'slug' => 'finance']);
-        foreach (['dashboard.view', 'reports.view'] as $permission) {
+        foreach (['dashboard.view', 'reports.view', 'reports.export'] as $permission) {
             $role->permissions()->attach(Permission::create(['name' => $permission, 'slug' => $permission]));
         }
         $user = User::factory()->create(['role_id' => $role->id]);

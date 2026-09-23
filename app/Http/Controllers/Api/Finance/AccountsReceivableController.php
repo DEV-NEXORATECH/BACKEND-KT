@@ -11,6 +11,7 @@ use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\Customer;
 use App\Services\Accounting\AccountingPeriodService;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -92,11 +93,39 @@ class AccountsReceivableController extends Controller
         return response()->json(['success' => true, 'message' => 'Customer invoice berhasil dibuat.', 'data' => $this->formatInvoice($invoice)], Response::HTTP_CREATED);
     }
 
-    public function postInvoice(CustomerInvoice $customerInvoice): JsonResponse
+    public function submitInvoice(Request $request, CustomerInvoice $customerInvoice, ApprovalWorkflowService $workflow): JsonResponse
+    {
+        if ($customerInvoice->status !== 'draft') {
+            throw ValidationException::withMessages(['status' => 'Customer invoice hanya dapat diajukan dari draft.']);
+        }
+        $run = $workflow->start('ar', $customerInvoice, (float) $customerInvoice->total_amount, $request->user()->id);
+        return response()->json(['success' => true, 'message' => $run ? 'Customer invoice diajukan ke Approval Matrix AR.' : 'Tidak ada Approval Matrix AR aktif; invoice siap diposting.', 'workflow_managed' => (bool) $run, 'data' => $this->formatInvoice($customerInvoice->fresh($this->with))]);
+    }
+
+    public function rejectInvoice(Request $request, CustomerInvoice $customerInvoice, ApprovalWorkflowService $workflow): JsonResponse
+    {
+        $data = $request->validate(['notes' => ['required', 'string', 'max:1000']]);
+        if ($customerInvoice->status !== 'draft') {
+            throw ValidationException::withMessages(['status' => 'Customer invoice tidak dapat direject dari status saat ini.']);
+        }
+
+        $workflow->reject('ar', $customerInvoice, $request->user(), $data['notes']);
+        return response()->json(['success' => true, 'message' => 'Customer invoice direject dan dapat diperbaiki sebelum diajukan ulang.', 'data' => $this->formatInvoice($customerInvoice->fresh($this->with))]);
+    }
+
+    public function postInvoice(Request $request, CustomerInvoice $customerInvoice, ApprovalWorkflowService $workflow): JsonResponse
     {
         app(AccountingPeriodService::class)->ensureOpen($customerInvoice->invoice_date->toDateString(), 'invoice_date');
         if ($customerInvoice->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'Customer invoice hanya bisa diposting dari draft.']);
+        }
+
+        $approval = $workflow->approve('ar', $customerInvoice, $request->user(), $request->input('notes'));
+        if (! $approval['managed'] && $workflow->requiresApproval('ar', $customerInvoice, (float) $customerInvoice->total_amount)) {
+            throw ValidationException::withMessages(['approval' => 'Customer invoice harus disubmit ke Approval Matrix AR sebelum posting.']);
+        }
+        if ($approval['managed'] && ! $approval['completed']) {
+            return response()->json(['success' => true, 'message' => "Approval AR tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->formatInvoice($customerInvoice->fresh($this->with))]);
         }
 
         $arAccount = ChartOfAccount::query()->where('account_type', 'asset')->where('is_header', false)->where(function ($query) {

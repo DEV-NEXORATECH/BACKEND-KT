@@ -21,6 +21,12 @@ class ApprovalWorkflowService
                 ['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()],
                 ['status' => 'in_progress', 'current_level' => $matrices->min('level'), 'submitted_by' => $submittedBy],
             );
+            // A rejected document may be corrected and submitted again. Reset
+            // the historical run actions so its next approval starts cleanly.
+            if ($run->status === 'rejected') {
+                $run->actions()->delete();
+                $run->update(['status' => 'in_progress', 'current_level' => $matrices->min('level'), 'submitted_by' => $submittedBy, 'completed_at' => null]);
+            }
             if ($run->actions()->doesntExist()) {
                 $firstLevel = $matrices->min('level');
                 foreach ($matrices as $matrix) {
@@ -37,6 +43,11 @@ class ApprovalWorkflowService
 
             return $run->fresh('actions');
         });
+    }
+
+    public function requiresApproval(string $module, Model $entity, float $amount): bool
+    {
+        return $this->matricesFor($module, $entity, $amount)->isNotEmpty();
     }
 
     /** @return array{managed: bool, completed: bool, next_level: int|null} */

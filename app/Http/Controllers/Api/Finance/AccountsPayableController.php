@@ -10,6 +10,7 @@ use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Procurement\SupplierInvoice;
 use App\Services\Accounting\AccountingPeriodService;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -39,7 +40,33 @@ class AccountsPayableController extends Controller
         ]);
     }
 
-    public function postInvoice(SupplierInvoice $supplierInvoice): JsonResponse
+    public function submitInvoice(Request $request, SupplierInvoice $supplierInvoice, ApprovalWorkflowService $workflow): JsonResponse
+    {
+        if (! in_array($supplierInvoice->match_status, ['matched', 'partial_match'], true)) {
+            throw ValidationException::withMessages(['match_status' => 'Invoice harus matched atau partial match sebelum diajukan approval AP.']);
+        }
+        if (in_array($supplierInvoice->status, ['posted', 'paid', 'cancelled'], true)) {
+            throw ValidationException::withMessages(['status' => 'Invoice tidak dapat diajukan pada status saat ini.']);
+        }
+
+        $run = $workflow->start('ap', $supplierInvoice, (float) $supplierInvoice->total_amount, $request->user()->id);
+        return response()->json(['success' => true, 'message' => $run ? 'Invoice diajukan ke Approval Matrix AP.' : 'Tidak ada Approval Matrix AP aktif; invoice siap diposting.', 'workflow_managed' => (bool) $run, 'data' => $this->formatInvoice($supplierInvoice->fresh(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines']))]);
+    }
+
+    public function rejectInvoice(Request $request, SupplierInvoice $supplierInvoice, ApprovalWorkflowService $workflow): JsonResponse
+    {
+        $data = $request->validate(['notes' => ['required', 'string', 'max:1000']]);
+        if (in_array($supplierInvoice->status, ['posted', 'paid', 'cancelled'], true)) {
+            throw ValidationException::withMessages(['status' => 'Invoice tidak dapat direject dari status saat ini.']);
+        }
+
+        $workflow->reject('ap', $supplierInvoice, $request->user(), $data['notes']);
+        // Return to its matched state so the preparer can correct and resubmit.
+        $supplierInvoice->update(['status' => 'matched', 'updated_by' => $request->user()->id]);
+        return response()->json(['success' => true, 'message' => 'Invoice AP direject dan dapat diajukan ulang.', 'data' => $this->formatInvoice($supplierInvoice->fresh(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines']))]);
+    }
+
+    public function postInvoice(Request $request, SupplierInvoice $supplierInvoice, ApprovalWorkflowService $workflow): JsonResponse
     {
         app(AccountingPeriodService::class)->ensureOpen($supplierInvoice->invoice_date->toDateString(), 'invoice_date');
         if (! in_array($supplierInvoice->match_status, ['matched', 'partial_match'], true)) {
@@ -47,6 +74,14 @@ class AccountsPayableController extends Controller
         }
         if (in_array($supplierInvoice->status, ['posted', 'paid'], true)) {
             throw ValidationException::withMessages(['status' => 'Invoice sudah diposting.']);
+        }
+
+        $approval = $workflow->approve('ap', $supplierInvoice, $request->user(), $request->input('notes'));
+        if (! $approval['managed'] && $workflow->requiresApproval('ap', $supplierInvoice, (float) $supplierInvoice->total_amount)) {
+            throw ValidationException::withMessages(['approval' => 'Invoice harus disubmit ke Approval Matrix AP sebelum posting.']);
+        }
+        if ($approval['managed'] && ! $approval['completed']) {
+            return response()->json(['success' => true, 'message' => "Approval AP tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->formatInvoice($supplierInvoice->fresh(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines']))]);
         }
 
         $apAccount = ChartOfAccount::query()->where('account_type', 'liability')->where('is_header', false)->first()
@@ -207,9 +242,54 @@ class AccountsPayableController extends Controller
     {
         $query = BankTransaction::with(['bankAccount:id,bank_name,account_number']);
         if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
-            $query->whereHas('payment', fn ($payment) => $payment->where('created_by', $request->user()->id));
+            $query->where(function ($scoped) use ($request) {
+                $scoped->where('created_by', $request->user()->id)
+                    ->orWhereHas('payment', fn ($payment) => $payment->where('created_by', $request->user()->id));
+            });
         }
         return response()->json(['success' => true, 'data' => $query->latest('transaction_date')->latest('id')->get()]);
+    }
+
+    /** Queue of imported statement lines that still need a finance decision. */
+    public function bankExceptions(Request $request): JsonResponse
+    {
+        $query = BankTransaction::query()->with('bankAccount:id,bank_name,account_number')->where('status', 'unmatched');
+        $this->applyBankTransactionScope($query, $request);
+        $user = $request->user();
+        $scope = app(\App\Services\Rbac\DataScopeService::class);
+        $items = $query->latest('transaction_date')->latest('id')->limit(100)->get()->map(function (BankTransaction $transaction) use ($user, $scope) {
+            $amount = round(max((float) $transaction->debit, (float) $transaction->credit), 2);
+            $candidates = Payment::query()
+                ->where('bank_account_id', $transaction->bank_account_id)
+                ->where('status', 'paid')
+                ->where('amount', $amount)
+                ->whereBetween('payment_date', [$transaction->transaction_date->copy()->subDays(7)->toDateString(), $transaction->transaction_date->copy()->addDays(7)->toDateString()]);
+            if (! $scope->canAccessAll($user)) {
+                $candidates->where('created_by', $user->id);
+            }
+            $candidateCount = $candidates->count();
+            $candidateRows = $candidates->orderByDesc('payment_date')->limit(5)->get(['id', 'payment_number', 'payment_date', 'amount', 'reference']);
+            return [
+                'id' => $transaction->id,
+                'transaction_date' => $transaction->transaction_date?->toDateString(),
+                'reference' => $transaction->reference,
+                'description' => $transaction->description,
+                'debit' => (float) $transaction->debit,
+                'credit' => (float) $transaction->credit,
+                'bank_account' => $transaction->bankAccount,
+                'candidate_count' => $candidateCount,
+                'candidates' => $candidateRows->map(fn (Payment $payment) => [
+                    'id' => $payment->id,
+                    'payment_number' => $payment->payment_number,
+                    'payment_date' => $payment->payment_date?->toDateString(),
+                    'amount' => (float) $payment->amount,
+                    'reference' => $payment->reference,
+                ])->values(),
+                'recommended_action' => $candidateCount === 1 ? 'auto_match' : ($candidateCount > 1 ? 'manual_match' : 'review'),
+            ];
+        })->values();
+
+        return response()->json(['success' => true, 'count' => $items->count(), 'data' => $items]);
     }
 
     public function importBankTransactions(Request $request): JsonResponse
@@ -235,7 +315,7 @@ class AccountsPayableController extends Controller
                 $credit = (float) str_replace([',', ' '], ['', ''], (string) ($columns[4] ?? 0));
                 $exists = BankTransaction::where('bank_account_id', $data['bank_account_id'])->whereDate('transaction_date', $date)->where('reference', $reference)->where('debit', $debit)->where('credit', $credit)->exists();
                 if ($exists) { $skipped++; continue; }
-                BankTransaction::create(['bank_account_id' => $data['bank_account_id'], 'transaction_date' => $date, 'reference' => $reference, 'description' => $description, 'debit' => $debit, 'credit' => $credit, 'status' => 'unmatched']);
+                BankTransaction::create(['bank_account_id' => $data['bank_account_id'], 'created_by' => $request->user()->id, 'transaction_date' => $date, 'reference' => $reference, 'description' => $description, 'debit' => $debit, 'credit' => $credit, 'status' => 'unmatched']);
                 $created++;
             } catch (\Throwable) { $skipped++; }
         }
@@ -243,15 +323,110 @@ class AccountsPayableController extends Controller
         return response()->json(['success' => true, 'message' => "{$created} transaksi diimport, {$skipped} dilewati.", 'data' => ['created' => $created, 'skipped' => $skipped]]);
     }
 
+    /**
+     * Suggest and apply a deterministic payment match for an imported bank line.
+     * Ambiguous matches deliberately remain unmatched for a finance user to review.
+     */
+    public function autoMatchBankTransaction(Request $request, BankTransaction $bankTransaction): JsonResponse
+    {
+        $this->ensureBankTransactionScope($request, $bankTransaction, 'mencocokkan otomatis');
+
+        if ($bankTransaction->status !== 'unmatched') {
+            throw ValidationException::withMessages(['status' => 'Auto-match hanya dapat dilakukan untuk transaksi bank berstatus unmatched.']);
+        }
+
+        $amount = round(max((float) $bankTransaction->debit, (float) $bankTransaction->credit), 2);
+        if ($amount <= 0) {
+            throw ValidationException::withMessages(['amount' => 'Nilai transaksi bank harus lebih besar dari nol untuk auto-match.']);
+        }
+
+        $date = $bankTransaction->transaction_date;
+        $payments = Payment::query()
+            ->with(['supplierInvoice:id,invoice_number', 'customerInvoice:id,invoice_number'])
+            ->where('bank_account_id', $bankTransaction->bank_account_id)
+            ->where('status', 'paid')
+            ->where('amount', $amount)
+            ->whereBetween('payment_date', [$date->copy()->subDays(7)->toDateString(), $date->copy()->addDays(7)->toDateString()]);
+
+        if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
+            $payments->where('created_by', $request->user()->id);
+        }
+
+        $candidates = $payments->orderByDesc('payment_date')->limit(3)->get();
+        if ($candidates->count() !== 1) {
+            return response()->json([
+                'success' => true,
+                'matched' => false,
+                'message' => $candidates->isEmpty() ? 'Tidak ditemukan payment yang cocok; transaksi tetap unmatched.' : 'Ditemukan lebih dari satu kandidat payment; lakukan matching manual.',
+                'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number']),
+                'candidates' => $candidates->map(fn (Payment $payment) => [
+                    'id' => $payment->id,
+                    'payment_number' => $payment->payment_number,
+                    'payment_date' => $payment->payment_date?->toDateString(),
+                    'amount' => $payment->amount,
+                    'reference' => $payment->reference,
+                    'invoice_number' => $payment->supplierInvoice?->invoice_number ?? $payment->customerInvoice?->invoice_number,
+                ])->values(),
+            ]);
+        }
+
+        $payment = $candidates->first();
+        $previous = ['payment_id' => $bankTransaction->payment_id, 'status' => $bankTransaction->status];
+        $bankTransaction->update(['payment_id' => $payment->id, 'status' => 'matched']);
+        \App\Models\AuditLog::create([
+            'user_id' => $request->user()->id,
+            'module' => 'banking',
+            'platform' => strtolower($request->header('X-Client-Platform', 'web')),
+            'action' => 'AUTO_MATCH',
+            'entity_type' => BankTransaction::class,
+            'entity_id' => $bankTransaction->id,
+            'previous_values' => $previous,
+            'new_values' => ['payment_id' => $payment->id, 'status' => 'matched'],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['success' => true, 'matched' => true, 'message' => 'Transaksi bank berhasil dicocokkan otomatis.', 'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number', 'payment:id,payment_number,payment_date,amount,reference'])]);
+    }
+
+    /** Confirm a finance user's selected candidate when auto-match is ambiguous. */
+    public function matchBankTransaction(Request $request, BankTransaction $bankTransaction): JsonResponse
+    {
+        $this->ensureBankTransactionScope($request, $bankTransaction, 'mencocokkan');
+        if ($bankTransaction->status !== 'unmatched') {
+            throw ValidationException::withMessages(['status' => 'Manual match hanya dapat dilakukan untuk transaksi bank berstatus unmatched.']);
+        }
+
+        $data = $request->validate(['payment_id' => ['required', 'integer', 'exists:payments,id']]);
+        $payment = Payment::findOrFail($data['payment_id']);
+        if ((int) $payment->bank_account_id !== (int) $bankTransaction->bank_account_id) {
+            throw ValidationException::withMessages(['payment_id' => 'Payment harus menggunakan bank account yang sama.']);
+        }
+        if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user()) && (int) $payment->created_by !== (int) $request->user()->id) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mencocokkan payment milik user lain.');
+        }
+
+        $previous = ['payment_id' => $bankTransaction->payment_id, 'status' => $bankTransaction->status];
+        $bankTransaction->update(['payment_id' => $payment->id, 'status' => 'matched']);
+        \App\Models\AuditLog::create([
+            'user_id' => $request->user()->id,
+            'module' => 'banking',
+            'platform' => strtolower($request->header('X-Client-Platform', 'web')),
+            'action' => 'MATCH',
+            'entity_type' => BankTransaction::class,
+            'entity_id' => $bankTransaction->id,
+            'previous_values' => $previous,
+            'new_values' => ['payment_id' => $payment->id, 'status' => 'matched'],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Transaksi bank berhasil dicocokkan ke payment.', 'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number', 'payment:id,payment_number,payment_date,amount,reference'])]);
+    }
+
     public function reconcileBankTransaction(Request $request, BankTransaction $bankTransaction): JsonResponse
     {
-        $query = BankTransaction::whereKey($bankTransaction->id);
-        if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
-            $query->whereHas('payment', fn ($payment) => $payment->where('created_by', $request->user()->id));
-        }
-        if (! $query->exists()) {
-            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh merekonsiliasi transaksi bank ini.');
-        }
+        $this->ensureBankTransactionScope($request, $bankTransaction, 'merekonsiliasi');
 
         $data = $request->validate(['status' => ['required', 'in:matched,excluded,reconciled,unmatched']]);
         $previous = ['status' => $bankTransaction->status];
@@ -273,16 +448,16 @@ class AccountsPayableController extends Controller
 
     public function unmatchBankTransaction(Request $request, BankTransaction $bankTransaction): JsonResponse
     {
-        $query = BankTransaction::whereKey($bankTransaction->id);
-        if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
-            $query->whereHas('payment', fn ($payment) => $payment->where('created_by', $request->user()->id));
-        }
-        if (! $query->exists()) {
-            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh membatalkan rekonsiliasi transaksi bank ini.');
-        }
+        $this->ensureBankTransactionScope($request, $bankTransaction, 'membatalkan rekonsiliasi');
 
-        $previous = ['status' => $bankTransaction->status];
-        $bankTransaction->update(['status' => 'unmatched']);
+        $previous = ['payment_id' => $bankTransaction->payment_id, 'status' => $bankTransaction->status];
+        // Imported statement rows may be re-matched. Never detach the internal
+        // bank row generated while recording a payment.
+        $updates = ['status' => 'unmatched'];
+        if ($bankTransaction->created_by) {
+            $updates['payment_id'] = null;
+        }
+        $bankTransaction->update($updates);
         \App\Models\AuditLog::create([
             'user_id' => $request->user()->id,
             'module' => 'banking',
@@ -291,7 +466,7 @@ class AccountsPayableController extends Controller
             'entity_type' => BankTransaction::class,
             'entity_id' => $bankTransaction->id,
             'previous_values' => $previous,
-            'new_values' => ['status' => 'unmatched'],
+            'new_values' => $updates,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
@@ -300,6 +475,35 @@ class AccountsPayableController extends Controller
             'message' => 'Rekonsiliasi bank berhasil dibatalkan.',
             'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number']),
         ]);
+    }
+
+    private function ensureBankTransactionScope(Request $request, BankTransaction $bankTransaction, string $action): void
+    {
+        if (app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
+            return;
+        }
+
+        $allowed = BankTransaction::whereKey($bankTransaction->id)
+            ->where(function ($scoped) use ($request) {
+                $scoped->where('created_by', $request->user()->id)
+                    ->orWhereHas('payment', fn ($payment) => $payment->where('created_by', $request->user()->id));
+            })
+            ->exists();
+
+        if (! $allowed) {
+            abort(Response::HTTP_FORBIDDEN, "Tidak boleh {$action} transaksi bank ini.");
+        }
+    }
+
+    private function applyBankTransactionScope($query, Request $request): void
+    {
+        if (app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
+            return;
+        }
+        $query->where(function ($scoped) use ($request) {
+            $scoped->where('created_by', $request->user()->id)
+                ->orWhereHas('payment', fn ($payment) => $payment->where('created_by', $request->user()->id));
+        });
     }
 
     private function formatInvoice(SupplierInvoice $invoice): array

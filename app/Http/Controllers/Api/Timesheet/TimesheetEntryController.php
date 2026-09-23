@@ -149,13 +149,14 @@ class TimesheetEntryController extends Controller
         ]);
 
         $postingDate = $data['posting_date'] ?? now()->toDateString();
-        $defaultRate = (float) ($data['hourly_rate'] ?? 100000); // Default Rp 100.000 / jam
+        $overrideRate = isset($data['hourly_rate']) ? (float) $data['hourly_rate'] : null;
 
         app(AccountingPeriodService::class)->ensureOpen($postingDate, 'posting_date');
 
         $entries = TimesheetEntry::whereIn('id', $data['timesheet_ids'])
             ->where('status', 'approved')
             ->whereNull('journal_id')
+            ->with('employee:id,hourly_cost_rate')
             ->get();
 
         if ($entries->isEmpty()) {
@@ -172,12 +173,19 @@ class TimesheetEntryController extends Controller
             throw ValidationException::withMessages(['account' => 'COA expense/liability untuk labor cost belum tersedia.']);
         }
 
+        foreach ($entries as $entry) {
+            if (($overrideRate ?? (float) ($entry->employee?->hourly_cost_rate ?? 0)) <= 0) {
+                throw ValidationException::withMessages(['hourly_rate' => "Master hourly cost rate belum diisi untuk employee timesheet ID {$entry->id}."]);
+            }
+        }
+
         $postedCount = 0;
         $totalCost = 0;
 
-        DB::transaction(function () use ($entries, $postingDate, $defaultRate, $laborAccount, $payableAccount, &$postedCount, &$totalCost, $request) {
+        DB::transaction(function () use ($entries, $postingDate, $overrideRate, $laborAccount, $payableAccount, &$postedCount, &$totalCost, $request) {
             foreach ($entries as $entry) {
-                $cost = round((float) $entry->hours * $defaultRate, 2);
+                $rate = $overrideRate ?? (float) $entry->employee->hourly_cost_rate;
+                $cost = round((float) $entry->hours * $rate, 2);
                 $journal = \App\Models\Accounting\Journal::create([
                     'journal_number' => 'LABOR-'.now()->format('YmdHis').'-'.random_int(100, 999),
                     'journal_date' => $postingDate,

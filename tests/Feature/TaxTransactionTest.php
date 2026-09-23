@@ -29,17 +29,31 @@ class TaxTransactionTest extends TestCase
             ->assertJsonPath('data.tax_amount', 11000)
             ->assertJsonPath('data.gross_amount', 111000);
 
-        $this->postJson('/api/v1/tax/transactions', [
+        $created = $this->postJson('/api/v1/tax/transactions', [
             'tax_id' => $tax->id,
             'transaction_date' => '2026-09-20',
             'direction' => 'sales',
             'amount' => 100000,
             'reference' => 'EF-001',
             'e_faktur_reference' => '010.001-26.000001',
-            'status' => 'reported',
         ])
             ->assertCreated()
-            ->assertJsonPath('data.tax_amount', '11000.00');
+            ->assertJsonPath('data.tax_amount', '11000.00')
+            ->assertJsonPath('data.status', 'draft');
+
+        $taxTransactionId = $created->json('data.id');
+        $this->postJson("/api/v1/tax/transactions/{$taxTransactionId}/report", [
+            'e_faktur_reference' => '010.001-26.000001',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'reported');
+
+        $this->get('/api/v1/tax/export/djp?start_date=2026-09-01&end_date=2026-09-30')
+            ->assertOk()
+            ->assertDownload();
+
+        $this->assertDatabaseHas('audit_logs', ['module' => 'tax', 'action' => 'REPORT', 'entity_id' => $taxTransactionId]);
+        $this->assertDatabaseHas('audit_logs', ['module' => 'tax', 'action' => 'EXPORT']);
 
         $this->getJson('/api/v1/tax/report?start_date=2026-09-01&end_date=2026-09-30')
             ->assertOk()

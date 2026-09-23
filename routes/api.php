@@ -113,9 +113,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/dashboard/overview', [ReportsDashboardController::class, 'dashboard'])->middleware('permission:dashboard.view');
     Route::get('/v1/reports/summary', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/reports/balance-sheet', [ReportsDashboardController::class, 'balanceSheet'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/profit-loss/pdf', [ReportsDashboardController::class, 'profitLossPdf'])->middleware('permission:reports.export');
+    Route::get('/v1/reports/balance-sheet/pdf', [ReportsDashboardController::class, 'balanceSheetPdf'])->middleware('permission:reports.export');
     Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');
     Route::get('/v1/reports/custom/options', [CustomReportController::class, 'options'])->middleware('permission:reports.view');
     Route::post('/v1/reports/custom', [CustomReportController::class, 'build'])->middleware('permission:reports.view');
+    Route::post('/v1/reports/custom/export', [CustomReportController::class, 'export'])->middleware('permission:reports.export');
     Route::get('/v1/reports/custom/saved', [SavedReportController::class, 'index'])->middleware('permission:reports.view');
     Route::post('/v1/reports/custom/saved', [SavedReportController::class, 'store'])->middleware('permission:reports.view');
     Route::delete('/v1/reports/custom/saved/{savedReport}', [SavedReportController::class, 'destroy'])->middleware('permission:reports.view');
@@ -186,7 +189,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('purchase-orders/{purchaseOrder}', [ProcurementFulfillmentController::class, 'updatePurchaseOrder'])->middleware('permission:procurement.po.create');
         Route::post('purchase-orders/{purchaseOrder}/cancel', [ProcurementFulfillmentController::class, 'cancelPurchaseOrder'])->middleware('permission:procurement.po.approve');
         Route::post('purchase-requests/{purchaseRequest}/purchase-orders', [ProcurementFulfillmentController::class, 'createPoFromPr'])->middleware('permission:procurement.po.create');
+        Route::post('purchase-orders/{purchaseOrder}/submit', [ProcurementFulfillmentController::class, 'submitPo'])->middleware('permission:procurement.po.approve');
         Route::post('purchase-orders/{purchaseOrder}/approve', [ProcurementFulfillmentController::class, 'approvePo'])->middleware('permission:procurement.po.approve');
+        Route::get('purchase-orders/{purchaseOrder}/amendments', [ProcurementFulfillmentController::class, 'amendments'])->middleware('permission:procurement.po.view');
+        Route::post('purchase-orders/{purchaseOrder}/amendments', [ProcurementFulfillmentController::class, 'createAmendment'])->middleware('permission:procurement.po.create');
+        Route::post('po-amendments/{poAmendment}/approve', [ProcurementFulfillmentController::class, 'approveAmendment'])->middleware('permission:procurement.po.approve');
+        Route::post('purchase-orders/{purchaseOrder}/vendor-evaluations', [ProcurementFulfillmentController::class, 'evaluateVendor'])->middleware('permission:procurement.po.approve');
         Route::post('purchase-orders/{purchaseOrder}/goods-receipts', [ProcurementFulfillmentController::class, 'createGrn'])->middleware('permission:procurement.grn.create');
         Route::post('purchase-orders/{purchaseOrder}/supplier-invoices', [ProcurementFulfillmentController::class, 'createInvoice'])->middleware('permission:procurement.invoice.create');
         Route::post('supplier-invoices/{supplierInvoice}/three-way-match', [ProcurementFulfillmentController::class, 'threeWayMatch'])->middleware('permission:procurement.invoice.match');
@@ -196,29 +204,38 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('rfqs/{rfq}/close', [AdvancedProcurementController::class, 'closeRfq'])->middleware('permission:procurement.rfq.create');
         Route::post('rfqs/{rfq}/cancel', [AdvancedProcurementController::class, 'cancelRfq'])->middleware('permission:procurement.rfq.create');
         Route::post('rfqs/{rfq}/cba', [AdvancedProcurementController::class, 'createCba'])->middleware('permission:procurement.cba.create');
+        Route::post('cba/{cba}/submit', [AdvancedProcurementController::class, 'submitCba'])->middleware('permission:procurement.cba.approve');
         Route::post('cba/{cba}/approve', [AdvancedProcurementController::class, 'approveCba'])->middleware('permission:procurement.cba.approve');
         Route::post('cba/{cba}/purchase-orders', [AdvancedProcurementController::class, 'createPoFromCba'])->middleware('permission:procurement.po.create');
         Route::get('scns', [SupplierContractNotificationController::class, 'index'])->middleware('permission:procurement.pr.view');
         Route::get('scns/{supplierContractNotification}', [SupplierContractNotificationController::class, 'show'])->middleware('permission:procurement.pr.view');
         Route::put('scns/{supplierContractNotification}', [SupplierContractNotificationController::class, 'update'])->middleware('permission:procurement.pr.create');
         Route::post('scns', [SupplierContractNotificationController::class, 'store'])->middleware('permission:procurement.pr.create');
+        Route::post('scns/{supplierContractNotification}/submit', [SupplierContractNotificationController::class, 'submit'])->middleware('permission:procurement.pr.approve');
         Route::post('scns/{supplierContractNotification}/issue', [SupplierContractNotificationController::class, 'issue'])->middleware('permission:procurement.pr.approve');
         Route::post('scns/{supplierContractNotification}/cancel', [SupplierContractNotificationController::class, 'cancel'])->middleware('permission:procurement.pr.approve');
     });
 
     Route::prefix('v1/finance')->group(function () {
         Route::get('ap/invoices', [AccountsPayableController::class, 'invoices'])->middleware('permission:ap.view');
+        Route::post('ap/invoices/{supplierInvoice}/submit', [AccountsPayableController::class, 'submitInvoice'])->middleware('permission:ap.post');
+        Route::post('ap/invoices/{supplierInvoice}/reject', [AccountsPayableController::class, 'rejectInvoice'])->middleware('permission:ap.post');
         Route::post('ap/invoices/{supplierInvoice}/post', [AccountsPayableController::class, 'postInvoice'])->middleware('permission:ap.post');
         Route::post('ap/invoices/{supplierInvoice}/payments', [AccountsPayableController::class, 'payInvoice'])->middleware('permission:ap.pay');
         Route::get('ar/customers', [AccountsReceivableController::class, 'customers'])->middleware('permission:ar.view');
         Route::post('ar/customers', [AccountsReceivableController::class, 'storeCustomer'])->middleware('permission:ar.create');
         Route::get('ar/invoices', [AccountsReceivableController::class, 'invoices'])->middleware('permission:ar.view');
         Route::post('ar/invoices', [AccountsReceivableController::class, 'storeInvoice'])->middleware('permission:ar.create');
+        Route::post('ar/invoices/{customerInvoice}/submit', [AccountsReceivableController::class, 'submitInvoice'])->middleware('permission:ar.post');
+        Route::post('ar/invoices/{customerInvoice}/reject', [AccountsReceivableController::class, 'rejectInvoice'])->middleware('permission:ar.post');
         Route::post('ar/invoices/{customerInvoice}/post', [AccountsReceivableController::class, 'postInvoice'])->middleware('permission:ar.post');
         Route::post('ar/invoices/{customerInvoice}/receipts', [AccountsReceivableController::class, 'receivePayment'])->middleware('permission:ar.receive');
         Route::get('payments', [AccountsPayableController::class, 'payments'])->middleware('permission:payments.view');
         Route::get('bank-transactions', [AccountsPayableController::class, 'bankTransactions'])->middleware('permission:banking.view');
+        Route::get('bank-transactions/exceptions', [AccountsPayableController::class, 'bankExceptions'])->middleware('permission:banking.view');
         Route::post('bank-transactions/import', [AccountsPayableController::class, 'importBankTransactions'])->middleware('permission:banking.view');
+        Route::post('bank-transactions/{bankTransaction}/auto-match', [AccountsPayableController::class, 'autoMatchBankTransaction'])->middleware('permission:banking.view');
+        Route::post('bank-transactions/{bankTransaction}/match', [AccountsPayableController::class, 'matchBankTransaction'])->middleware('permission:banking.view');
         Route::post('bank-transactions/{bankTransaction}/reconcile', [AccountsPayableController::class, 'reconcileBankTransaction'])->middleware('permission:banking.view');
         Route::post('bank-transactions/{bankTransaction}/unmatch', [AccountsPayableController::class, 'unmatchBankTransaction'])->middleware('permission:banking.view');
     });
@@ -228,6 +245,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('calculate', [TaxTransactionController::class, 'calculate'])->middleware('permission:tax.view');
         Route::get('transactions', [TaxTransactionController::class, 'index'])->middleware('permission:tax.view');
         Route::post('transactions', [TaxTransactionController::class, 'store'])->middleware('permission:tax.manage');
+        Route::get('export/djp', [TaxTransactionController::class, 'exportDjp'])->middleware('permission:tax.manage');
+        Route::post('transactions/{taxTransaction}/report', [TaxTransactionController::class, 'markReported'])->middleware('permission:tax.manage');
         Route::get('report', [TaxTransactionController::class, 'report'])->middleware('permission:tax.view');
         Route::get('calendar', [TaxTransactionController::class, 'calendar'])->middleware('permission:tax.view');
     });
@@ -247,9 +266,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('fixed-assets', [FixedAssetController::class, 'store'])->middleware('permission:asset.create');
         Route::post('fixed-assets/bulk-depreciate', [FixedAssetController::class, 'bulkDepreciate'])->middleware('permission:asset.depreciate');
         Route::post('fixed-assets/stock-opname', [FixedAssetController::class, 'stockOpname'])->middleware('permission:asset.view');
+        Route::post('fixed-assets/{fixedAsset}/submit-capitalization', [FixedAssetController::class, 'submitCapitalization'])->middleware('permission:asset.capitalize');
         Route::post('fixed-assets/{fixedAsset}/capitalize', [FixedAssetController::class, 'capitalize'])->middleware('permission:asset.capitalize');
         Route::post('fixed-assets/{fixedAsset}/depreciate', [FixedAssetController::class, 'depreciate'])->middleware('permission:asset.depreciate');
         Route::post('fixed-assets/{fixedAsset}/transfer', [FixedAssetController::class, 'transfer'])->middleware('permission:asset.transfer');
+        Route::post('fixed-assets/{fixedAsset}/submit-disposal', [FixedAssetController::class, 'submitDisposal'])->middleware('permission:asset.dispose');
         Route::post('fixed-assets/{fixedAsset}/dispose', [FixedAssetController::class, 'dispose'])->middleware('permission:asset.dispose');
     });
 

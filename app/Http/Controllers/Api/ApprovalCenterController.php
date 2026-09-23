@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Accounting\JournalController;
 use App\Http\Controllers\Api\Asset\FixedAssetController;
 use App\Http\Controllers\Api\Expense\ExpenseRequestController;
+use App\Http\Controllers\Api\Finance\AccountsPayableController;
+use App\Http\Controllers\Api\Finance\AccountsReceivableController;
 use App\Http\Controllers\Api\Procurement\AdvancedProcurementController;
 use App\Http\Controllers\Api\Procurement\ProcurementFulfillmentController;
 use App\Http\Controllers\Api\Procurement\PurchaseRequestController;
@@ -12,6 +14,8 @@ use App\Http\Controllers\Api\Procurement\SupplierContractNotificationController;
 use App\Http\Controllers\Api\Timesheet\TimesheetEntryController;
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
+use App\Models\ApprovalWorkflowAction;
+use App\Models\ApprovalWorkflowRun;
 use App\Models\Asset\FixedAsset;
 use App\Models\Expense\ExpenseRequest;
 use App\Models\Finance\CustomerInvoice;
@@ -24,6 +28,7 @@ use App\Models\Procurement\SupplierInvoice;
 use App\Models\Timesheet\TimesheetEntry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ApprovalCenterController extends Controller
 {
@@ -195,7 +200,7 @@ class ApprovalCenterController extends Controller
         if (! $moduleFilter || $moduleFilter === 'ap') {
             if ($user->hasAnyPermission(['ap.post', 'ap.pay'])) {
                 $invoices = SupplierInvoice::with(['vendor'])
-                    ->whereIn('status', ['draft', 'unposted'])
+                    ->whereIn('status', ['draft', 'unposted', 'matched'])
                     ->latest('id')
                     ->get()
                     ->map(fn (SupplierInvoice $inv) => [
@@ -295,8 +300,27 @@ class ApprovalCenterController extends Controller
             }
         }
 
-        // Sort items by created_at descending
-        $sortedItems = $items->sortByDesc('created_at')->values();
+        // A document with a configured workflow is visible only to the
+        // approver assigned to its current pending level. Legacy documents
+        // without a workflow remain visible through the existing permission
+        // rules so historical processes are not hidden.
+        $moduleMap = ['expense' => 'expense', 'pr' => 'procurement', 'po' => 'po', 'cba' => 'cba', 'scn' => 'scn', 'journal' => 'journal', 'ap' => 'ap', 'ar' => 'ar', 'timesheet' => 'timesheet', 'asset' => 'asset'];
+        $typeMap = ['expense' => ExpenseRequest::class, 'pr' => PurchaseRequest::class, 'po' => PurchaseOrder::class, 'cba' => ComparativeBidAnalysis::class, 'scn' => SupplierContractNotification::class, 'journal' => Journal::class, 'ap' => SupplierInvoice::class, 'ar' => CustomerInvoice::class, 'timesheet' => TimesheetEntry::class, 'asset' => FixedAsset::class];
+        $employeeId = $user->employee()->value('id');
+        $activeRuns = ApprovalWorkflowRun::query()->where('status', 'in_progress')->get()->keyBy(fn ($run) => "{$run->module}:{$run->approvable_type}:{$run->approvable_id}");
+        $allowedRuns = ApprovalWorkflowAction::query()->select('approval_workflow_actions.*')
+            ->join('approval_workflow_runs', 'approval_workflow_runs.id', '=', 'approval_workflow_actions.approval_workflow_run_id')
+            ->where('approval_workflow_runs.status', 'in_progress')
+            ->where('approval_workflow_actions.status', 'pending')
+            ->whereColumn('approval_workflow_actions.level', 'approval_workflow_runs.current_level')
+            ->where(fn ($query) => $query->where('approval_workflow_actions.user_id', $user->id)->orWhere('approval_workflow_actions.role_id', $user->role_id)->orWhere('approval_workflow_actions.employee_id', $employeeId))
+            ->with('run:id,module,approvable_type,approvable_id')->get()
+            ->mapWithKeys(fn ($action) => ["{$action->run->module}:{$action->run->approvable_type}:{$action->run->approvable_id}" => true]);
+
+        $sortedItems = $items->filter(function (array $item) use ($moduleMap, $typeMap, $activeRuns, $allowedRuns) {
+            $key = "{$moduleMap[$item['module']]}:{$typeMap[$item['module']]}:{$item['id']}";
+            return ! isset($activeRuns[$key]) || isset($allowedRuns[$key]);
+        })->sortByDesc('created_at')->values();
 
         return response()->json([
             'success' => true,
@@ -314,7 +338,7 @@ class ApprovalCenterController extends Controller
             'action' => ['required', 'string', 'in:approve,reject'],
             'notes' => ['nullable', 'string', 'max:500'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.module' => ['required', 'string', 'in:expense,pr,po,cba,scn,journal,timesheet,asset'],
+            'items.*.module' => ['required', 'string', 'in:expense,pr,po,cba,scn,journal,ap,ar,timesheet,asset'],
             'items.*.id' => ['required', 'integer'],
         ]);
 
@@ -341,6 +365,8 @@ class ApprovalCenterController extends Controller
         $journalController = app(JournalController::class);
         $timesheetController = app(TimesheetEntryController::class);
         $assetController = app(FixedAssetController::class);
+        $apController = app(AccountsPayableController::class);
+        $arController = app(AccountsReceivableController::class);
 
         foreach ($validated['items'] as $item) {
             $module = $item['module'];
@@ -376,9 +402,9 @@ class ApprovalCenterController extends Controller
                         $po = PurchaseOrder::find($id);
                         if ($po) {
                             if ($action === 'approve') {
-                                $fulfillmentController->approvePo($po);
+                                $fulfillmentController->approvePo($request, $po, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
-                                $fulfillmentController->cancelPurchaseOrder($po);
+                                $fulfillmentController->cancelPurchaseOrder($request, $po);
                             }
                             $processedCount++;
                         }
@@ -388,7 +414,7 @@ class ApprovalCenterController extends Controller
                         $cba = ComparativeBidAnalysis::find($id);
                         if ($cba) {
                             if ($action === 'approve') {
-                                $advProcurementController->approveCba($cba);
+                                $advProcurementController->approveCba($request, $cba, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             }
                             $processedCount++;
                         }
@@ -398,7 +424,7 @@ class ApprovalCenterController extends Controller
                         $scn = SupplierContractNotification::find($id);
                         if ($scn) {
                             if ($action === 'approve') {
-                                $scnController->issue($scn);
+                                $scnController->issue($request, $scn, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
                                 $scnController->cancel($scn);
                             }
@@ -410,9 +436,35 @@ class ApprovalCenterController extends Controller
                         $journal = Journal::find($id);
                         if ($journal) {
                             if ($action === 'approve') {
-                                $journalController->post($journal);
+                                $journalController->post($request, $journal, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
                                 $journal->update(['status' => 'draft']);
+                            }
+                            $processedCount++;
+                        }
+                        break;
+
+                    case 'ap':
+                        $invoice = SupplierInvoice::find($id);
+                        if ($invoice) {
+                            if ($action === 'approve') {
+                                $apController->postInvoice($request, $invoice, app(\App\Services\Approval\ApprovalWorkflowService::class));
+                            } else {
+                                $request->merge(['notes' => $validated['notes'] ?? 'Ditolak melalui Approval Center']);
+                                $apController->rejectInvoice($request, $invoice, app(\App\Services\Approval\ApprovalWorkflowService::class));
+                            }
+                            $processedCount++;
+                        }
+                        break;
+
+                    case 'ar':
+                        $invoice = CustomerInvoice::find($id);
+                        if ($invoice) {
+                            if ($action === 'approve') {
+                                $arController->postInvoice($request, $invoice, app(\App\Services\Approval\ApprovalWorkflowService::class));
+                            } else {
+                                $request->merge(['notes' => $validated['notes'] ?? 'Ditolak melalui Approval Center']);
+                                $arController->rejectInvoice($request, $invoice, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             }
                             $processedCount++;
                         }
@@ -434,7 +486,7 @@ class ApprovalCenterController extends Controller
                         $asset = FixedAsset::find($id);
                         if ($asset) {
                             if ($action === 'approve') {
-                                $assetController->capitalize($asset);
+                                $assetController->capitalize($request, $asset, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             }
                             $processedCount++;
                         }
@@ -465,6 +517,8 @@ class ApprovalCenterController extends Controller
             'cba' => 'procurement.cba.approve',
             'scn' => 'procurement.pr.approve',
             'journal' => 'accounting.journal.post',
+            'ap' => 'ap.post',
+            'ar' => 'ar.post',
             'timesheet' => 'timesheet.approve',
             'asset' => 'asset.capitalize',
         };

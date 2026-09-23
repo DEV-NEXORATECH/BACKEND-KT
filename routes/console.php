@@ -14,3 +14,6 @@ Artisan::command('automation:run', function () {
 })->purpose('Create approval and AP overdue reminders');
 
 Schedule::command('automation:run')->hourly();
+Schedule::command('app:process-approval-escalations --days=3')
+    ->dailyAt('08:00')
+    ->withoutOverlapping();

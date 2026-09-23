@@ -44,6 +44,7 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Approve expenses', 'slug' => 'expenses.approve'],
             ['name' => 'View accounting', 'slug' => 'accounting.view'],
             ['name' => 'View reports', 'slug' => 'reports.view'],
+            ['name' => 'Export reports', 'slug' => 'reports.export'],
             ['name' => 'Manage administration', 'slug' => 'administration.manage'],
             ['name' => 'View master menu', 'slug' => 'master-menu.view'],
             ['name' => 'Manage master menu', 'slug' => 'master-menu.manage'],

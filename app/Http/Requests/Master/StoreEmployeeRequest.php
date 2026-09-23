@@ -20,6 +20,7 @@ class StoreEmployeeRequest extends FormRequest
             'department_id' => 'nullable|integer|exists:departments,id',
             'office_location_id' => 'nullable|integer|exists:office_locations,id',
             'position' => 'nullable|string|max:100',
+            'hourly_cost_rate' => 'nullable|numeric|min:0',
             'bank_name' => 'nullable|string|max:100',
             'bank_account_number' => 'nullable|string|max:50',
             'bank_account_holder' => 'nullable|string|max:150',

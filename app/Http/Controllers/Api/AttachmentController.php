@@ -8,6 +8,9 @@ use App\Models\Asset\FixedAsset;
 use App\Models\Expense\ExpenseRequest;
 use App\Models\Finance\TaxTransaction;
 use App\Models\Procurement\GoodsReceipt;
+use App\Models\Procurement\Rfq;
+use App\Models\Procurement\ComparativeBidAnalysis;
+use App\Models\Procurement\SupplierContractNotification;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
@@ -28,7 +31,7 @@ class AttachmentController extends Controller
     public function upload(Request $request): JsonResponse
     {
         $request->validate([
-            'module' => ['required', 'string', 'in:expense,ap,pr,po,grn,invoice,journal,tax,asset'],
+            'module' => ['required', 'string', 'in:expense,ap,pr,rfq,cba,po,grn,scn,invoice,journal,tax,asset'],
             'entity_id' => ['required', 'integer'],
             'file' => ['required', 'file', 'mimes:pdf,png,jpg,jpeg,docx,xlsx', 'max:10240'],
         ]);
@@ -103,8 +106,11 @@ class AttachmentController extends Controller
             'expense' => ExpenseRequest::class,
             'ap' => SupplierInvoice::class,
             'pr' => PurchaseRequest::class,
+            'rfq' => Rfq::class,
+            'cba' => ComparativeBidAnalysis::class,
             'po' => PurchaseOrder::class,
             'grn' => GoodsReceipt::class,
+            'scn' => SupplierContractNotification::class,
             'invoice' => SupplierInvoice::class,
             'journal' => Journal::class,
             'tax' => TaxTransaction::class,
@@ -140,8 +146,11 @@ class AttachmentController extends Controller
         $permissions = match ($module) {
             'expense' => $upload ? ['expense.create', 'expense.approve', 'expense.post', 'expense.pay'] : ['expense.view', 'expense.approve', 'expense.post', 'expense.pay'],
             'pr' => ['procurement.pr.create', 'procurement.pr.update', 'procurement.pr.approve'],
+            'rfq' => ['procurement.rfq.create', 'procurement.rfq.view'],
+            'cba' => ['procurement.cba.create', 'procurement.cba.approve'],
             'po' => ['procurement.po.create', 'procurement.po.approve'],
             'grn' => ['procurement.grn.create', 'procurement.grn.view'],
+            'scn' => ['procurement.pr.create', 'procurement.pr.approve'],
             'ap', 'invoice' => ['ap.view', 'ap.post', 'ap.pay', 'procurement.invoice.create', 'procurement.invoice.view'],
             'journal' => ['accounting.journal.view', 'accounting.journal.create', 'accounting.journal.update'],
             'tax' => ['tax.view', 'tax.manage'],
@@ -155,7 +164,7 @@ class AttachmentController extends Controller
         if (! app(DataScopeService::class)->canAccessAll($request->user())) {
             $ownerColumn = match ($module) {
                 'expense', 'pr' => 'requester_id',
-                'ap', 'invoice', 'po', 'grn', 'journal', 'tax', 'asset' => 'created_by',
+                'ap', 'invoice', 'rfq', 'cba', 'po', 'grn', 'scn', 'journal', 'tax', 'asset' => 'created_by',
                 default => null,
             };
             if ($ownerColumn === null || ! isset($entity->{$ownerColumn}) || (int) $entity->{$ownerColumn} !== (int) $request->user()->id) {

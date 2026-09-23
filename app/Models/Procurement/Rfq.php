@@ -17,9 +17,9 @@ class Rfq extends Model
 
     protected $table = 'rfqs';
 
-    protected $fillable = ['purchase_request_id', 'rfq_number', 'rfq_date', 'submission_deadline', 'terms', 'status', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['purchase_request_id', 'rfq_number', 'rfq_date', 'submission_deadline', 'terms', 'status', 'attachments', 'created_by', 'updated_by', 'deleted_by'];
 
-    protected $casts = ['rfq_date' => 'date', 'submission_deadline' => 'date'];
+    protected $casts = ['rfq_date' => 'date', 'submission_deadline' => 'date', 'attachments' => 'array'];
 
     public function purchaseRequest(): BelongsTo { return $this->belongsTo(PurchaseRequest::class); }
     public function vendors(): BelongsToMany { return $this->belongsToMany(Vendor::class, 'rfq_vendors')->withPivot('status')->withTimestamps(); }
