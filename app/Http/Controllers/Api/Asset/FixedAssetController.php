@@ -293,7 +293,7 @@ class FixedAssetController extends Controller
         $assetAccount = $category?->assetGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('is_header', false)->first();
         $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
         $resultAccount = ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
-        $bank = $data['disposal_bank_account_id'] ? BankAccount::find($data['disposal_bank_account_id']) : null;
+        $bank = ! empty($data['disposal_bank_account_id']) ? BankAccount::find($data['disposal_bank_account_id']) : null;
         if ($data['disposal_type'] === 'sale' && $data['disposal_proceeds'] > 0 && ! $bank?->gl_account_id) throw ValidationException::withMessages(['disposal_bank_account_id' => 'Bank account disposal belum memiliki GL account.']);
         if (! $assetAccount || ! $accumulatedAccount || ! $resultAccount) throw ValidationException::withMessages(['account' => 'COA asset, accumulated depreciation, dan disposal result harus tersedia.']);
         $asset = DB::transaction(function () use ($fixedAsset, $data, $assetAccount, $accumulatedAccount, $resultAccount, $bank) {

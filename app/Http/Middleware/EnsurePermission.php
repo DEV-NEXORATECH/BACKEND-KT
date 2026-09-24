@@ -21,33 +21,17 @@ class EnsurePermission
         }
 
         // Master data lookups for dropdown options and form reference data
-        if ($permission === 'master-data') {
+        if ($permission === 'master-data' || $permission === 'master-data.view') {
             if ($request->isMethod('GET') || $request->isMethod('HEAD')) {
-                // Dropdown options, reference lookups or users with read access
+                // Dropdown options for forms are accessible to any authenticated user with an active role
                 if ($request->boolean('options') || $request->query('paginate') === 'false') {
                     return $next($request);
                 }
 
-                if ($user->hasPermission('master-data.view') || $user->hasPermission('master-data.manage')) {
-                    return $next($request);
-                }
-
-                // Any authenticated user with an active role can read reference data
-                return $next($request);
+                $required = 'master-data.view';
+            } else {
+                $required = 'master-data.manage';
             }
-
-            $required = 'master-data.manage';
-        } elseif ($permission === 'master-data.view') {
-            if ($request->isMethod('GET') || $request->isMethod('HEAD')) {
-                if ($request->boolean('options') || $request->query('paginate') === 'false') {
-                    return $next($request);
-                }
-                if ($user->hasPermission('master-data.view') || $user->hasPermission('master-data.manage')) {
-                    return $next($request);
-                }
-                return $next($request);
-            }
-            $required = 'master-data.manage';
         } else {
             $required = $permission;
         }
