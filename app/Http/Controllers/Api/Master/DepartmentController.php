@@ -23,42 +23,59 @@ class DepartmentController extends BaseMasterController
 
     public function index(Request $request): JsonResponse
     {
-        $query = Department::query()->with($this->defaultWith);
-        $countRelations = [
-            'children' => 'departments',
-            'costCenters' => 'cost_centers',
-            'employees' => 'employees',
-            'approvalMatrices' => 'approval_matrices',
-            'journalLines' => 'journal_lines',
-            'purchaseRequests' => 'purchase_requests',
-            'expenseRequests' => 'expense_requests',
-            'timesheetEntries' => 'timesheet_entries',
-        ];
-        foreach ($countRelations as $relation => $table) {
-            if (Schema::hasTable($table)) {
-                $query->withCount($relation);
+        try {
+            if ($request->boolean('options') || $request->query('paginate') === 'false') {
+                $optionsQuery = Department::query();
+                if (! $request->has('is_active') && Schema::hasColumn('departments', 'is_active')) {
+                    $optionsQuery->where('is_active', true);
+                }
+                $filteredOptions = $optionsQuery->applyFilters($request, $this->searchableColumns);
+                return $this->successResponse(DepartmentResource::collection($filteredOptions->get()), 'Daftar opsi berhasil dimuat.');
             }
-        }
 
-        $filtered = $query->applyFilters($request, $this->searchableColumns);
-        if ($request->boolean('options') || $request->query('paginate') === 'false') {
-            return $this->successResponse(DepartmentResource::collection($filtered->get()), 'Daftar opsi berhasil dimuat.');
-        }
+            $query = Department::query()->with($this->defaultWith);
+            $countRelations = [
+                'children' => 'departments',
+                'costCenters' => 'cost_centers',
+                'employees' => 'employees',
+                'approvalMatrices' => 'approval_matrices',
+                'journalLines' => 'journal_lines',
+                'purchaseRequests' => 'purchase_requests',
+                'expenseRequests' => 'expense_requests',
+                'timesheetEntries' => 'timesheet_entries',
+            ];
+            foreach ($countRelations as $relation => $table) {
+                if (Schema::hasTable($table)) {
+                    $query->withCount($relation);
+                }
+            }
 
-        $perPage = max(1, min(100, (int) $request->query('per_page', 10)));
-        $paginated = $filtered->paginate($perPage);
-        return response()->json([
-            'success' => true,
-            'message' => 'Data berhasil dimuat.',
-            'data' => DepartmentResource::collection($paginated->items()),
-            'meta' => [
-                'current_page' => $paginated->currentPage(),
-                'last_page' => $paginated->lastPage(),
-                'per_page' => $paginated->perPage(),
-                'total' => $paginated->total(),
-                'from' => $paginated->firstItem(),
-                'to' => $paginated->lastItem(),
-            ],
-        ], Response::HTTP_OK);
+            $filtered = $query->applyFilters($request, $this->searchableColumns);
+            $perPage = max(1, min(100, (int) $request->query('per_page', 10)));
+            $paginated = $filtered->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data berhasil dimuat.',
+                'data' => DepartmentResource::collection($paginated->items()),
+                'meta' => [
+                    'current_page' => $paginated->currentPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'per_page' => $paginated->perPage(),
+                    'total' => $paginated->total(),
+                    'from' => $paginated->firstItem(),
+                    'to' => $paginated->lastItem(),
+                ],
+            ], Response::HTTP_OK);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Department index error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat data departemen: ' . $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 }

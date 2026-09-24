@@ -26,32 +26,62 @@ abstract class BaseMasterController extends Controller
     {
         try {
             $isOptions = $request->boolean('options') || $request->query('paginate') === 'false';
-
             $query = $this->modelClass::query();
 
             // Lightweight dropdown/options mode for Frontend Select components
             if ($isOptions) {
-                if (! $request->has('is_active') && \Illuminate\Support\Facades\Schema::hasColumn((new $this->modelClass)->getTable(), 'is_active')) {
-                    $query->where('is_active', true);
+                try {
+                    $table = (new $this->modelClass)->getTable();
+                    if (! $request->has('is_active') && \Illuminate\Support\Facades\Schema::hasColumn($table, 'is_active')) {
+                        $query->where('is_active', true);
+                    }
+                } catch (\Throwable $ignored) {
+                    // Safe fallback if schema check is not accessible
                 }
 
-                $options = $query->applyFilters($request, $this->searchableColumns)->get();
-                return $this->successResponse($this->resourceClass::collection($options), 'Daftar opsi berhasil dimuat.');
+                if (method_exists($this->modelClass, 'scopeApplyFilters')) {
+                    try {
+                        $query->applyFilters($request, $this->searchableColumns);
+                    } catch (\Throwable $ignored) {
+                        // Safe fallback
+                    }
+                }
+
+                $options = $query->get();
+
+                if (! empty($this->resourceClass) && class_exists($this->resourceClass)) {
+                    return $this->successResponse($this->resourceClass::collection($options), 'Daftar opsi berhasil dimuat.');
+                }
+
+                return $this->successResponse($options, 'Daftar opsi berhasil dimuat.');
             }
 
-            $query->with($this->defaultWith)->withCount($this->defaultWithCount);
+            if (! empty($this->defaultWith)) {
+                $query->with($this->defaultWith);
+            }
+            if (! empty($this->defaultWithCount)) {
+                $query->withCount($this->defaultWithCount);
+            }
+
+            if (method_exists($this->modelClass, 'scopeApplyFilters')) {
+                $query->applyFilters($request, $this->searchableColumns);
+            }
 
             $perPage = (int) $request->query('per_page', 10);
             if ($perPage > 100 || $perPage < 1) {
                 $perPage = 10;
             }
 
-            $paginated = $query->applyFilters($request, $this->searchableColumns)->paginate($perPage);
+            $paginated = $query->paginate($perPage);
+
+            $items = (! empty($this->resourceClass) && class_exists($this->resourceClass))
+                ? $this->resourceClass::collection($paginated->items())
+                : $paginated->items();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Data berhasil dimuat.',
-                'data' => $this->resourceClass::collection($paginated->items()),
+                'data' => $items,
                 'meta' => [
                     'current_page' => $paginated->currentPage(),
                     'last_page' => $paginated->lastPage(),
