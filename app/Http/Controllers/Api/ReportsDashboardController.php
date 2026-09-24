@@ -334,6 +334,8 @@ class ReportsDashboardController extends Controller
                 'report_type' => $deadline->report_type,
                 'due_date' => $deadline->due_date?->toDateString(),
                 'status' => $deadline->status,
+                'days_remaining' => $deadline->due_date ? now()->startOfDay()->diffInDays($deadline->due_date, false) : null,
+                'period' => $deadline->notes,
                 'notes' => $deadline->notes,
                 'grant' => $deadline->grantAgreement?->grant_no ?: $deadline->grantAgreement?->agreement_name,
             ])->values()->all();
@@ -356,9 +358,13 @@ class ReportsDashboardController extends Controller
                 'date' => $line->journal?->journal_date?->toDateString(),
                 'reference' => $line->journal?->reference ?: $line->journal?->journal_number,
                 'description' => $line->journal?->description ?: $line->account?->name,
+                'donor' => $line->donor?->name,
+                'grant' => $line->project?->grantAgreement?->grant_no ?: $line->project?->grantAgreement?->agreement_name,
                 'project' => $line->project?->name,
                 'amount' => round((float) $line->debit - (float) $line->credit, 2),
                 'account' => $line->account?->name,
+                'account_code' => $line->account?->code,
+                'status' => $line->journal?->status,
             ])->sortByDesc('date')->values()->take(100)->all();
 
         $statusCounts = collect($deadlines)->countBy('status')->all();
@@ -367,19 +373,21 @@ class ReportsDashboardController extends Controller
             ->groupBy('bank_account_id')
             ->pluck('balance', 'bank_account_id');
         $linkedBanking = \App\Models\Master\GrantAgreement::query()
-            ->with(['bankAccount:id,bank_name,account_number,currency_id', 'currency:id,code'])
+            ->with(['bankAccount:id,bank_name,account_number,account_name,currency_id', 'currency:id,code', 'projects:id,grant_agreement_id,code,name'])
             ->when($request->filled('grant_agreement_id'), fn (Builder $q) => $q->whereKey($request->integer('grant_agreement_id')))
             ->whereNotNull('bank_account_id')
             ->get()
-            ->map(fn ($grant) => [
+            ->flatMap(fn ($grant) => ($grant->projects->isNotEmpty() ? $grant->projects : collect([null]))->map(fn ($project) => [
+                'project' => $project?->name,
                 'grant' => $grant->grant_no,
                 'grant_name' => $grant->agreement_name,
                 'bank_account_id' => $grant->bank_account_id,
                 'bank_name' => $grant->bankAccount?->bank_name,
+                'account_name' => $grant->bankAccount?->account_name,
                 'account_number' => $grant->bankAccount?->account_number,
                 'currency' => $grant->currency?->code,
                 'balance' => round((float) ($bankBalances[$grant->bank_account_id] ?? 0), 2),
-            ])->values()->all();
+            ]))->values()->all();
         return response()->json([
             'success' => true,
             'period' => $period['label'],
@@ -608,7 +616,7 @@ class ReportsDashboardController extends Controller
     private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null)
     {
         return JournalLine::query()
-            ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'project:id,code,name'])
+            ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,grant_no,agreement_name'])
             ->whereHas('journal', function (Builder $query) use ($start, $end) {
                 $query->where('status', 'posted')
                     ->when($start, fn (Builder $inner) => $inner->whereDate('journal_date', '>=', $start))
@@ -943,3 +951,4 @@ class ReportsDashboardController extends Controller
         ];
     }
 }
+
