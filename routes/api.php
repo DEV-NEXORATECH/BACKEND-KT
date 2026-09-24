@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\AutomationController;
 use App\Http\Controllers\Api\SavedReportController;
 use App\Http\Controllers\Api\ApprovalCenterController;
 use App\Http\Controllers\Api\AttachmentController;
+use App\Http\Controllers\Api\ProjectAssignmentController;
 use App\Http\Controllers\Api\UserSecurityController;
 
 // Master Controllers
@@ -143,7 +144,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/v1/automation/run', [AutomationController::class, 'run'])->middleware('permission:reports.view');
     Route::get('/v1/donors/dashboard', [ReportsDashboardController::class, 'donorDashboard'])->middleware('permission:reports.view');
     Route::get('/v1/reports/donor-grant', [ReportsDashboardController::class, 'donorDashboard'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/grant-reporting', [ReportsDashboardController::class, 'grantReporting'])->middleware('permission:reports.view');
     Route::get('/v1/reports/tax', [TaxTransactionController::class, 'report'])->middleware('permission:tax.view');
+    Route::get('/v1/project-assignments', [ProjectAssignmentController::class, 'index'])->middleware('permission:master-data.view');
+    Route::get('/v1/project-assignment-users', [ProjectAssignmentController::class, 'users'])->middleware('permission:master-data.view');
+    Route::post('/v1/project-assignments', [ProjectAssignmentController::class, 'store'])->middleware('permission:master-data.manage');
+    Route::delete('/v1/project-assignments/{projectAssignment}', [ProjectAssignmentController::class, 'destroy'])->middleware('permission:master-data.manage');
 
     Route::prefix('v1/approval-center')->group(function () {
         Route::get('/pending', [ApprovalCenterController::class, 'pending']);

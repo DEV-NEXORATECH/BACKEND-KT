@@ -14,7 +14,7 @@ class GrantAgreement extends Model
 
     protected $table = 'grant_agreements';
 
-    protected $fillable = ['grant_no', 'donor_id', 'funding_source_id', 'agreement_name', 'start_date', 'end_date', 'currency_id', 'grant_value', 'exchange_rate_contract', 'bank_account_id', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['grant_no', 'agreement_no', 'donor_id', 'funding_source_id', 'agreement_name', 'start_date', 'end_date', 'currency_id', 'grant_value', 'exchange_rate_contract', 'bank_account_id', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',

@@ -14,5 +14,5 @@ class BudgetLineController extends BaseMasterController
     protected string $storeRequestClass = StoreBudgetLineRequest::class;
     protected string $updateRequestClass = UpdateBudgetLineRequest::class;
     protected array $searchableColumns = ['line_code', 'description'];
-    protected array $defaultWith = ['grantAgreement', 'project', 'budgetCategory', 'unitOfMeasure', 'glAccount'];
+    protected array $defaultWith = ['grantAgreement', 'project', 'budgetCategory', 'unitOfMeasure', 'glAccount', 'currency'];
 }

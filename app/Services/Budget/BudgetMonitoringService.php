@@ -52,7 +52,7 @@ class BudgetMonitoringService
             ->pluck('committed_amount', 'budget_line_id');
 
         return $budgetLines->map(function (BudgetLine $line) use ($actuals, $commitments) {
-            $approved = round((float) $line->total_amount, 2);
+            $approved = round((float) ($line->base_amount ?? $line->total_amount), 2);
             $actual = round((float) ($actuals[$line->id] ?? 0), 2);
             $committed = round((float) ($commitments[$line->id] ?? 0), 2);
             $available = round($approved - $actual - $committed, 2);

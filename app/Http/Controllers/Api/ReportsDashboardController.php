@@ -12,6 +12,7 @@ use App\Models\Finance\BankTransaction;
 use App\Models\Finance\CustomerInvoice;
 use App\Models\Finance\Payment;
 use App\Models\Master\ChartOfAccount;
+use App\Models\Master\GrantReportingDeadline;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
@@ -306,6 +307,84 @@ class ReportsDashboardController extends Controller
             ],
             'donors' => $donorSummaries,
             'grants' => $grantSummaries,
+        ]);
+    }
+
+    /**
+     * Grant reporting workspace data. The frontend consumes one governed
+     * contract for BVA, projections, variance analysis, expenditure listings,
+     * and reporting deadlines instead of rebuilding these values locally.
+     */
+    public function grantReporting(Request $request, BudgetMonitoringService $budgetService): JsonResponse
+    {
+        $period = $this->period($request);
+        $filters = $request->only(['fiscal_year_id', 'start_date', 'end_date', 'donor_id', 'grant_agreement_id', 'program_id', 'project_id', 'currency_id']);
+        $budgetRows = $budgetService->summary(array_filter($filters));
+        $postedLines = $this->postedLines($period['start'], $period['end'], $request->input('project_id'));
+        $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
+        $totals = $this->budgetTotals($budgetRows);
+
+        $deadlines = GrantReportingDeadline::query()
+            ->with('grantAgreement:id,grant_no,agreement_name')
+            ->when($request->filled('grant_agreement_id'), fn (Builder $q) => $q->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+            ->orderBy('due_date')
+            ->get()
+            ->map(fn (GrantReportingDeadline $deadline) => [
+                'id' => $deadline->id,
+                'report_type' => $deadline->report_type,
+                'due_date' => $deadline->due_date?->toDateString(),
+                'status' => $deadline->status,
+                'notes' => $deadline->notes,
+                'grant' => $deadline->grantAgreement?->grant_no ?: $deadline->grantAgreement?->agreement_name,
+            ])->values()->all();
+
+        $bva = collect($budgetRows)->map(fn (array $row) => [
+            'budget_line_id' => $row['budget_line_id'] ?? null,
+            'project' => $row['project']['name'] ?? 'Unassigned Project',
+            'grant' => $row['grant_agreement']['code'] ?? ($row['grant_agreement']['name'] ?? 'Unassigned Grant'),
+            'budget' => round((float) ($row['approved_budget'] ?? 0), 2),
+            'actual' => round((float) ($row['actual'] ?? 0), 2),
+            'committed' => round((float) ($row['committed'] ?? 0), 2),
+            'variance' => round((float) ($row['available'] ?? 0), 2),
+            'utilization_percent' => (float) ($row['utilization_percent'] ?? 0),
+            'status' => $row['status'] ?? 'healthy',
+        ])->values()->all();
+
+        $expenditures = $postedLines
+            ->filter(fn (JournalLine $line) => $line->account?->account_type === 'expense')
+            ->map(fn (JournalLine $line) => [
+                'date' => $line->journal?->journal_date?->toDateString(),
+                'reference' => $line->journal?->reference ?: $line->journal?->journal_number,
+                'description' => $line->journal?->description ?: $line->account?->name,
+                'project' => $line->project?->name,
+                'amount' => round((float) $line->debit - (float) $line->credit, 2),
+                'account' => $line->account?->name,
+            ])->sortByDesc('date')->values()->take(100)->all();
+
+        $statusCounts = collect($deadlines)->countBy('status')->all();
+        return response()->json([
+            'success' => true,
+            'period' => $period['label'],
+            'summary' => [
+                'approved_budget' => $totals['approved_budget'],
+                'actual' => $totals['actual'],
+                'committed' => $totals['committed'],
+                'available' => $totals['available'],
+                'utilization_percent' => $totals['utilization_percent'],
+                'projected_total' => round($totals['actual'] + $totals['committed'], 2),
+                'deadline_total' => count($deadlines),
+                'deadline_overdue' => (int) ($statusCounts['overdue'] ?? 0),
+            ],
+            'bva' => $bva,
+            'variance' => collect($bva)->sortByDesc(fn (array $row) => abs($row['variance']))->values()->take(20)->all(),
+            'projections' => collect($bva)->map(fn (array $row) => [
+                'project' => $row['project'],
+                'budget' => $row['budget'],
+                'projected' => round($row['actual'] + $row['committed'], 2),
+                'remaining' => $row['variance'],
+            ])->values()->take(20)->all(),
+            'expenditures' => $expenditures,
+            'deadlines' => $deadlines,
         ]);
     }
 

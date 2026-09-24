@@ -14,11 +14,22 @@ class BudgetLine extends Model
 
     protected $table = 'budget_lines';
 
-    protected $fillable = ['grant_agreement_id', 'project_id', 'budget_category_id', 'line_code', 'description', 'unit_of_measure_id', 'unit_price', 'quantity', 'total_amount', 'gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['grant_agreement_id', 'project_id', 'budget_category_id', 'line_code', 'description', 'proposal_period', 'currency_id', 'exchange_rate', 'unit_of_measure_id', 'unit_price', 'quantity', 'total_amount', 'base_amount', 'gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'exchange_rate' => 'decimal:6',
+        'base_amount' => 'decimal:2',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $line) {
+            if ($line->total_amount !== null) {
+                $line->base_amount = round((float) $line->total_amount * max((float) ($line->exchange_rate ?: 1), 0.000001), 2);
+            }
+        });
+    }
 
     public function grantAgreement()
     {
@@ -43,6 +54,11 @@ class BudgetLine extends Model
     public function glAccount()
     {
         return $this->belongsTo(\App\Models\Master\ChartOfAccount::class, 'gl_account_id');
+    }
+
+    public function currency()
+    {
+        return $this->belongsTo(\App\Models\Master\Currency::class, 'currency_id');
     }
 
 }

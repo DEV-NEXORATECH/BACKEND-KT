@@ -15,6 +15,7 @@ class StoreGrantAgreementRequest extends FormRequest
     {
         return [
             'grant_no' => 'required|string|max:50|unique:grant_agreements,grant_no',
+            'agreement_no' => 'nullable|string|max:80|unique:grant_agreements,agreement_no',
             'donor_id' => 'required|integer|exists:donors,id',
             'funding_source_id' => 'nullable|integer|exists:funding_sources,id',
             'agreement_name' => 'required|string|max:200',
