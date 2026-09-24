@@ -95,13 +95,10 @@ jobs:
             IdentityFile ~/.ssh/backend_kt_deploy
             StrictHostKeyChecking no
             UserKnownHostsFile ~/.ssh/known_hosts
-            ServerAliveInterval 15
-            ServerAliveCountMax 4
-            ConnectTimeout 30
-            ControlMaster auto
-            ControlPath ~/.ssh/cm-%C
-            ControlPersist 10m
-            IPQoS throughput
+            ServerAliveInterval 30
+            ServerAliveCountMax 10
+            ConnectTimeout 60
+            TCPKeepAlive yes
           EOF
           chmod 600 ~/.ssh/config
 
@@ -110,14 +107,16 @@ jobs:
         run: |
           ssh -o BatchMode=yes staging-server "echo 'SSH authentication successful'"
 
-      - name: Upload release files via SCP
+      - name: Upload release files
         shell: bash
         env:
           STAGING_ENV: ${{ secrets.STAGING_ENV }}
         run: |
-          printf '%s' "$STAGING_ENV" > staging.env
-          scp backend-kt-release.tar.gz staging-server:/tmp/backend-kt-release.tar.gz
-          scp staging.env staging-server:/tmp/backend-kt-staging.env
+          echo "==> Uploading staging.env"
+          printf '%s' "$STAGING_ENV" | ssh staging-server "cat > /tmp/backend-kt-staging.env"
+
+          echo "==> Uploading backend-kt-release.tar.gz"
+          cat backend-kt-release.tar.gz | ssh staging-server "cat > /tmp/backend-kt-release.tar.gz"
 
       - name: Verify uploaded release
         shell: bash
