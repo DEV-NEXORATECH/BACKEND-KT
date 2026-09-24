@@ -457,7 +457,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
     private function canAccessAll(Request $request): bool
     {
-        return $request->user()->hasAnyPermission([
+        return (bool) $request->user()?->hasAnyPermission([
             'expense.approve',
             'expense.post',
             'expense.pay',

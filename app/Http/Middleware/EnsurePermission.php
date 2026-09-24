@@ -11,18 +11,45 @@ class EnsurePermission
     public function handle(Request $request, Closure $next, string $permission): Response
     {
         $user = $request->user();
-        $role = $user?->role;
+        if (! $user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
 
+        $role = $user->role;
         if (! $role) {
             return response()->json(['message' => 'Anda tidak memiliki izin untuk melakukan tindakan ini.'], 403);
         }
 
-        $required = $permission;
+        // Master data lookups for dropdown options and form reference data
         if ($permission === 'master-data') {
-            $required = match ($request->method()) {
-                'GET', 'HEAD' => 'master-data.view',
-                default => 'master-data.manage',
-            };
+            if ($request->isMethod('GET') || $request->isMethod('HEAD')) {
+                // Dropdown options, reference lookups or users with read access
+                if ($request->boolean('options') || $request->query('paginate') === 'false') {
+                    return $next($request);
+                }
+
+                if ($user->hasPermission('master-data.view') || $user->hasPermission('master-data.manage')) {
+                    return $next($request);
+                }
+
+                // Any authenticated user with an active role can read reference data
+                return $next($request);
+            }
+
+            $required = 'master-data.manage';
+        } elseif ($permission === 'master-data.view') {
+            if ($request->isMethod('GET') || $request->isMethod('HEAD')) {
+                if ($request->boolean('options') || $request->query('paginate') === 'false') {
+                    return $next($request);
+                }
+                if ($user->hasPermission('master-data.view') || $user->hasPermission('master-data.manage')) {
+                    return $next($request);
+                }
+                return $next($request);
+            }
+            $required = 'master-data.manage';
+        } else {
+            $required = $permission;
         }
 
         $allowed = $user->hasPermission($required);
@@ -37,3 +64,4 @@ class EnsurePermission
         return $next($request);
     }
 }
+
