@@ -90,6 +90,17 @@ class BudgetMonitoringController extends Controller
                 'type' => 'grant_reporting', 'code' => $deadline->report_type, 'name' => $deadline->grantAgreement?->grant_no ?: $deadline->grantAgreement?->agreement_name, 'start_date' => $deadline->due_date?->toDateString(), 'status' => $deadline->status,
             ]))->values();
 
+        $alerts = $items->filter(fn (array $item) => (float) ($item['available'] ?? 0) < 0 || (float) ($item['utilization_percent'] ?? 0) >= 25)
+            ->map(function (array $item) {
+                $utilization = (float) ($item['utilization_percent'] ?? 0);
+                $over = (float) ($item['available'] ?? 0) < 0 || ($item['status'] ?? null) === 'over_budget';
+                $level = $over || $utilization > 100 ? ['label' => 'Overbudget', 'threshold' => '>100%', 'color' => '#a51f24']
+                    : ($utilization >= 100 ? ['label' => 'Habis', 'threshold' => '100%', 'color' => '#c64d53']
+                        : ($utilization >= 75 ? ['label' => 'Waspada', 'threshold' => '75%', 'color' => '#d39212']
+                            : ($utilization >= 50 ? ['label' => 'Normal', 'threshold' => '50%', 'color' => '#087dcc'] : ['label' => 'Aman', 'threshold' => '25%', 'color' => '#359b22'])));
+                return [...$item, 'alert_level' => $level, 'recommendation' => $over ? 'Ajukan realokasi atau hentikan komitmen baru pada budget line ini.' : 'Pantau sisa saldo dan komitmen kegiatan berikutnya.'];
+            })->values();
+
         return response()->json([
             'success' => true,
             'message' => 'Budget monitoring berhasil dimuat.',
@@ -98,6 +109,7 @@ class BudgetMonitoringController extends Controller
             'activities' => $activities,
             'upcoming_events' => $upcomingEvents,
             'logframes' => $logframes,
+            'alerts' => $alerts,
         ]);
     }
 
