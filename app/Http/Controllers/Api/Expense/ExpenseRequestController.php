@@ -26,7 +26,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ExpenseRequestController extends Controller
 {
-    private array $with = ['requester:id,name,email', 'donor:id,code,name', 'grantAgreement:id,agreement_number,title', 'program:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
+    private array $with = ['requester:id,name,email', 'donor:id,code,name', 'grantAgreement', 'program:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
 
     public function index(Request $request): JsonResponse
     {
@@ -503,7 +503,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'external_request_id' => $expense->external_request_id,
             'requester_name' => $expense->requester?->name,
             'donor' => $expense->donor ? ['id' => $expense->donor->id, 'code' => $expense->donor->code, 'name' => $expense->donor->name] : null,
-            'grant' => $expense->grantAgreement ? ['id' => $expense->grantAgreement->id, 'number' => $expense->grantAgreement->agreement_number, 'title' => $expense->grantAgreement->title] : null,
+            'grant' => $expense->grantAgreement ? ['id' => $expense->grantAgreement->id, 'number' => $expense->grantAgreement->grant_no ?? $expense->grantAgreement->agreement_number ?? null, 'title' => $expense->grantAgreement->agreement_name ?? $expense->grantAgreement->title ?? null] : null,
             'program' => $expense->program ? ['id' => $expense->program->id, 'code' => $expense->program->code, 'name' => $expense->program->name] : null,
             'funding_source' => $expense->fundingSource ? ['id' => $expense->fundingSource->id, 'code' => $expense->fundingSource->code, 'name' => $expense->fundingSource->name] : null,
             'document_type' => $expense->documentType ? ['id' => $expense->documentType->id, 'code' => $expense->documentType->code, 'name' => $expense->documentType->name] : null,
