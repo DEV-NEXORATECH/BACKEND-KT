@@ -357,6 +357,7 @@ class DatabaseSeeder extends Seeder
                 ['title' => 'Tax Calendar', 'slug' => 'taxes-calendar', 'path' => '/taxes/calendar', 'sort_order' => 507],
                 ['title' => 'Tax Reports', 'slug' => 'taxes-reports', 'path' => '/taxes/reports', 'sort_order' => 508],
             ]],
+            ['title' => 'Tax Calculator', 'slug' => 'tax-calculator', 'path' => '/tax-calculator', 'icon' => 'calculator', 'sort_order' => 51],
             ['title' => 'Timesheet', 'slug' => 'timesheet', 'path' => '/timesheet', 'icon' => 'clock', 'sort_order' => 52, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'timesheet-dashboard', 'path' => '/timesheet/dashboard', 'sort_order' => 521],
                 ['title' => 'My Timesheet', 'slug' => 'timesheet-my', 'path' => '/timesheet/my-timesheet', 'sort_order' => 522],
@@ -380,6 +381,7 @@ class DatabaseSeeder extends Seeder
                 ['title' => 'Department', 'slug' => 'admin-department', 'path' => '/administration/department', 'sort_order' => 603],
                 ['title' => 'Documents', 'slug' => 'admin-documents', 'path' => '/administration/documents', 'sort_order' => 604],
                 ['title' => 'Contracts', 'slug' => 'admin-contracts', 'path' => '/administration/contracts', 'sort_order' => 605],
+                ['title' => 'Audit Log', 'slug' => 'admin-audit-logs', 'path' => '/administration/audit-logs', 'sort_order' => 606],
             ]],
             ['title' => 'Settings', 'slug' => 'settings', 'path' => '/settings', 'icon' => 'settings', 'sort_order' => 70, 'children' => [
                 ['title' => 'Users', 'slug' => 'settings-users', 'path' => '/settings/users', 'sort_order' => 701],
@@ -418,7 +420,7 @@ class DatabaseSeeder extends Seeder
 
         // These legacy direct children made Master Data long and bypassed the
         // six category landing pages. Keep them inactive after every seed run.
-        Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'tax-calculator', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom'])
+        Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom'])
             ->update(['is_active' => false]);
 
         $auditMenu = $menus->firstWhere('slug', 'audit-log');
@@ -458,7 +460,7 @@ class DatabaseSeeder extends Seeder
         foreach ($menuDefinitions as $definition) {
             $persistMenu($definition);
         }
-        Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'tax-calculator', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom'])
+        Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom'])
             ->update(['is_active' => false]);
     }
 }

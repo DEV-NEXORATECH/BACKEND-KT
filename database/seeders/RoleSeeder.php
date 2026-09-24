@@ -199,6 +199,7 @@ class RoleSeeder extends Seeder
                 ['title' => 'Tax Calendar', 'slug' => 'taxes-calendar', 'path' => '/taxes/calendar', 'sort_order' => 507],
                 ['title' => 'Tax Reports', 'slug' => 'taxes-reports', 'path' => '/taxes/reports', 'sort_order' => 508],
             ]],
+            ['title' => 'Tax Calculator', 'slug' => 'tax-calculator', 'path' => '/tax-calculator', 'icon' => 'calculator', 'sort_order' => 51],
             ['title' => 'Procurement', 'slug' => 'procurement', 'path' => '/procurement', 'icon' => 'briefcase', 'sort_order' => 49, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'procurement-dashboard', 'path' => '/procurement/dashboard', 'sort_order' => 490],
                 ['title' => 'Purchase Request', 'slug' => 'procurement-purchase-request', 'path' => '/procurement/purchase-requests', 'sort_order' => 491],
@@ -234,6 +235,7 @@ class RoleSeeder extends Seeder
                 ['title' => 'Department', 'slug' => 'admin-department', 'path' => '/administration/department', 'sort_order' => 603],
                 ['title' => 'Documents', 'slug' => 'admin-documents', 'path' => '/administration/documents', 'sort_order' => 604],
                 ['title' => 'Contracts', 'slug' => 'admin-contracts', 'path' => '/administration/contracts', 'sort_order' => 605],
+                ['title' => 'Audit Log', 'slug' => 'admin-audit-logs', 'path' => '/administration/audit-logs', 'sort_order' => 606],
             ]],
             ['title' => 'Settings', 'slug' => 'settings', 'path' => '/settings', 'icon' => 'settings', 'sort_order' => 70, 'children' => [
                 ['title' => 'Users', 'slug' => 'settings-users', 'path' => '/settings/users', 'sort_order' => 701],
@@ -262,7 +264,7 @@ class RoleSeeder extends Seeder
         }
 
         // Clean up legacy menu entries so they cannot reappear under Master Data.
-        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'tax-calculator', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom'])
+        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom'])
             ->update(['is_active' => false]);
 
         // 3. Define Menu Groups mapping for ease of assignment
@@ -292,10 +294,10 @@ class RoleSeeder extends Seeder
                 'procurement', 'procurement-dashboard', 'procurement-purchase-request', 'procurement-rfq-cba', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-contracts', 'procurement-scn', 'procurement-goods-receipts', 'procurement-supplier-invoices', 'procurement-waivers',
             ],
             'Taxes' => [
-                'taxes', 'taxes-dashboard', 'taxes-transactions', 'taxes-pph', 'taxes-vat', 'taxes-ebupot', 'taxes-efaktur', 'taxes-calendar', 'taxes-reports',
+                'taxes', 'taxes-dashboard', 'taxes-transactions', 'taxes-pph', 'taxes-vat', 'taxes-ebupot', 'taxes-efaktur', 'taxes-calendar', 'taxes-reports', 'tax-calculator',
             ],
             'Administration' => [
-                'administration', 'admin-staff', 'admin-organization', 'admin-department', 'admin-documents', 'admin-contracts',
+                'administration', 'admin-staff', 'admin-organization', 'admin-department', 'admin-documents', 'admin-contracts', 'admin-audit-logs',
             ],
             'Reports' => [
                 'reports', 'reports-financial', 'reports-budget', 'reports-donor-grant', 'reports-project', 'reports-procurement', 'reports-tax', 'reports-management',
