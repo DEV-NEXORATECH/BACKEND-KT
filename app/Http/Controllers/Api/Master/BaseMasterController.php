@@ -24,34 +24,53 @@ abstract class BaseMasterController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = $this->modelClass::query()->with($this->defaultWith)->withCount($this->defaultWithCount);
+        try {
+            $isOptions = $request->boolean('options') || $request->query('paginate') === 'false';
 
-        // Lightweight dropdown/options mode for Frontend Select components
-        if ($request->boolean('options') || $request->query('paginate') === 'false') {
-            $options = $query->applyFilters($request, $this->searchableColumns)->get();
-            return $this->successResponse($this->resourceClass::collection($options), 'Daftar opsi berhasil dimuat.');
+            $query = $this->modelClass::query();
+
+            // Lightweight dropdown/options mode for Frontend Select components
+            if ($isOptions) {
+                if (! $request->has('is_active') && \Illuminate\Support\Facades\Schema::hasColumn((new $this->modelClass)->getTable(), 'is_active')) {
+                    $query->where('is_active', true);
+                }
+
+                $options = $query->applyFilters($request, $this->searchableColumns)->get();
+                return $this->successResponse($this->resourceClass::collection($options), 'Daftar opsi berhasil dimuat.');
+            }
+
+            $query->with($this->defaultWith)->withCount($this->defaultWithCount);
+
+            $perPage = (int) $request->query('per_page', 10);
+            if ($perPage > 100 || $perPage < 1) {
+                $perPage = 10;
+            }
+
+            $paginated = $query->applyFilters($request, $this->searchableColumns)->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data berhasil dimuat.',
+                'data' => $this->resourceClass::collection($paginated->items()),
+                'meta' => [
+                    'current_page' => $paginated->currentPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'per_page' => $paginated->perPage(),
+                    'total' => $paginated->total(),
+                    'from' => $paginated->firstItem(),
+                    'to' => $paginated->lastItem(),
+                ],
+            ], Response::HTTP_OK);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Master index error on ' . static::class . ': ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat data: ' . $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-
-        $perPage = (int) $request->query('per_page', 10);
-        if ($perPage > 100 || $perPage < 1) {
-            $perPage = 10;
-        }
-
-        $paginated = $query->applyFilters($request, $this->searchableColumns)->paginate($perPage);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Data berhasil dimuat.',
-            'data' => $this->resourceClass::collection($paginated->items()),
-            'meta' => [
-                'current_page' => $paginated->currentPage(),
-                'last_page' => $paginated->lastPage(),
-                'per_page' => $paginated->perPage(),
-                'total' => $paginated->total(),
-                'from' => $paginated->firstItem(),
-                'to' => $paginated->lastItem(),
-            ],
-        ], Response::HTTP_OK);
     }
 
     public function store(Request $request): JsonResponse
