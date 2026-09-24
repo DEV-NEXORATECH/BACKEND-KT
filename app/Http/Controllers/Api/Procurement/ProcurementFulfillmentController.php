@@ -63,7 +63,7 @@ class ProcurementFulfillmentController extends Controller
             ['value' => 'pr', 'title' => 'Purchase Request', 'subtitle' => 'Ajukan dan pantau permintaan pembelian.', 'endpoint' => '/v1/procurement/purchase-requests', 'columns' => [['key' => 'pr_number', 'label' => 'PR Number'], ['key' => 'request_date', 'label' => 'Date'], ['key' => 'status', 'label' => 'Status'], ['key' => 'total_amount', 'label' => 'Amount']]],
             ['value' => 'po', 'title' => 'Purchase Orders', 'subtitle' => 'Kelola PO yang dibuat dari PR approved.', 'endpoint' => '/v1/procurement/purchase-orders', 'columns' => [['key' => 'po_number', 'label' => 'PO Number'], ['key' => 'po_date', 'label' => 'Date'], ['key' => 'vendor', 'label' => 'Vendor'], ['key' => 'status', 'label' => 'Status']]],
             ['value' => 'grn', 'title' => 'Goods Receipts', 'subtitle' => 'Catat penerimaan barang berdasarkan PO.', 'endpoint' => '/v1/procurement/goods-receipts', 'columns' => [['key' => 'grn_number', 'label' => 'GRN Number'], ['key' => 'receipt_date', 'label' => 'Date'], ['key' => 'purchase_order', 'label' => 'Purchase Order'], ['key' => 'status', 'label' => 'Status']]],
-            ['value' => 'invoice', 'title' => 'Supplier Invoices', 'subtitle' => 'Kelola invoice supplier dan 3-way match.', 'endpoint' => '/v1/procurement/supplier-invoices', 'columns' => [['key' => 'invoice_number', 'label' => 'Invoice Number'], ['key' => 'invoice_date', 'label' => 'Date'], ['key' => 'vendor', 'label' => 'Vendor'], ['key' => 'match_status', 'label' => 'Match Status'], ['key' => 'status', 'label' => 'Status']]],
+            ['value' => 'invoice', 'title' => 'Supplier Invoices', 'subtitle' => 'Kelola invoice supplier dan 3-way match.', 'endpoint' => '/v1/procurement/supplier-invoices', 'columns' => [['key' => 'invoice_number', 'label' => 'Invoice Number'], ['key' => 'invoice_date', 'label' => 'Date'], ['key' => 'vendor', 'label' => 'Vendor'], ['key' => 'tax', 'label' => 'Tax'], ['key' => 'match_status', 'label' => 'Match Status'], ['key' => 'status', 'label' => 'Status']]],
         ]]);
     }
 
@@ -121,7 +121,7 @@ class ProcurementFulfillmentController extends Controller
     {
         $this->ensureRelatedScope($request, SupplierInvoice::class, $supplierInvoice->id, 'created_by', 'purchaseOrder.purchaseRequest');
         if (! in_array($supplierInvoice->status, ['draft', 'matched'], true)) throw ValidationException::withMessages(['status' => 'Invoice hanya dapat diubah saat draft atau matched.']);
-        $data = $request->validate(['invoice_date' => ['sometimes', 'date'], 'due_date' => ['nullable', 'date'], 'notes' => ['nullable', 'string'], 'lines' => ['sometimes', 'array', 'min:1'], 'lines.*.purchase_order_line_id' => ['required_with:lines', 'integer', 'exists:purchase_order_lines,id'], 'lines.*.item_description' => ['required_with:lines', 'string', 'max:255'], 'lines.*.quantity' => ['required_with:lines', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required_with:lines', 'numeric', 'min:0.01']]);
+        $data = $request->validate(['invoice_date' => ['sometimes', 'date'], 'due_date' => ['nullable', 'date'], 'tax_id' => ['nullable', 'integer', 'exists:taxes,id'], 'notes' => ['nullable', 'string'], 'lines' => ['sometimes', 'array', 'min:1'], 'lines.*.purchase_order_line_id' => ['required_with:lines', 'integer', 'exists:purchase_order_lines,id'], 'lines.*.item_description' => ['required_with:lines', 'string', 'max:255'], 'lines.*.quantity' => ['required_with:lines', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required_with:lines', 'numeric', 'min:0.01']]);
         if (isset($data['lines'])) {
             $this->validateOrderLines($supplierInvoice->purchaseOrder, $data['lines']);
             $supplierInvoice->lines()->delete();
@@ -293,6 +293,7 @@ class ProcurementFulfillmentController extends Controller
             'invoice_number' => ['required', 'string', 'max:80', 'unique:supplier_invoices,invoice_number'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date'],
+            'tax_id' => ['nullable', 'integer', 'exists:taxes,id'],
             'notes' => ['nullable', 'string'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.purchase_order_line_id' => ['required', 'integer', 'exists:purchase_order_lines,id'],
@@ -326,7 +327,7 @@ class ProcurementFulfillmentController extends Controller
             }
             $invoice->update(['total_amount' => $total]);
 
-            return $invoice->load(['purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'vendor:id,code,name', 'lines']);
+            return $invoice->load(['purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'vendor:id,code,name,npwp', 'tax:id,code,name,tax_type,rate_percent', 'lines']);
         });
 
         return response()->json(['success' => true, 'message' => 'Supplier invoice berhasil dibuat.', 'data' => $this->formatInvoice($invoice)], Response::HTTP_CREATED);
@@ -431,6 +432,7 @@ class ProcurementFulfillmentController extends Controller
             'po_number' => $invoice->purchaseOrder?->po_number,
             'grn_number' => $invoice->goodsReceipt?->grn_number,
             'vendor_name' => $invoice->vendor?->name,
+            'tax' => $invoice->tax ? ['id' => $invoice->tax->id, 'code' => $invoice->tax->code, 'name' => $invoice->tax->name, 'tax_type' => $invoice->tax->tax_type, 'rate_percent' => $invoice->tax->rate_percent] : null,
             'invoice_date' => $invoice->invoice_date?->toDateString(),
             'due_date' => $invoice->due_date?->toDateString(),
             'status' => $invoice->status,

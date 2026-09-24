@@ -30,6 +30,8 @@ class TimesheetEntryController extends Controller
             ->when(! $canApprove, fn (Builder $query) => $query->where('user_id', $user->id))
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
             ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', $request->integer('project_id')))
+            ->when($request->filled('program_id'), fn (Builder $query) => $query->where('program_id', $request->integer('program_id')))
+            ->when($request->filled('donor_id'), fn (Builder $query) => $query->where('donor_id', $request->integer('donor_id')))
             ->when($request->filled('employee_id'), fn (Builder $query) => $query->where('employee_id', $request->integer('employee_id')))
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('entry_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('entry_date', '<=', $request->string('end_date')))
@@ -41,6 +43,9 @@ class TimesheetEntryController extends Controller
             'hours' => round((float) $entries->sum('hours'), 2),
             'billable_hours' => round((float) $entries->where('is_billable', true)->sum('hours'), 2),
             'entries' => $entries->count(),
+            'by_employee' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->employee?->name ?? 'Unassigned')->map(fn ($rows, $label) => ['label' => $label, 'hours' => round((float) $rows->sum('hours'), 2), 'entries' => $rows->count()])->values(),
+            'by_project' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->project?->name ?? 'Unassigned')->map(fn ($rows, $label) => ['label' => $label, 'hours' => round((float) $rows->sum('hours'), 2), 'entries' => $rows->count()])->values(),
+            'by_donor' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->donor?->name ?? 'Unassigned')->map(fn ($rows, $label) => ['label' => $label, 'hours' => round((float) $rows->sum('hours'), 2), 'entries' => $rows->count()])->values(),
         ];
 
         return response()->json(['success' => true, 'totals' => $totals, 'data' => $entries->map(fn (TimesheetEntry $entry) => $this->format($entry))]);
@@ -55,6 +60,12 @@ class TimesheetEntryController extends Controller
 
         if ($activity && $project && (int) $activity->project_id !== (int) $project->id) {
             throw ValidationException::withMessages(['activity_id' => 'Activity tidak sesuai dengan project yang dipilih.']);
+        }
+        if ($project && isset($payload['program_id']) && $payload['program_id'] && (int) $project->program_id !== (int) $payload['program_id']) {
+            throw ValidationException::withMessages(['program_id' => 'Program tidak sesuai dengan project yang dipilih.']);
+        }
+        if ($project && isset($payload['donor_id']) && $payload['donor_id'] && (int) $project->grantAgreement?->donor_id !== (int) $payload['donor_id']) {
+            throw ValidationException::withMessages(['donor_id' => 'Donor tidak sesuai dengan project yang dipilih.']);
         }
 
         if (! $this->userHasPermission($request->user(), 'timesheet.approve') && $employee?->user?->id !== $request->user()->id) {
@@ -83,6 +94,17 @@ class TimesheetEntryController extends Controller
         }
 
         $payload = $this->validatePayload($request);
+        $project = isset($payload['project_id']) ? Project::query()->with('grantAgreement')->find($payload['project_id']) : null;
+        $activity = isset($payload['activity_id']) ? Activity::query()->find($payload['activity_id']) : null;
+        if ($activity && $project && (int) $activity->project_id !== (int) $project->id) {
+            throw ValidationException::withMessages(['activity_id' => 'Activity tidak sesuai dengan project yang dipilih.']);
+        }
+        if ($project && isset($payload['program_id']) && $payload['program_id'] && (int) $project->program_id !== (int) $payload['program_id']) {
+            throw ValidationException::withMessages(['program_id' => 'Program tidak sesuai dengan project yang dipilih.']);
+        }
+        if ($project && isset($payload['donor_id']) && $payload['donor_id'] && (int) $project->grantAgreement?->donor_id !== (int) $payload['donor_id']) {
+            throw ValidationException::withMessages(['donor_id' => 'Donor tidak sesuai dengan project yang dipilih.']);
+        }
         $timesheetEntry->update($payload);
 
         return response()->json(['success' => true, 'message' => 'Timesheet entry berhasil diperbarui.', 'data' => $this->format($timesheetEntry->fresh($this->with))]);
