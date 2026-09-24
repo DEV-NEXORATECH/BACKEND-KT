@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
 use App\Models\Asset\FixedAsset;
 use App\Models\Master\AssetCategory;
+use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Rbac\DataScopeService;
@@ -20,7 +21,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class FixedAssetController extends Controller
 {
-    private array $with = ['category:id,code,name,useful_life_months,depreciation_method,asset_gl_account_id,depreciation_gl_account_id,accumulated_gl_account_id', 'vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'supplierInvoice:id,invoice_number', 'donor:id,code,name', 'program:id,code,name', 'project:id,code,name', 'custodian:id,employee_id_number,name', 'depreciations'];
+    private array $with = ['category:id,code,name,useful_life_months,depreciation_method,asset_gl_account_id,depreciation_gl_account_id,accumulated_gl_account_id', 'vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'supplierInvoice:id,invoice_number,status,journal_id,total_amount', 'donor:id,code,name', 'program:id,code,name', 'project:id,code,name', 'custodian:id,employee_id_number,name', 'disposalBankAccount:id,bank_name,account_number,gl_account_id', 'depreciations'];
 
     public function index(Request $request): JsonResponse
     {
@@ -45,9 +46,40 @@ class FixedAssetController extends Controller
             'accumulated_depreciation' => round((float) $assets->sum('accumulated_depreciation'), 2),
             'net_book_value' => round((float) $assets->sum('net_book_value'), 2),
             'assets' => $assets->count(),
+            // Until a dedicated review_due_date is introduced, draft assets and
+            // active/transferred assets not updated for one year form the review queue.
+            'due_for_review' => $assets->filter(fn (FixedAsset $asset) =>
+                $asset->status === 'draft'
+                || (in_array($asset->status, ['active', 'transferred'], true)
+                    && $asset->updated_at?->lt(now()->subYear()))
+            )->count(),
         ];
 
         return response()->json(['success' => true, 'totals' => $totals, 'data' => $assets->map(fn (FixedAsset $asset) => $this->format($asset))]);
+    }
+
+    public function reconciliation(Request $request): JsonResponse
+    {
+        $register = FixedAsset::query()
+            ->whereNotIn('status', ['disposed'])
+            ->selectRaw('COALESCE(SUM(acquisition_cost), 0) as cost, COALESCE(SUM(accumulated_depreciation), 0) as accumulated, COALESCE(SUM(net_book_value), 0) as nbv')
+            ->first();
+        $categories = AssetCategory::query()->get(['asset_gl_account_id', 'accumulated_gl_account_id']);
+        $assetAccountIds = $categories->pluck('asset_gl_account_id')->filter()->unique()->values();
+        $accumulatedAccountIds = $categories->pluck('accumulated_gl_account_id')->filter()->unique()->values();
+        $postedLines = \App\Models\Accounting\JournalLine::query()->whereHas('journal', fn ($q) => $q->where('status', 'posted'));
+        $assetGl = (clone $postedLines)->when($assetAccountIds->isNotEmpty(), fn ($q) => $q->whereIn('account_id', $assetAccountIds))->when($assetAccountIds->isEmpty(), fn ($q) => $q->whereRaw('1 = 0'))->selectRaw('COALESCE(SUM(debit - credit), 0) as balance')->value('balance');
+        $accumulatedGl = (clone $postedLines)->when($accumulatedAccountIds->isNotEmpty(), fn ($q) => $q->whereIn('account_id', $accumulatedAccountIds))->when($accumulatedAccountIds->isEmpty(), fn ($q) => $q->whereRaw('1 = 0'))->selectRaw('COALESCE(SUM(credit - debit), 0) as balance')->value('balance');
+        $registerCost = round((float) $register->cost, 2);
+        $registerAccumulated = round((float) $register->accumulated, 2);
+        $glCost = round((float) $assetGl, 2);
+        $glAccumulated = round((float) $accumulatedGl, 2);
+        return response()->json(['success' => true, 'data' => [
+            'status' => abs($registerCost - $glCost) < 0.01 && abs($registerAccumulated - $glAccumulated) < 0.01 ? 'reconciled' : 'difference_found',
+            'register' => ['cost' => $registerCost, 'accumulated_depreciation' => $registerAccumulated, 'net_book_value' => round((float) $register->nbv, 2)],
+            'gl' => ['cost' => $glCost, 'accumulated_depreciation' => $glAccumulated, 'net_book_value' => round($glCost - $glAccumulated, 2)],
+            'difference' => ['cost' => round($registerCost - $glCost, 2), 'accumulated_depreciation' => round($registerAccumulated - $glAccumulated, 2)],
+        ]]);
     }
 
     public function store(Request $request): JsonResponse
@@ -68,6 +100,23 @@ class FixedAssetController extends Controller
         ])->load($this->with);
 
         return response()->json(['success' => true, 'message' => 'Fixed asset berhasil dibuat.', 'data' => $this->format($asset)], Response::HTTP_CREATED);
+    }
+
+    public function update(Request $request, FixedAsset $fixedAsset): JsonResponse
+    {
+        $this->ensureAssetScope($request, $fixedAsset);
+        if ($fixedAsset->status !== 'draft') {
+            throw ValidationException::withMessages(['status' => 'Detail asset hanya dapat diubah saat masih draft.']);
+        }
+
+        $payload = $this->validatePayload($request, true, $fixedAsset->id);
+        $fixedAsset->update($payload + ['updated_by' => $request->user()->id]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Detail fixed asset berhasil diperbarui.',
+            'data' => $this->format($fixedAsset->fresh($this->with)),
+        ]);
     }
 
     public function submitCapitalization(Request $request, FixedAsset $fixedAsset, ApprovalWorkflowService $workflow): JsonResponse
@@ -97,7 +146,14 @@ class FixedAssetController extends Controller
             throw ValidationException::withMessages(['account' => 'COA asset dan clearing/liability harus tersedia.']);
         }
 
-        $asset = DB::transaction(function () use ($fixedAsset, $assetAccount, $clearingAccount, $request) {
+        $sourceJournal = $fixedAsset->supplierInvoice?->journal_id
+            ? Journal::with('lines')->find($fixedAsset->supplierInvoice->journal_id)
+            : null;
+        if ($fixedAsset->supplierInvoice && ! in_array($fixedAsset->supplierInvoice->status, ['posted', 'paid'], true)) {
+            throw ValidationException::withMessages(['supplier_invoice_id' => 'Supplier invoice harus posted sebelum aset dikapitalisasi.']);
+        }
+
+        $asset = DB::transaction(function () use ($fixedAsset, $assetAccount, $clearingAccount, $request, $sourceJournal) {
             $journal = Journal::create([
                 'journal_number' => 'FA-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $fixedAsset->acquisition_date,
@@ -109,9 +165,20 @@ class FixedAssetController extends Controller
                 'posted_at' => now(),
             ]);
             $journal->lines()->create(['account_id' => $assetAccount->id, 'project_id' => $fixedAsset->project_id, 'donor_id' => $fixedAsset->donor_id, 'program_id' => $fixedAsset->program_id, 'line_description' => 'Capitalized asset', 'debit' => $fixedAsset->acquisition_cost, 'credit' => 0, 'line_order' => 1]);
-            $journal->lines()->create(['account_id' => $clearingAccount->id, 'line_description' => 'Asset clearing/source', 'debit' => 0, 'credit' => $fixedAsset->acquisition_cost, 'line_order' => 2]);
 
-            $fixedAsset->update(['status' => 'active', 'journal_id' => $journal->id, 'capitalized_by' => $request->user()->id, 'capitalized_at' => now()]);
+            if ($sourceJournal && $sourceJournal->lines->sum('debit') > 0) {
+                $sourceDebit = (float) $sourceJournal->lines->sum('debit');
+                $lineOrder = 2;
+                foreach ($sourceJournal->lines->where('debit', '>', 0) as $sourceLine) {
+                    $credit = round((float) $fixedAsset->acquisition_cost * ((float) $sourceLine->debit / $sourceDebit), 2);
+                    if ($credit <= 0) continue;
+                    $journal->lines()->create(['account_id' => $sourceLine->account_id, 'donor_id' => $sourceLine->donor_id, 'program_id' => $sourceLine->program_id, 'project_id' => $sourceLine->project_id, 'budget_line_id' => $sourceLine->budget_line_id, 'department_id' => $sourceLine->department_id, 'line_description' => 'Reclassify AP source expense to fixed asset', 'debit' => 0, 'credit' => $credit, 'line_order' => $lineOrder++]);
+                }
+            } else {
+                $journal->lines()->create(['account_id' => $clearingAccount->id, 'line_description' => 'Asset clearing/source', 'debit' => 0, 'credit' => $fixedAsset->acquisition_cost, 'line_order' => 2]);
+            }
+
+            $fixedAsset->update(['status' => 'active', 'journal_id' => $journal->id, 'capitalization_journal_id' => $journal->id, 'capitalized_by' => $request->user()->id, 'capitalized_at' => now(), 'in_service_date' => $fixedAsset->in_service_date ?: $fixedAsset->acquisition_date]);
 
             return $fixedAsset->fresh($this->with);
         });
@@ -139,10 +206,12 @@ class FixedAssetController extends Controller
 
         $remaining = round((float) $fixedAsset->net_book_value, 2);
         $lifeMonths = max(1, (int) $fixedAsset->useful_life_months);
+        $depreciableBase = max(0, (float) $fixedAsset->acquisition_cost - (float) $fixedAsset->residual_value);
+        $remainingDepreciable = max(0, $depreciableBase - (float) $fixedAsset->accumulated_depreciation);
         $monthly = $data['amount'] ?? ($fixedAsset->depreciation_method === 'declining_balance'
             ? round($remaining * (2 / $lifeMonths), 2)
-            : round((float) $fixedAsset->acquisition_cost / $lifeMonths, 2));
-        $amount = min($monthly, $remaining);
+            : round($depreciableBase / $lifeMonths, 2));
+        $amount = min($monthly, $remainingDepreciable);
         if ($amount <= 0) {
             throw ValidationException::withMessages(['amount' => 'Net book value sudah habis.']);
         }
@@ -181,16 +250,41 @@ class FixedAssetController extends Controller
         return response()->json(['success' => true, 'message' => 'Asset berhasil ditransfer.', 'data' => $this->format($fixedAsset->fresh($this->with))]);
     }
 
+    public function impair(Request $request, FixedAsset $fixedAsset): JsonResponse
+    {
+        $this->ensureAssetScope($request, $fixedAsset);
+        if (! in_array($fixedAsset->status, ['active', 'transferred'], true)) throw ValidationException::withMessages(['status' => 'Asset harus active/transferred untuk impairment.']);
+        $data = $request->validate(['impairment_date' => ['required', 'date'], 'amount' => ['required', 'numeric', 'min:0.01'], 'reason' => ['required', 'string', 'max:500']]);
+        app(AccountingPeriodService::class)->ensureOpen($data['impairment_date'], 'impairment_date');
+        $amount = min((float) $data['amount'], (float) $fixedAsset->net_book_value);
+        if ($amount <= 0) throw ValidationException::withMessages(['amount' => 'Net book value sudah habis.']);
+        $category = $fixedAsset->category;
+        $lossAccount = $category?->depreciationGlAccount ?: ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
+        $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
+        if (! $lossAccount || ! $accumulatedAccount) throw ValidationException::withMessages(['account' => 'COA impairment loss dan accumulated asset harus tersedia.']);
+        $asset = DB::transaction(function () use ($fixedAsset, $data, $amount, $lossAccount, $accumulatedAccount, $request) {
+            $journal = Journal::create(['journal_number' => 'IMP-'.now()->format('YmdHis').'-'.random_int(100, 999), 'journal_date' => $data['impairment_date'], 'journal_type' => 'adjustment', 'reference' => $fixedAsset->asset_code, 'description' => 'Impairment '.$fixedAsset->asset_name.' - '.$data['reason'], 'status' => 'posted', 'posted_by' => $request->user()->id, 'posted_at' => now()]);
+            $journal->lines()->create(['account_id' => $lossAccount->id, 'project_id' => $fixedAsset->project_id, 'donor_id' => $fixedAsset->donor_id, 'program_id' => $fixedAsset->program_id, 'line_description' => 'Impairment loss', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
+            $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Accumulated impairment', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
+            $fixedAsset->update(['impairment_amount' => round((float) $fixedAsset->impairment_amount + $amount, 2), 'net_book_value' => max((float) $fixedAsset->residual_value, round((float) $fixedAsset->net_book_value - $amount, 2)), 'impairment_journal_id' => $journal->id]);
+            return $fixedAsset->fresh($this->with);
+        });
+        return response()->json(['success' => true, 'message' => 'Impairment asset berhasil diposting.', 'data' => $this->format($asset)]);
+    }
+
     public function dispose(Request $request, FixedAsset $fixedAsset): JsonResponse
     {
         $this->ensureAssetScope($request, $fixedAsset);
         if ($fixedAsset->status === 'disposed') {
             throw ValidationException::withMessages(['status' => 'Asset sudah disposed.']);
         }
-        $data = $request->validate(['disposed_date' => ['nullable', 'date'], 'disposal_reason' => ['nullable', 'string']]);
+        $data = $request->validate(['disposed_date' => ['nullable', 'date'], 'disposal_reason' => ['nullable', 'string'], 'disposal_type' => ['nullable', 'in:sale,writeoff,donation,lost'], 'disposal_proceeds' => ['nullable', 'numeric', 'min:0'], 'disposal_bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id']]);
         $data['disposed_date'] ??= $fixedAsset->disposal_requested_date?->toDateString();
         $data['disposal_reason'] ??= $fixedAsset->disposal_requested_reason;
         if (! $data['disposed_date'] || ! $data['disposal_reason']) throw ValidationException::withMessages(['disposed_date' => 'Tanggal dan alasan disposal wajib diisi atau diajukan terlebih dahulu.']);
+        $data['disposal_type'] ??= 'writeoff';
+        $data['disposal_proceeds'] = round((float) ($data['disposal_proceeds'] ?? 0), 2);
+        if ($data['disposal_type'] === 'sale' && $data['disposal_proceeds'] > 0 && empty($data['disposal_bank_account_id'])) throw ValidationException::withMessages(['disposal_bank_account_id' => 'Bank account wajib dipilih untuk hasil penjualan asset.']);
         app(AccountingPeriodService::class)->ensureOpen($data['disposed_date'], 'disposed_date');
         $approval = app(ApprovalWorkflowService::class)->approve('asset_disposal', $fixedAsset, $request->user(), $request->input('notes'));
         if (! $approval['managed'] && app(ApprovalWorkflowService::class)->requiresApproval('asset_disposal', $fixedAsset, (float) $fixedAsset->net_book_value)) throw ValidationException::withMessages(['approval' => 'Disposal harus disubmit ke Approval Matrix sebelum diposting.']);
@@ -199,14 +293,22 @@ class FixedAssetController extends Controller
         $assetAccount = $category?->assetGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('is_header', false)->first();
         $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
         $resultAccount = ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
+        $bank = $data['disposal_bank_account_id'] ? BankAccount::find($data['disposal_bank_account_id']) : null;
+        if ($data['disposal_type'] === 'sale' && $data['disposal_proceeds'] > 0 && ! $bank?->gl_account_id) throw ValidationException::withMessages(['disposal_bank_account_id' => 'Bank account disposal belum memiliki GL account.']);
         if (! $assetAccount || ! $accumulatedAccount || ! $resultAccount) throw ValidationException::withMessages(['account' => 'COA asset, accumulated depreciation, dan disposal result harus tersedia.']);
-        $asset = DB::transaction(function () use ($fixedAsset, $data, $assetAccount, $accumulatedAccount, $resultAccount) {
+        $asset = DB::transaction(function () use ($fixedAsset, $data, $assetAccount, $accumulatedAccount, $resultAccount, $bank) {
             $netBookValue = round((float) $fixedAsset->net_book_value, 2);
+            $proceeds = (float) $data['disposal_proceeds'];
+            $loss = max(0, round($netBookValue - $proceeds, 2));
+            $gain = max(0, round($proceeds - $netBookValue, 2));
             $journal = Journal::create(['journal_number' => 'DISP-'.now()->format('YmdHis').'-'.random_int(100, 999), 'journal_date' => $data['disposed_date'], 'journal_type' => 'adjustment', 'reference' => $fixedAsset->asset_code, 'description' => 'Disposal '.$fixedAsset->asset_name, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now()]);
-            if ((float) $fixedAsset->accumulated_depreciation > 0) $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Remove accumulated depreciation', 'debit' => $fixedAsset->accumulated_depreciation, 'credit' => 0, 'line_order' => 1]);
-            if ($netBookValue > 0) $journal->lines()->create(['account_id' => $resultAccount->id, 'line_description' => 'Disposal loss', 'debit' => $netBookValue, 'credit' => 0, 'line_order' => 2]);
-            $journal->lines()->create(['account_id' => $assetAccount->id, 'line_description' => 'Remove asset cost', 'debit' => 0, 'credit' => $fixedAsset->acquisition_cost, 'line_order' => 3]);
-            $fixedAsset->update([...$data, 'status' => 'disposed', 'journal_id' => $journal->id, 'net_book_value' => 0]);
+            $line = 1;
+            if ((float) $fixedAsset->accumulated_depreciation > 0) $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Remove accumulated depreciation', 'debit' => $fixedAsset->accumulated_depreciation, 'credit' => 0, 'line_order' => $line++]);
+            if ($proceeds > 0 && $bank?->gl_account_id) $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Disposal proceeds', 'debit' => $proceeds, 'credit' => 0, 'line_order' => $line++]);
+            if ($loss > 0) $journal->lines()->create(['account_id' => $resultAccount->id, 'line_description' => 'Loss on disposal', 'debit' => $loss, 'credit' => 0, 'line_order' => $line++]);
+            if ($gain > 0) $journal->lines()->create(['account_id' => $resultAccount->id, 'line_description' => 'Gain on disposal', 'debit' => 0, 'credit' => $gain, 'line_order' => $line++]);
+            $journal->lines()->create(['account_id' => $assetAccount->id, 'line_description' => 'Remove asset cost', 'debit' => 0, 'credit' => $fixedAsset->acquisition_cost, 'line_order' => $line]);
+            $fixedAsset->update([...$data, 'status' => 'disposed', 'journal_id' => $fixedAsset->journal_id, 'disposal_journal_id' => $journal->id, 'net_book_value' => 0]);
             return $fixedAsset->fresh($this->with);
         });
         return response()->json(['success' => true, 'message' => 'Asset berhasil disposed dan jurnal pelepasan diposting.', 'data' => $this->format($asset)]);
@@ -334,14 +436,16 @@ class FixedAssetController extends Controller
         ]);
     }
 
-    private function validatePayload(Request $request): array
+    private function validatePayload(Request $request, bool $updating = false, ?int $assetId = null): array
     {
         return $request->validate([
-            'asset_code' => ['nullable', 'string', 'max:50', 'unique:fixed_assets,asset_code'],
+            'asset_code' => ['nullable', 'string', 'max:50', 'unique:fixed_assets,asset_code'.($updating && $assetId ? ','.$assetId : '')],
             'asset_name' => ['required', 'string', 'max:160'],
             'asset_category_id' => ['nullable', 'integer', 'exists:asset_categories,id'],
             'acquisition_date' => ['required', 'date'],
+            'in_service_date' => ['nullable', 'date', 'after_or_equal:acquisition_date'],
             'acquisition_cost' => ['required', 'numeric', 'min:0.01'],
+            'residual_value' => ['nullable', 'numeric', 'min:0', 'lte:acquisition_cost'],
             'vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
             'purchase_order_id' => ['nullable', 'integer', 'exists:purchase_orders,id'],
             'goods_receipt_id' => ['nullable', 'integer', 'exists:goods_receipts,id'],
@@ -380,16 +484,33 @@ class FixedAssetController extends Controller
             'asset_code' => $asset->asset_code,
             'asset_name' => $asset->asset_name,
             'category' => $asset->category ? ['id' => $asset->category->id, 'code' => $asset->category->code, 'name' => $asset->category->name] : null,
+            'asset_category_id' => $asset->asset_category_id,
             'acquisition_date' => $asset->acquisition_date?->toDateString(),
+            'in_service_date' => $asset->in_service_date?->toDateString(),
             'acquisition_cost' => $asset->acquisition_cost,
+            'residual_value' => $asset->residual_value,
             'accumulated_depreciation' => $asset->accumulated_depreciation,
+            'impairment_amount' => $asset->impairment_amount,
             'net_book_value' => $asset->net_book_value,
             'depreciation_method' => $asset->depreciation_method,
             'useful_life_months' => $asset->useful_life_months,
             'location' => $asset->location,
             'custodian' => $asset->custodian ? ['id' => $asset->custodian->id, 'name' => $asset->custodian->name] : null,
+            'custodian_id' => $asset->custodian_id,
+            'donor' => $asset->donor ? ['id' => $asset->donor->id, 'code' => $asset->donor->code, 'name' => $asset->donor->name] : null,
+            'program' => $asset->program ? ['id' => $asset->program->id, 'code' => $asset->program->code, 'name' => $asset->program->name] : null,
             'project' => $asset->project ? ['id' => $asset->project->id, 'code' => $asset->project->code, 'name' => $asset->project->name] : null,
             'vendor' => $asset->vendor ? ['id' => $asset->vendor->id, 'code' => $asset->vendor->code, 'name' => $asset->vendor->name] : null,
+            'purchase_order' => $asset->purchaseOrder ? ['id' => $asset->purchaseOrder->id, 'po_number' => $asset->purchaseOrder->po_number] : null,
+            'goods_receipt' => $asset->goodsReceipt ? ['id' => $asset->goodsReceipt->id, 'grn_number' => $asset->goodsReceipt->grn_number] : null,
+            'supplier_invoice' => $asset->supplierInvoice ? ['id' => $asset->supplierInvoice->id, 'invoice_number' => $asset->supplierInvoice->invoice_number] : null,
+            'journal_id' => $asset->journal_id,
+            'capitalization_journal_id' => $asset->capitalization_journal_id,
+            'disposal_journal_id' => $asset->disposal_journal_id,
+            'impairment_journal_id' => $asset->impairment_journal_id,
+            'disposal_type' => $asset->disposal_type,
+            'disposal_proceeds' => $asset->disposal_proceeds,
+            'capitalized_at' => $asset->capitalized_at?->toISOString(),
             'status' => $asset->status,
             'notes' => $asset->notes,
             'depreciations' => $asset->depreciations->map(fn ($row) => ['id' => $row->id, 'depreciation_date' => $row->depreciation_date?->toDateString(), 'amount' => $row->amount, 'accumulated_depreciation' => $row->accumulated_depreciation, 'net_book_value' => $row->net_book_value])->values(),

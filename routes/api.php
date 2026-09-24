@@ -304,14 +304,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1/assets')->group(function () {
         Route::get('fixed-assets', [FixedAssetController::class, 'index'])->middleware('permission:asset.view');
         Route::post('fixed-assets', [FixedAssetController::class, 'store'])->middleware('permission:asset.create');
+        Route::put('fixed-assets/{fixedAsset}', [FixedAssetController::class, 'update'])->middleware('permission:asset.create');
         Route::post('fixed-assets/bulk-depreciate', [FixedAssetController::class, 'bulkDepreciate'])->middleware('permission:asset.depreciate');
         Route::post('fixed-assets/stock-opname', [FixedAssetController::class, 'stockOpname'])->middleware('permission:asset.view');
         Route::post('fixed-assets/{fixedAsset}/submit-capitalization', [FixedAssetController::class, 'submitCapitalization'])->middleware('permission:asset.capitalize');
         Route::post('fixed-assets/{fixedAsset}/capitalize', [FixedAssetController::class, 'capitalize'])->middleware('permission:asset.capitalize');
         Route::post('fixed-assets/{fixedAsset}/depreciate', [FixedAssetController::class, 'depreciate'])->middleware('permission:asset.depreciate');
+        Route::post('fixed-assets/{fixedAsset}/impair', [FixedAssetController::class, 'impair'])->middleware('permission:asset.depreciate');
         Route::post('fixed-assets/{fixedAsset}/transfer', [FixedAssetController::class, 'transfer'])->middleware('permission:asset.transfer');
         Route::post('fixed-assets/{fixedAsset}/submit-disposal', [FixedAssetController::class, 'submitDisposal'])->middleware('permission:asset.dispose');
         Route::post('fixed-assets/{fixedAsset}/dispose', [FixedAssetController::class, 'dispose'])->middleware('permission:asset.dispose');
+        Route::get('fixed-assets/reconciliation', [FixedAssetController::class, 'reconciliation'])->middleware('permission:asset.view');
     });
 
     Route::prefix('v1/expenses')->group(function () {
