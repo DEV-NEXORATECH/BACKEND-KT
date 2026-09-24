@@ -135,6 +135,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/reports/procurement', [ReportsDashboardController::class, 'procurementDashboard'])->middleware('permission:reports.view');
     Route::get('/v1/reports/management', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/reports/balance-sheet', [ReportsDashboardController::class, 'balanceSheet'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/aging', [ReportsDashboardController::class, 'aging'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/cash-bank', [ReportsDashboardController::class, 'cashBankReport'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/drilldown', [ReportsDashboardController::class, 'drilldown'])->middleware('permission:reports.view');
     Route::get('/v1/reports/profit-loss/pdf', [ReportsDashboardController::class, 'profitLossPdf'])->middleware('permission:reports.export');
     Route::get('/v1/reports/balance-sheet/pdf', [ReportsDashboardController::class, 'balanceSheetPdf'])->middleware('permission:reports.export');
     Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');

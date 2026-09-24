@@ -30,12 +30,65 @@ class ReportsDashboardController extends Controller
 {
     public function procurementDashboard(Request $request): JsonResponse
     {
+        $requests = PurchaseRequest::query()->latest('id')->limit(100)->get();
+        $orders = PurchaseOrder::query()->with('vendor:id,code,name')->latest('id')->limit(100)->get();
+        $invoices = SupplierInvoice::query()->with('vendor:id,code,name')->latest('id')->limit(100)->get();
+
+        $rfqsCount = \Illuminate\Support\Facades\Schema::hasTable('rfqs')
+            ? \Illuminate\Support\Facades\DB::table('rfqs')->count()
+            : 0;
+        $cbaCount = \Illuminate\Support\Facades\Schema::hasTable('comparative_bid_analyses')
+            ? \Illuminate\Support\Facades\DB::table('comparative_bid_analyses')->count()
+            : 0;
+        $grnCount = \Illuminate\Support\Facades\Schema::hasTable('goods_receipt_notes')
+            ? \Illuminate\Support\Facades\DB::table('goods_receipt_notes')->count()
+            : 0;
+
+        $totalPrAmount = (float) \Illuminate\Support\Facades\DB::table('purchase_request_lines')->sum('total_amount');
+        $totalPoAmount = (float) \Illuminate\Support\Facades\DB::table('purchase_order_lines')->sum('total_amount');
+
+        $pipeline = [
+            ['stage' => 'Purchase Requests (PR)', 'code' => 'PR', 'count' => PurchaseRequest::count(), 'total_amount' => $totalPrAmount, 'color' => '#3b82f6'],
+            ['stage' => 'Requests for Quotation (RFQ)', 'code' => 'RFQ', 'count' => $rfqsCount, 'total_amount' => 0, 'color' => '#6366f1'],
+            ['stage' => 'Comparative Bid Analyses (CBA)', 'code' => 'CBA', 'count' => $cbaCount, 'total_amount' => 0, 'color' => '#8b5cf6'],
+            ['stage' => 'Purchase Orders (PO)', 'code' => 'PO', 'count' => PurchaseOrder::count(), 'total_amount' => $totalPoAmount, 'color' => '#059669'],
+            ['stage' => 'Goods Receipt Notes (GRN)', 'code' => 'GRN', 'count' => $grnCount, 'total_amount' => 0, 'color' => '#10b981'],
+            ['stage' => 'Supplier Invoices', 'code' => 'INV', 'count' => SupplierInvoice::count(), 'total_amount' => (float) SupplierInvoice::sum('total_amount'), 'color' => '#d97706'],
+        ];
+
+        $supplierSpend = SupplierInvoice::query()
+            ->with('vendor:id,name,code')
+            ->selectRaw('vendor_id, COUNT(*) as invoice_count, SUM(total_amount) as total_spend, SUM(paid_amount) as total_paid')
+            ->groupBy('vendor_id')
+            ->orderByDesc('total_spend')
+            ->limit(10)
+            ->get()
+            ->map(fn ($item) => [
+                'vendor_id' => $item->vendor_id,
+                'vendor_name' => $item->vendor?->name ?? 'Unknown Vendor',
+                'vendor_code' => $item->vendor?->code ?? '-',
+                'invoice_count' => (int) $item->invoice_count,
+                'total_spend' => round((float) $item->total_spend, 2),
+                'total_paid' => round((float) $item->total_paid, 2),
+                'outstanding' => round((float) $item->total_spend - (float) $item->total_paid, 2),
+            ]);
+
         return response()->json([
             'success' => true,
+            'summary' => [
+                'total_pr' => PurchaseRequest::count(),
+                'total_po' => PurchaseOrder::count(),
+                'total_po_value' => $totalPoAmount,
+                'total_invoices' => SupplierInvoice::count(),
+                'total_invoice_value' => (float) SupplierInvoice::sum('total_amount'),
+                'total_spend' => (float) SupplierInvoice::sum('paid_amount'),
+            ],
+            'pipeline' => $pipeline,
+            'supplier_spend' => $supplierSpend,
             'procurement' => [
-                'requests' => PurchaseRequest::query()->latest('id')->limit(100)->get(),
-                'orders' => PurchaseOrder::query()->latest('id')->limit(100)->get(),
-                'invoices' => SupplierInvoice::query()->latest('id')->limit(100)->get(),
+                'requests' => $requests,
+                'orders' => $orders,
+                'invoices' => $invoices,
             ],
         ]);
     }
@@ -805,9 +858,45 @@ class ReportsDashboardController extends Controller
             ];
         })->filter(fn (array $row) => $row['debit'] != 0.0 || $row['credit'] != 0.0)->values();
 
+        // NGO Statement of Activities: Restricted vs Unrestricted
+        $revenueLines = $postedLines->filter(fn (JournalLine $l) => $l->account?->account_type === 'revenue');
+        $expenseLines = $postedLines->filter(fn (JournalLine $l) => $l->account?->account_type === 'expense');
+
+        $revUnrestricted = (float) $revenueLines->whereNull('donor_id')->sum(fn ($l) => (float) $l->credit - (float) $l->debit);
+        $revRestricted = (float) $revenueLines->whereNotNull('donor_id')->sum(fn ($l) => (float) $l->credit - (float) $l->debit);
+        $totalRevenue = $revUnrestricted + $revRestricted;
+
+        $expProgram = (float) $expenseLines->whereNotNull('project_id')->sum(fn ($l) => (float) $l->debit - (float) $l->credit);
+        $expSupport = (float) $expenseLines->whereNull('project_id')->sum(fn ($l) => (float) $l->debit - (float) $l->credit);
+        $totalExpense = $expProgram + $expSupport;
+        $changeInNetAssets = $totalRevenue - $totalExpense;
+
+        // Cash flow statement
+        $operatingCash = (float) $postedLines->filter(fn (JournalLine $l) => in_array($l->account?->account_type, ['revenue', 'expense']))
+            ->sum(fn (JournalLine $l) => $l->account?->account_type === 'revenue' ? ((float) $l->credit - (float) $l->debit) : -((float) $l->debit - (float) $l->credit));
+        $investingCash = (float) $postedLines->filter(fn (JournalLine $l) => str_starts_with((string) $l->account?->code, '1-2'))
+            ->sum(fn (JournalLine $l) => -((float) $l->debit - (float) $l->credit));
+        $financingCash = (float) $postedLines->filter(fn (JournalLine $l) => in_array($l->account?->account_type, ['liability', 'equity']))
+            ->sum(fn (JournalLine $l) => (float) $l->credit - (float) $l->debit);
+
         return [
             'totals_by_type' => $rows->groupBy('account_type')->map(fn ($items) => round((float) $items->sum('balance'), 2))->all(),
             'rows' => $rows->all(),
+            'activities' => [
+                'revenue_unrestricted' => round($revUnrestricted, 2),
+                'revenue_restricted' => round($revRestricted, 2),
+                'total_revenue' => round($totalRevenue, 2),
+                'expenses_program' => round($expProgram, 2),
+                'expenses_support' => round($expSupport, 2),
+                'total_expenses' => round($totalExpense, 2),
+                'change_in_net_assets' => round($changeInNetAssets, 2),
+            ],
+            'cash_flow' => [
+                'operating_activities' => round($operatingCash, 2),
+                'investing_activities' => round($investingCash, 2),
+                'financing_activities' => round($financingCash, 2),
+                'net_change_in_cash' => round($operatingCash + $investingCash + $financingCash, 2),
+            ],
         ];
     }
 
@@ -964,6 +1053,188 @@ class ReportsDashboardController extends Controller
             'paid_amount' => (float) ExpenseRequest::query()->sum('paid_amount'),
             'total_amount' => (float) ExpenseRequest::query()->with('lines')->get()->sum(fn (ExpenseRequest $expense) => (float) $expense->total_amount),
         ];
+    }
+
+    public function aging(Request $request): JsonResponse
+    {
+        $asOf = $request->input('as_of') ? CarbonImmutable::parse($request->input('as_of')) : CarbonImmutable::now();
+        $ap = $this->apAging($asOf);
+        $ar = $this->arAging($asOf);
+
+        return response()->json([
+            'success' => true,
+            'as_of' => $asOf->toDateString(),
+            'ap' => [
+                'total_outstanding' => round(array_sum($ap['buckets']), 2),
+                'buckets' => $ap['buckets'],
+                'rows' => $ap['rows'],
+                'by_vendor' => collect($ap['rows'])->groupBy('vendor')->map(function ($items, $vendor) {
+                    return [
+                        'vendor' => $vendor,
+                        'total' => round((float) $items->sum('outstanding'), 2),
+                        'current' => round((float) $items->where('bucket', 'current')->sum('outstanding'), 2),
+                        'bucket_1_30' => round((float) $items->where('bucket', '1_30')->sum('outstanding'), 2),
+                        'bucket_31_60' => round((float) $items->where('bucket', '31_60')->sum('outstanding'), 2),
+                        'bucket_61_90' => round((float) $items->where('bucket', '61_90')->sum('outstanding'), 2),
+                        'over_90' => round((float) $items->where('bucket', 'over_90')->sum('outstanding'), 2),
+                        'count' => $items->count(),
+                    ];
+                })->values()->sortByDesc('total')->values()->all(),
+            ],
+            'ar' => [
+                'total_outstanding' => round(array_sum($ar['buckets']), 2),
+                'buckets' => $ar['buckets'],
+                'rows' => $ar['rows'],
+                'by_customer' => collect($ar['rows'])->groupBy('customer')->map(function ($items, $customer) {
+                    return [
+                        'customer' => $customer,
+                        'total' => round((float) $items->sum('outstanding'), 2),
+                        'current' => round((float) $items->where('bucket', 'current')->sum('outstanding'), 2),
+                        'bucket_1_30' => round((float) $items->where('bucket', '1_30')->sum('outstanding'), 2),
+                        'bucket_31_60' => round((float) $items->where('bucket', '31_60')->sum('outstanding'), 2),
+                        'bucket_61_90' => round((float) $items->where('bucket', '61_90')->sum('outstanding'), 2),
+                        'over_90' => round((float) $items->where('bucket', 'over_90')->sum('outstanding'), 2),
+                        'count' => $items->count(),
+                    ];
+                })->values()->sortByDesc('total')->values()->all(),
+            ],
+        ]);
+    }
+
+    public function cashBankReport(Request $request): JsonResponse
+    {
+        $period = $this->period($request);
+        $accounts = \App\Models\Master\BankAccount::query()->with('currency:id,code')->get()->map(function ($acc) use ($period) {
+            $opening = (float) BankTransaction::query()
+                ->where('bank_account_id', $acc->id)
+                ->when($period['start'], fn ($q) => $q->whereDate('transaction_date', '<', $period['start']))
+                ->selectRaw('COALESCE(SUM(debit - credit), 0) as balance')
+                ->value('balance');
+            $periodDebits = (float) BankTransaction::query()
+                ->where('bank_account_id', $acc->id)
+                ->when($period['start'], fn ($q) => $q->whereDate('transaction_date', '>=', $period['start']))
+                ->when($period['end'], fn ($q) => $q->whereDate('transaction_date', '<=', $period['end']))
+                ->sum('debit');
+            $periodCredits = (float) BankTransaction::query()
+                ->where('bank_account_id', $acc->id)
+                ->when($period['start'], fn ($q) => $q->whereDate('transaction_date', '>=', $period['start']))
+                ->when($period['end'], fn ($q) => $q->whereDate('transaction_date', '<=', $period['end']))
+                ->sum('credit');
+            $closing = $opening + $periodDebits - $periodCredits;
+            $unreconciled = BankTransaction::query()
+                ->where('bank_account_id', $acc->id)
+                ->whereNotIn('status', ['reconciled', 'matched', 'excluded'])
+                ->count();
+
+            return [
+                'id' => $acc->id,
+                'bank_name' => $acc->bank_name,
+                'account_name' => $acc->account_name,
+                'account_number' => $acc->account_number,
+                'currency' => $acc->currency?->code ?? 'IDR',
+                'is_active' => (bool) $acc->is_active,
+                'opening_balance' => round($opening, 2),
+                'total_inflow' => round($periodDebits, 2),
+                'total_outflow' => round($periodCredits, 2),
+                'closing_balance' => round($closing, 2),
+                'unreconciled_transactions' => $unreconciled,
+            ];
+        });
+
+        $recentTransactions = BankTransaction::query()
+            ->with('bankAccount:id,bank_name,account_number')
+            ->when($period['start'], fn ($q) => $q->whereDate('transaction_date', '>=', $period['start']))
+            ->when($period['end'], fn ($q) => $q->whereDate('transaction_date', '<=', $period['end']))
+            ->latest('transaction_date')
+            ->latest('id')
+            ->take(50)
+            ->get()
+            ->map(fn ($tx) => [
+                'id' => $tx->id,
+                'date' => $tx->transaction_date?->toDateString(),
+                'bank' => $tx->bankAccount?->bank_name,
+                'reference' => $tx->reference,
+                'description' => $tx->description,
+                'debit' => (float) $tx->debit,
+                'credit' => (float) $tx->credit,
+                'status' => $tx->status,
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'period' => $period['label'],
+            'total_liquidity' => round($accounts->sum('closing_balance'), 2),
+            'total_inflow' => round($accounts->sum('total_inflow'), 2),
+            'total_outflow' => round($accounts->sum('total_outflow'), 2),
+            'unreconciled_count' => $accounts->sum('unreconciled_transactions'),
+            'accounts' => $accounts,
+            'recent_transactions' => $recentTransactions,
+        ]);
+    }
+
+    public function drilldown(Request $request): JsonResponse
+    {
+        $accountId = $request->input('account_id');
+        $projectId = $request->input('project_id');
+        $donorId = $request->input('donor_id');
+        $budgetLineId = $request->input('budget_line_id');
+        $startDate = $request->input('start_date');
+        $endDate = $request->input('end_date');
+
+        $query = JournalLine::query()
+            ->with([
+                'journal:id,journal_number,journal_date,status,reference,description',
+                'account:id,code,name,account_type',
+                'donor:id,code,name',
+                'project:id,code,name',
+                'department:id,name',
+            ])
+            ->whereHas('journal', function (Builder $q) use ($startDate, $endDate) {
+                $q->where('status', 'posted')
+                    ->when($startDate, fn ($inner) => $inner->whereDate('journal_date', '>=', $startDate))
+                    ->when($endDate, fn ($inner) => $inner->whereDate('journal_date', '<=', $endDate));
+            });
+
+        if ($accountId) {
+            $query->where('account_id', $accountId);
+        }
+        if ($projectId) {
+            $query->where('project_id', $projectId);
+        }
+        if ($donorId) {
+            $query->where('donor_id', $donorId);
+        }
+        if ($budgetLineId) {
+            $query->where('budget_line_id', $budgetLineId);
+        }
+
+        $lines = $query->orderByDesc('id')->take(200)->get()->map(function (JournalLine $line) {
+            return [
+                'id' => $line->id,
+                'journal_id' => $line->journal_id,
+                'journal_number' => $line->journal?->journal_number,
+                'journal_date' => $line->journal?->journal_date?->toDateString(),
+                'reference' => $line->journal?->reference ?: $line->journal?->journal_number,
+                'description' => $line->line_description ?: $line->journal?->description,
+                'account_code' => $line->account?->code,
+                'account_name' => $line->account?->name,
+                'account_type' => $line->account?->account_type,
+                'project_name' => $line->project?->name,
+                'donor_name' => $line->donor?->name,
+                'debit' => round((float) $line->debit, 2),
+                'credit' => round((float) $line->credit, 2),
+                'net' => round((float) $line->debit - (float) $line->credit, 2),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'count' => $lines->count(),
+            'total_debit' => round($lines->sum('debit'), 2),
+            'total_credit' => round($lines->sum('credit'), 2),
+            'net_total' => round($lines->sum('net'), 2),
+            'rows' => $lines,
+        ]);
     }
 }
 
