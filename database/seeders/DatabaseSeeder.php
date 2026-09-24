@@ -349,6 +349,7 @@ class DatabaseSeeder extends Seeder
             ]],
             ['title' => 'Taxes', 'slug' => 'taxes', 'path' => '/taxes', 'icon' => 'calculator', 'sort_order' => 50, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'taxes-dashboard', 'path' => '/taxes/dashboard', 'sort_order' => 501],
+                ['title' => 'Tax Setup', 'slug' => 'taxes-setup', 'path' => '/taxes/setup', 'sort_order' => 500],
                 ['title' => 'Tax Transactions', 'slug' => 'taxes-transactions', 'path' => '/taxes/transactions', 'sort_order' => 502],
                 ['title' => 'PPh', 'slug' => 'taxes-pph', 'path' => '/taxes/pph', 'sort_order' => 503],
                 ['title' => 'VAT / PPN', 'slug' => 'taxes-vat', 'path' => '/taxes/vat', 'sort_order' => 504],

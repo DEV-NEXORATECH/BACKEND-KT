@@ -191,6 +191,7 @@ class RoleSeeder extends Seeder
             ]],
             ['title' => 'Taxes', 'slug' => 'taxes', 'path' => '/taxes', 'icon' => 'calculator', 'sort_order' => 50, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'taxes-dashboard', 'path' => '/taxes/dashboard', 'sort_order' => 501],
+                ['title' => 'Tax Setup', 'slug' => 'taxes-setup', 'path' => '/taxes/setup', 'sort_order' => 500],
                 ['title' => 'Tax Transactions', 'slug' => 'taxes-transactions', 'path' => '/taxes/transactions', 'sort_order' => 502],
                 ['title' => 'PPh', 'slug' => 'taxes-pph', 'path' => '/taxes/pph', 'sort_order' => 503],
                 ['title' => 'VAT / PPN', 'slug' => 'taxes-vat', 'path' => '/taxes/vat', 'sort_order' => 504],
@@ -294,7 +295,7 @@ class RoleSeeder extends Seeder
                 'procurement', 'procurement-dashboard', 'procurement-purchase-request', 'procurement-rfq-cba', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-contracts', 'procurement-scn', 'procurement-goods-receipts', 'procurement-supplier-invoices', 'procurement-waivers',
             ],
             'Taxes' => [
-                'taxes', 'taxes-dashboard', 'taxes-transactions', 'taxes-pph', 'taxes-vat', 'taxes-ebupot', 'taxes-efaktur', 'taxes-calendar', 'taxes-reports', 'tax-calculator',
+                'taxes', 'taxes-dashboard', 'taxes-setup', 'taxes-transactions', 'taxes-pph', 'taxes-vat', 'taxes-ebupot', 'taxes-efaktur', 'taxes-calendar', 'taxes-reports', 'tax-calculator',
             ],
             'Administration' => [
                 'administration', 'admin-staff', 'admin-organization', 'admin-department', 'admin-documents', 'admin-contracts', 'admin-audit-logs',

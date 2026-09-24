@@ -7,6 +7,7 @@ use App\Models\Accounting\Journal;
 use App\Models\Expense\ExpenseRequest;
 use App\Models\Finance\BankTransaction;
 use App\Models\Finance\Payment;
+use App\Models\Finance\TaxTransaction;
 use App\Models\Master\BankAccount;
 use App\Models\Notification;
 use App\Models\Master\ChartOfAccount;
@@ -40,6 +41,46 @@ class ExpenseRequestController extends Controller
             ->get();
 
         return response()->json(['success' => true, 'data' => $items->map(fn (ExpenseRequest $expense) => $this->format($expense))]);
+    }
+
+    public function show(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    {
+        $this->authorizeScope($request, $expenseRequest);
+
+        return response()->json(['success' => true, 'data' => $this->format($expenseRequest->load($this->with))]);
+    }
+
+    public function dashboard(Request $request): JsonResponse
+    {
+        $query = ExpenseRequest::query()
+            ->when(! $this->canAccessAll($request), fn ($builder) => $builder->where('requester_id', $request->user()->id))
+            ->when($request->filled('donor_id'), fn ($builder) => $builder->where('donor_id', $request->integer('donor_id')))
+            ->when($request->filled('project_id'), fn ($builder) => $builder->where('project_id', $request->integer('project_id')))
+            ->when($request->filled('start_date'), fn ($builder) => $builder->whereDate('request_date', '>=', $request->date('start_date')))
+            ->when($request->filled('end_date'), fn ($builder) => $builder->whereDate('request_date', '<=', $request->date('end_date')));
+
+        $amount = fn ($builder) => (float) $builder->withSum('lines', 'amount')->get()->sum('lines_sum_amount');
+        $cashAdvances = (clone $query)->where('expense_type', 'cash_advance');
+        $openAdvances = (clone $cashAdvances)->where(function ($builder) {
+            $builder->whereNull('settlement_status')->orWhere('settlement_status', '!=', 'settled');
+        });
+        $overdue = (clone $openAdvances)->whereIn('status', ['posted', 'paid'])
+            ->whereNotNull('settlement_due_date')->whereDate('settlement_due_date', '<', now()->toDateString());
+
+        return response()->json([
+            'success' => true,
+            'filters' => $request->only(['donor_id', 'project_id', 'start_date', 'end_date']),
+            'summary' => [
+                'total_requests' => (clone $query)->count(),
+                'pending_approval' => (clone $query)->whereIn('status', ['submitted', 'verified'])->count(),
+                'total_spending' => $amount((clone $query)->whereIn('status', ['posted', 'paid'])),
+                'outstanding_advances' => $amount($openAdvances),
+                'overdue_settlement' => $overdue->count(),
+                'overdue_settlement_amount' => $amount($overdue),
+                'reimbursement_requests' => (clone $query)->where('expense_type', 'reimbursement')->count(),
+                'cash_advance_requests' => $cashAdvances->count(),
+            ],
+        ]);
     }
 
     public function store(Request $request): JsonResponse
@@ -259,6 +300,29 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
             $expenseRequest->update(['status' => 'posted', 'journal_id' => $journal->id]);
 
+            if ($expenseRequest->tax_id) {
+                $tax = $expenseRequest->tax;
+                $taxableAmount = (float) $expenseRequest->total_amount;
+                $taxAmount = round($taxableAmount * ((float) $tax->rate_percent / 100), 2);
+                TaxTransaction::firstOrCreate(
+                    ['source_type' => ExpenseRequest::class, 'source_id' => $expenseRequest->id],
+                    [
+                        'tax_id' => $tax->id,
+                        'transaction_type' => 'expense',
+                        'reference' => $expenseRequest->request_number,
+                        'transaction_date' => $expenseRequest->request_date,
+                        'direction' => 'purchase',
+                        'taxable_amount' => $taxableAmount,
+                        'tax_rate' => $tax->rate_percent,
+                        'tax_amount' => $taxAmount,
+                        'net_amount' => $taxableAmount,
+                        'gross_amount' => round($taxableAmount + $taxAmount, 2),
+                        'status' => 'draft',
+                        'created_by' => request()->user()->id,
+                    ]
+                );
+            }
+
             app(\App\Services\Budget\BudgetMonitoringService::class)
                 ->releaseForSource(ExpenseRequest::class, $expenseRequest->id, 'converted', request()->user()->id);
 
@@ -379,6 +443,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'attachments.*' => ['string', 'max:255'],
             'expense_type' => ['required', 'in:reimbursement,supplier_payment,loan,cash_advance,settlement_advance'],
             'request_date' => ['required', 'date'],
+            'settlement_due_date' => ['nullable', 'date', 'after_or_equal:request_date'],
             'currency_code' => ['nullable', 'string', 'max:10'],
             'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
             'description' => ['required', 'string'],
@@ -458,6 +523,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'outstanding_amount' => max(0, round((float) $expense->total_amount - (float) $expense->paid_amount, 2)),
             'settled_amount' => $expense->settled_amount,
             'settlement_status' => $expense->settlement_status,
+            'settlement_due_date' => $expense->settlement_due_date?->toDateString(),
             'decision_notes' => $expense->decision_notes,
             'submitted_at' => $expense->submitted_at?->toISOString(),
             'rejected_at' => $expense->rejected_at?->toISOString(),

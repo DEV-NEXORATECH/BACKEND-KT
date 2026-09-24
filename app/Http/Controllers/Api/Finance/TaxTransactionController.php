@@ -51,7 +51,16 @@ class TaxTransactionController extends Controller
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
             ->when($request->filled('tax_id'), fn (Builder $query) => $query->where('tax_id', $request->integer('tax_id')))
-            ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')));
+            ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
+            ->when($request->filled('tax_type'), fn (Builder $query) => $query->whereHas('tax', fn (Builder $taxQuery) => $taxQuery->where('tax_type', $request->string('tax_type'))))
+            ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
+            ->when($request->filled('q'), fn (Builder $query) => $query->where(function (Builder $search) use ($request) {
+                $term = '%'.$request->string('q').'%';
+                $search->where('reference', 'like', $term)->orWhere('npwp', 'like', $term)->orWhere('e_faktur_reference', 'like', $term)->orWhere('e_bupot_reference', 'like', $term);
+            }));
+            
+        $query->when($request->filled('source_type'), fn (Builder $builder) => $builder->where('source_type', $request->string('source_type')))
+            ->when($request->filled('source_id'), fn (Builder $builder) => $builder->where('source_id', $request->integer('source_id')));
 
         app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, []);
 
@@ -67,6 +76,8 @@ class TaxTransactionController extends Controller
         $data = $request->validate([
             'tax_id' => ['required', 'integer', 'exists:taxes,id'],
             'transaction_type' => ['nullable', 'string', 'max:40'],
+            'source_type' => ['nullable', 'string', 'max:120'],
+            'source_id' => ['nullable', 'integer'],
             'reference' => ['nullable', 'string', 'max:100'],
             'transaction_date' => ['required', 'date'],
             'direction' => ['required', 'in:sales,purchase,withholding_in,withholding_out'],
@@ -88,6 +99,8 @@ class TaxTransactionController extends Controller
         $item = TaxTransaction::create([
             'tax_id' => $tax->id,
             'transaction_type' => $data['transaction_type'] ?? 'manual',
+            'source_type' => $data['source_type'] ?? null,
+            'source_id' => $data['source_id'] ?? null,
             'reference' => $data['reference'] ?? null,
             'transaction_date' => $data['transaction_date'],
             'direction' => $data['direction'],
@@ -149,6 +162,7 @@ class TaxTransactionController extends Controller
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
             ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
+            ->when($request->filled('tax_type'), fn (Builder $query) => $query->whereHas('tax', fn (Builder $taxQuery) => $taxQuery->where('tax_type', $request->string('tax_type'))))
             ->where('status', 'reported');
 
         app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, []);
@@ -209,6 +223,8 @@ class TaxTransactionController extends Controller
             ->with('tax:id,code,name,tax_type,rate_percent')
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
+            ->when($request->filled('tax_type'), fn (Builder $query) => $query->whereHas('tax', fn (Builder $taxQuery) => $taxQuery->where('tax_type', $request->string('tax_type'))))
+            ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
             ->where('status', '!=', 'cancelled');
 
         app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, []);
@@ -233,12 +249,20 @@ class TaxTransactionController extends Controller
             ])
             ->values();
 
+        $vatInput = (float) $items->filter(fn (TaxTransaction $item) => strtoupper((string) $item->tax?->tax_type) === 'PPN' && $item->direction === 'purchase')->sum('tax_amount');
+        $vatOutput = (float) $items->filter(fn (TaxTransaction $item) => strtoupper((string) $item->tax?->tax_type) === 'PPN' && $item->direction === 'sales')->sum('tax_amount');
+        $withholdingPayable = (float) $items->whereIn('direction', ['withholding_out', 'sales'])->sum('tax_amount');
+
         return response()->json([
             'success' => true,
             'totals' => [
                 'taxable_amount' => round((float) $items->sum('taxable_amount'), 2),
                 'tax_amount' => round((float) $items->sum('tax_amount'), 2),
                 'transactions' => $items->count(),
+                'vat_input' => round($vatInput, 2),
+                'vat_output' => round($vatOutput, 2),
+                'vat_payable' => round(max(0, $vatOutput - $vatInput), 2),
+                'withholding_payable' => round($withholdingPayable, 2),
             ],
             'by_type' => $byType,
             'by_direction' => $byDirection,
@@ -334,6 +358,8 @@ class TaxTransactionController extends Controller
             'id' => $item->id,
             'tax' => $item->tax ? ['id' => $item->tax->id, 'code' => $item->tax->code, 'name' => $item->tax->name, 'tax_type' => $item->tax->tax_type, 'rate_percent' => $item->tax->rate_percent] : null,
             'transaction_type' => $item->transaction_type,
+            'source_type' => $item->source_type,
+            'source_id' => $item->source_id,
             'reference' => $item->reference,
             'transaction_date' => $item->transaction_date?->toDateString(),
             'direction' => $item->direction,

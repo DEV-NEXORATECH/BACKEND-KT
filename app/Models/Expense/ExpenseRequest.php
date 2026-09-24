@@ -22,9 +22,9 @@ class ExpenseRequest extends Model
 {
     use SoftDeletes, AuditTrailTrait;
 
-    protected $fillable = ['request_number', 'external_request_id', 'requester_id', 'donor_id', 'grant_agreement_id', 'program_id', 'project_id', 'department_id', 'funding_source_id', 'document_type_id', 'tax_id', 'expense_type', 'request_date', 'currency_code', 'exchange_rate', 'description', 'status', 'journal_id', 'parent_expense_request_id', 'paid_amount', 'settled_amount', 'settlement_status', 'submitted_by', 'submitted_at', 'verified_by', 'verified_at', 'approved_by', 'approved_at', 'rejected_by', 'rejected_at', 'decision_notes', 'attachments', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['request_number', 'external_request_id', 'requester_id', 'donor_id', 'grant_agreement_id', 'program_id', 'project_id', 'department_id', 'funding_source_id', 'document_type_id', 'tax_id', 'expense_type', 'request_date', 'currency_code', 'exchange_rate', 'description', 'status', 'journal_id', 'parent_expense_request_id', 'paid_amount', 'settled_amount', 'settlement_status', 'settlement_due_date', 'submitted_by', 'submitted_at', 'verified_by', 'verified_at', 'approved_by', 'approved_at', 'rejected_by', 'rejected_at', 'decision_notes', 'attachments', 'created_by', 'updated_by', 'deleted_by'];
 
-    protected $casts = ['request_date' => 'date', 'exchange_rate' => 'decimal:6', 'paid_amount' => 'decimal:2', 'settled_amount' => 'decimal:2', 'submitted_at' => 'datetime', 'approved_at' => 'datetime', 'rejected_at' => 'datetime', 'attachments' => 'array'];
+    protected $casts = ['request_date' => 'date', 'settlement_due_date' => 'date', 'exchange_rate' => 'decimal:6', 'paid_amount' => 'decimal:2', 'settled_amount' => 'decimal:2', 'submitted_at' => 'datetime', 'approved_at' => 'datetime', 'rejected_at' => 'datetime', 'attachments' => 'array'];
 
     public function lines(): HasMany { return $this->hasMany(ExpenseRequestLine::class)->orderBy('line_order'); }
     public function requester(): BelongsTo { return $this->belongsTo(User::class, 'requester_id'); }
