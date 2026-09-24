@@ -240,6 +240,7 @@ class ReportsDashboardController extends Controller
 
         $donors = \App\Models\Master\Donor::query()->with(['grantAgreements'])->get();
         $grants = \App\Models\Master\GrantAgreement::query()->with(['donor', 'currency', 'projects'])->get();
+        $grantDeadlines = GrantReportingDeadline::query()->whereIn('grant_agreement_id', $grants->pluck('id'))->orderBy('due_date')->get()->groupBy('grant_agreement_id');
 
         $budgetRows = $budgetService->summary($request->only(['project_id', 'grant_agreement_id', 'donor_id']));
         $postedLines = $this->postedLines($period['start'], $period['end']);
@@ -267,7 +268,7 @@ class ReportsDashboardController extends Controller
             ];
         });
 
-        $grantSummaries = $grants->map(function ($grant) use ($budgetRows) {
+        $grantSummaries = $grants->map(function ($grant) use ($budgetRows, $grantDeadlines) {
             $grantLines = collect($budgetRows)->filter(fn ($r) => ($r['grant_agreement']['id'] ?? null) == $grant->id);
             $approved = (float) $grantLines->sum('approved_budget');
             $actual = (float) $grantLines->sum('actual');
@@ -283,6 +284,7 @@ class ReportsDashboardController extends Controller
                 'start_date' => $grant->start_date?->toDateString(),
                 'end_date' => $grant->end_date?->toDateString(),
                 'approved_budget' => round($grantTotal, 2),
+                'grant_value' => round((float) $grant->grant_value, 2),
                 'actual' => round($actual, 2),
                 'committed' => round($committed, 2),
                 'available' => round($available, 2),
@@ -290,8 +292,12 @@ class ReportsDashboardController extends Controller
                     ? round((($actual + $committed) / $grantTotal) * 100, 2)
                     : 0,
                 'status' => $grant->status ?? 'active',
+                'reporting_deadline' => $grantDeadlines->get($grant->id)?->first()?->due_date?->toDateString(),
             ];
         });
+
+        $endingSoon = $grantSummaries->filter(fn (array $grant) => $grant['end_date'] && $grant['end_date'] >= now()->toDateString() && $grant['end_date'] <= now()->addDays(60)->toDateString())->count();
+        $reportingSoon = $grantSummaries->filter(fn (array $grant) => $grant['reporting_deadline'] && $grant['reporting_deadline'] >= now()->toDateString() && $grant['reporting_deadline'] <= now()->addDays(60)->toDateString())->count();
 
         return response()->json([
             'success' => true,
@@ -300,10 +306,13 @@ class ReportsDashboardController extends Controller
                 'total_donors' => $donors->count(),
                 'total_grants' => $grants->count(),
                 'total_budget' => $totals['approved_budget'],
+                'total_grant_value' => round((float) $grants->sum('grant_value'), 2),
                 'total_actual' => $totals['actual'],
                 'total_committed' => $totals['committed'],
                 'total_available' => $totals['available'],
                 'overall_utilization' => $totals['utilization_percent'],
+                'grants_ending_soon' => $endingSoon,
+                'reporting_deadlines' => $reportingSoon,
             ],
             'donors' => $donorSummaries,
             'grants' => $grantSummaries,
@@ -425,8 +434,9 @@ class ReportsDashboardController extends Controller
         }
 
         $projectId = $request->input('project_id');
-        $budgetRows = $budgetService->summary($request->only(['project_id', 'grant_agreement_id', 'budget_category_id']));
-        $postedLines = $this->postedLines($period['start'], $period['end'], $projectId);
+        $budgetLineId = $request->input('budget_line_id');
+        $budgetRows = $budgetService->summary($request->only(['project_id', 'grant_agreement_id', 'budget_category_id', 'budget_line_id']));
+        $postedLines = $this->postedLines($period['start'], $period['end'], $projectId, $budgetLineId);
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
 
         return response()->json([
@@ -456,7 +466,9 @@ class ReportsDashboardController extends Controller
             'cash_bank' => $this->cashBank($period['start'], $period['end']),
             'procurement' => $this->procurementReport(),
             'expense' => $this->expenseReport(),
-            'recent_transactions' => $this->recentTransactions($period['start'], $period['end']),
+            'recent_transactions' => $budgetLineId
+                ? $postedLines->sortByDesc(fn (JournalLine $line) => $line->journal?->journal_date)->take(100)->map(fn (JournalLine $line) => ['date' => $line->journal?->journal_date?->toDateString(), 'reference' => $line->journal?->reference ?: $line->journal?->journal_number, 'description' => $line->line_description ?: $line->journal?->description, 'status' => $line->journal?->status, 'amount' => round((float) $line->debit - (float) $line->credit, 2)])->values()->all()
+                : $this->recentTransactions($period['start'], $period['end']),
         ]);
     }
 
@@ -615,7 +627,7 @@ class ReportsDashboardController extends Controller
         return "{$start} s.d. {$end}";
     }
 
-    private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null)
+    private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null, ?string $budgetLineId = null)
     {
         return JournalLine::query()
             ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,grant_no,agreement_name'])
@@ -625,6 +637,7 @@ class ReportsDashboardController extends Controller
                     ->when($end, fn (Builder $inner) => $inner->whereDate('journal_date', '<=', $end));
             })
             ->when($projectId, fn (Builder $query) => $query->where('project_id', $projectId))
+            ->when($budgetLineId, fn (Builder $query) => $query->where('budget_line_id', $budgetLineId))
             ->get();
     }
 

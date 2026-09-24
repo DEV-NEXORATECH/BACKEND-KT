@@ -63,6 +63,7 @@ class BudgetMonitoringController extends Controller
                 'start_date' => $activity->start_date?->toDateString(),
                 'end_date' => $activity->end_date?->toDateString(),
                 'target_output' => $activity->target_output,
+                'budget_holder' => $activity->project?->manager_name,
             ])->values();
 
         $logframes = ProjectLogframe::query()

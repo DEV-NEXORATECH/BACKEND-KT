@@ -87,6 +87,7 @@ class BudgetMonitoringService
                     'id' => $line->project->id,
                     'code' => $line->project->code,
                     'name' => $line->project->name,
+                    'budget_holder' => $line->project->manager_name,
                 ] : null,
                 'budget_category' => $line->budgetCategory ? [
                     'id' => $line->budgetCategory->id,
