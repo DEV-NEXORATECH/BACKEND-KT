@@ -443,6 +443,7 @@ class DatabaseSeeder extends Seeder
                 'name' => 'Admin Kaoem Telapak',
                 'role_id' => $roles->get('super-admin')?->id,
                 'password' => Hash::make('password123'),
+                'must_change_password' => true,
             ],
         );
 
@@ -454,6 +455,7 @@ class DatabaseSeeder extends Seeder
         $this->call(DepartmentSeeder::class);
         $this->call(MasterMenuSeeder::class);
         $this->call(RoleSeeder::class);
+        $this->call(UserSeeder::class);
 
         // RoleSeeder supports standalone deployments, but DatabaseSeeder owns
         // the canonical navigation. Re-apply it last so paths/titles stay in sync.
