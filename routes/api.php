@@ -8,6 +8,7 @@ use App\Http\Controllers\RoleMenuController;
 use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\Api\Accounting\JournalController;
+use App\Http\Controllers\Api\Accounting\AccountingDashboardController;
 use App\Http\Controllers\Api\Accounting\GeneralLedgerController;
 use App\Http\Controllers\Api\Accounting\RecurringJournalController;
 use App\Http\Controllers\Api\Budget\BudgetMonitoringController;
@@ -172,6 +173,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1/accounting')->group(function () {
+        Route::get('dashboard', [AccountingDashboardController::class, 'index'])->middleware('permission:accounting.view');
         Route::get('general-ledger', [GeneralLedgerController::class, 'index'])->middleware('permission:accounting.view');
         Route::post('recurring-journals/{recurringJournal}/generate', [RecurringJournalController::class, 'generate'])
             ->middleware('permission:accounting.journal.create');

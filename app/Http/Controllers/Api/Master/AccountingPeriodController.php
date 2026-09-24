@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Master;
 
 use App\Models\Master\AccountingPeriod;
+use App\Models\Accounting\Journal;
 use App\Http\Requests\Master\StoreAccountingPeriodRequest;
 use App\Http\Requests\Master\UpdateAccountingPeriodRequest;
 use App\Http\Resources\Master\AccountingPeriodResource;
@@ -20,6 +21,10 @@ class AccountingPeriodController extends BaseMasterController
     public function close(Request $request, $id)
     {
         $period = AccountingPeriod::findOrFail($id);
+        $hasUnposted = Journal::query()->whereBetween('journal_date', [$period->start_date, $period->end_date])->whereIn('status', ['draft', 'submitted', 'reviewed'])->exists();
+        if ($hasUnposted) {
+            return response()->json(['success' => false, 'message' => 'Periode tidak dapat ditutup karena masih ada jurnal draft, submitted, atau reviewed.'], 422);
+        }
         $period->update(['status' => 'closed', 'is_active' => false]);
         return response()->json(['success' => true, 'message' => 'Accounting period berhasil ditutup.', 'data' => $period->fresh()]);
     }
