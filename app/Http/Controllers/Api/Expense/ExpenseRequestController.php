@@ -131,7 +131,7 @@ class ExpenseRequestController extends Controller
         }
 
         $data = $request->validate([
-            'file' => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,xls,xlsx,doc,docx'],
+            'file' => ['required', 'file', 'max:20480', 'mimes:pdf,png,jpg,jpeg,webp,gif,svg,doc,docx,xls,xlsx,csv,ppt,pptx,txt,zip,rar,7z'],
         ]);
         $file = $data['file'];
         $extension = strtolower($file->getClientOriginalExtension());
