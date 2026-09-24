@@ -103,11 +103,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me/profile', [ProfileController::class, 'show']);
     Route::put('/me/profile', [ProfileController::class, 'update']);
     Route::put('/me/password', [ProfileController::class, 'changePassword']);
+    Route::get('/users', [UserSecurityController::class, 'users'])->middleware('permission:user.manage');
     Route::get('/me/sessions', [UserSecurityController::class, 'sessions']);
     Route::delete('/me/sessions/{tokenId}', [UserSecurityController::class, 'revokeSession']);
     Route::get('/users/{user}/sessions', [UserSecurityController::class, 'sessions'])->middleware('permission:user.manage');
     Route::delete('/users/{user}/sessions/{tokenId}', [UserSecurityController::class, 'revokeSession'])->middleware('permission:user.manage');
     Route::put('/users/{user}/password', [UserSecurityController::class, 'resetPassword'])->middleware('permission:user.manage');
+    Route::post('/users/{user}/password/generate', [UserSecurityController::class, 'generatePassword'])->middleware('permission:user.manage');
     Route::put('/users/{user}/active', [UserSecurityController::class, 'setActive'])->middleware('permission:user.manage');
     Route::get('/v1/settings', [SystemSettingsController::class, 'show'])->middleware('permission:settings.manage');
     Route::put('/v1/settings', [SystemSettingsController::class, 'update'])->middleware('permission:settings.manage');

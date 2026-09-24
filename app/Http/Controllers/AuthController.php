@@ -48,6 +48,7 @@ class AuthController extends Controller
             'message' => 'Login berhasil.',
             'token' => $token,
             'token_type' => 'Bearer',
+            'must_change_password' => (bool) $user->must_change_password,
             ...$rbacPayload->build($user),
         ]);
     }

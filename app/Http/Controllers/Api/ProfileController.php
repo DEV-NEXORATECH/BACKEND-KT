@@ -50,7 +50,7 @@ class ProfileController extends Controller
         $data = $request->validate(['current_password' => ['required', 'string'], 'new_password' => ['required', 'string', 'min:8', 'confirmed']]);
         $user = $request->user();
         if (! Hash::check($data['current_password'], $user->password)) throw ValidationException::withMessages(['current_password' => ['Password saat ini tidak sesuai.']]);
-        $user->forceFill(['password' => Hash::make($data['new_password'])])->save();
+        $user->forceFill(['password' => Hash::make($data['new_password']), 'must_change_password' => false])->save();
         if ($currentTokenId = $request->user()->currentAccessToken()?->id) {
             $request->user()->tokens()->whereKeyNot($currentTokenId)->delete();
         }
@@ -65,6 +65,7 @@ class ProfileController extends Controller
         return [
             'name' => $user->name,
             'email' => $user->email,
+            'must_change_password' => (bool) $user->must_change_password,
             'role' => $user->role?->name,
             'employee' => $employee ? [
                 'id_number' => $employee->employee_id_number,

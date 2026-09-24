@@ -21,6 +21,7 @@ class RbacPayloadBuilder
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'must_change_password' => (bool) $user->must_change_password,
             ],
             'role' => $this->formatRole($user),
             'roles' => $user->role ? [$this->formatRole($user)] : [],

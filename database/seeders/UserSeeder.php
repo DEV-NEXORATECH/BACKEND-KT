@@ -198,6 +198,7 @@ class UserSeeder extends Seeder
                     'name' => $userData['name'],
                     'role_id' => $role?->id,
                     'password' => Hash::make($userData['password']),
+                    'must_change_password' => true,
                 ]
             );
         }
