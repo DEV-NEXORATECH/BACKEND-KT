@@ -362,6 +362,24 @@ class ReportsDashboardController extends Controller
             ])->sortByDesc('date')->values()->take(100)->all();
 
         $statusCounts = collect($deadlines)->countBy('status')->all();
+        $bankBalances = BankTransaction::query()
+            ->selectRaw('bank_account_id, COALESCE(SUM(debit - credit), 0) as balance')
+            ->groupBy('bank_account_id')
+            ->pluck('balance', 'bank_account_id');
+        $linkedBanking = \App\Models\Master\GrantAgreement::query()
+            ->with(['bankAccount:id,bank_name,account_number,currency_id', 'currency:id,code'])
+            ->when($request->filled('grant_agreement_id'), fn (Builder $q) => $q->whereKey($request->integer('grant_agreement_id')))
+            ->whereNotNull('bank_account_id')
+            ->get()
+            ->map(fn ($grant) => [
+                'grant' => $grant->grant_no,
+                'grant_name' => $grant->agreement_name,
+                'bank_account_id' => $grant->bank_account_id,
+                'bank_name' => $grant->bankAccount?->bank_name,
+                'account_number' => $grant->bankAccount?->account_number,
+                'currency' => $grant->currency?->code,
+                'balance' => round((float) ($bankBalances[$grant->bank_account_id] ?? 0), 2),
+            ])->values()->all();
         return response()->json([
             'success' => true,
             'period' => $period['label'],
@@ -385,6 +403,7 @@ class ReportsDashboardController extends Controller
             ])->values()->take(20)->all(),
             'expenditures' => $expenditures,
             'deadlines' => $deadlines,
+            'banking' => $linkedBanking,
         ]);
     }
 

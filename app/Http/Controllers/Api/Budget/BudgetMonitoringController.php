@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api\Budget;
 
 use App\Http\Controllers\Controller;
 use App\Models\Master\BudgetLine;
+use App\Models\Master\Activity;
+use App\Models\Master\GrantReportingDeadline;
+use App\Models\Master\ProjectLogframe;
 use App\Services\Budget\BudgetMonitoringService;
 use App\Services\Rbac\DataScopeService;
 use Illuminate\Database\Eloquent\Builder;
@@ -44,11 +47,57 @@ class BudgetMonitoringController extends Controller
             ? round((($totals['actual'] + $totals['committed']) / $totals['approved_budget']) * 100, 2)
             : 0;
 
+        $activities = Activity::query()
+            ->with('project:id,code,name')
+            ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where('project_id', $id))
+            ->where('is_active', true)
+            ->orderBy('start_date')
+            ->get()
+            ->map(fn (Activity $activity) => [
+                'id' => $activity->id,
+                'code' => $activity->code,
+                'name' => $activity->name,
+                'project' => $activity->project?->name,
+                'project_code' => $activity->project?->code,
+                'pic_name' => $activity->pic_name,
+                'start_date' => $activity->start_date?->toDateString(),
+                'end_date' => $activity->end_date?->toDateString(),
+                'target_output' => $activity->target_output,
+            ])->values();
+
+        $logframes = ProjectLogframe::query()
+            ->with('project:id,code,name')
+            ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where('project_id', $id))
+            ->where('is_active', true)
+            ->latest('id')
+            ->get()
+            ->map(fn (ProjectLogframe $item) => [
+                'id' => $item->id,
+                'project' => $item->project?->name,
+                'project_code' => $item->project?->code,
+                'level' => $item->level,
+                'code' => $item->code,
+                'description' => $item->description,
+                'indicator' => $item->indicator,
+                'baseline' => $item->baseline,
+                'target' => $item->target,
+                'actual' => $item->actual,
+                'unit' => $item->unit,
+            ])->values();
+
+        $upcomingEvents = collect($activities)->filter(fn (array $activity) => $activity['start_date'] && $activity['start_date'] >= now()->toDateString())->take(20)->values()
+            ->merge(GrantReportingDeadline::query()->with('grantAgreement:id,grant_no,agreement_name')->whereDate('due_date', '>=', now()->toDateString())->orderBy('due_date')->limit(20)->get()->map(fn ($deadline) => [
+                'type' => 'grant_reporting', 'code' => $deadline->report_type, 'name' => $deadline->grantAgreement?->grant_no ?: $deadline->grantAgreement?->agreement_name, 'start_date' => $deadline->due_date?->toDateString(), 'status' => $deadline->status,
+            ]))->values();
+
         return response()->json([
             'success' => true,
             'message' => 'Budget monitoring berhasil dimuat.',
             'data' => $items->values(),
             'totals' => $totals,
+            'activities' => $activities,
+            'upcoming_events' => $upcomingEvents,
+            'logframes' => $logframes,
         ]);
     }
 
