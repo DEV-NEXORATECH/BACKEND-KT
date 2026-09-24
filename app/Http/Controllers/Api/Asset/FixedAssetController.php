@@ -231,7 +231,7 @@ class FixedAssetController extends Controller
             $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Accumulated depreciation', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
 
             $accumulated = round((float) $fixedAsset->accumulated_depreciation + $amount, 2);
-            $nbv = max(0, round((float) $fixedAsset->acquisition_cost - $accumulated, 2));
+            $nbv = max((float) $fixedAsset->residual_value, round((float) $fixedAsset->acquisition_cost - $accumulated - (float) $fixedAsset->impairment_amount, 2));
             $fixedAsset->depreciations()->create(['depreciation_date' => $data['depreciation_date'], 'amount' => $amount, 'accumulated_depreciation' => $accumulated, 'net_book_value' => $nbv, 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
             $fixedAsset->update(['accumulated_depreciation' => $accumulated, 'net_book_value' => $nbv]);
 
@@ -358,10 +358,12 @@ class FixedAssetController extends Controller
 
                 $remaining = round((float) $asset->net_book_value, 2);
                 $lifeMonths = max(1, (int) $asset->useful_life_months);
+                $depreciableBase = max(0, (float) $asset->acquisition_cost - (float) $asset->residual_value);
+                $remainingDepreciable = max(0, $depreciableBase - (float) $asset->accumulated_depreciation);
                 $monthly = $asset->depreciation_method === 'declining_balance'
                     ? round($remaining * (2 / $lifeMonths), 2)
-                    : round((float) $asset->acquisition_cost / $lifeMonths, 2);
-                $amount = min($monthly, $remaining);
+                    : round($depreciableBase / $lifeMonths, 2);
+                $amount = min($monthly, $remainingDepreciable);
 
                 if ($amount <= 0) {
                     $skipped[] = ['asset_id' => $asset->id, 'reason' => 'Net book value sudah habis.'];
@@ -383,7 +385,7 @@ class FixedAssetController extends Controller
                     $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Accumulated depreciation', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
 
                     $accumulated = round((float) $asset->accumulated_depreciation + $amount, 2);
-                    $nbv = max(0, round((float) $asset->acquisition_cost - $accumulated, 2));
+                    $nbv = max((float) $asset->residual_value, round((float) $asset->acquisition_cost - $accumulated - (float) $asset->impairment_amount, 2));
                     $asset->depreciations()->create(['depreciation_date' => $depreciationDate, 'amount' => $amount, 'accumulated_depreciation' => $accumulated, 'net_book_value' => $nbv, 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
                     $asset->update(['accumulated_depreciation' => $accumulated, 'net_book_value' => $nbv]);
                 });
