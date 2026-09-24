@@ -9,6 +9,7 @@ use App\Models\Finance\Payment;
 use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Procurement\SupplierInvoice;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -240,14 +241,45 @@ class AccountsPayableController extends Controller
 
     public function bankTransactions(Request $request): JsonResponse
     {
-        $query = BankTransaction::with(['bankAccount:id,bank_name,account_number']);
+        $query = BankTransaction::with(['bankAccount:id,bank_name,account_number', 'payment:id,payment_number,payment_date,amount,reference,journal_id,bank_account_id', 'payment.journal:id,journal_number,journal_date,status', 'payment.supplierInvoice:id,invoice_number', 'payment.customerInvoice:id,invoice_number', 'payment.expenseRequest:id,request_number']);
         if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
             $query->where(function ($scoped) use ($request) {
                 $scoped->where('created_by', $request->user()->id)
                     ->orWhereHas('payment', fn ($payment) => $payment->where('created_by', $request->user()->id));
             });
         }
-        return response()->json(['success' => true, 'data' => $query->latest('transaction_date')->latest('id')->get()]);
+
+        $rows = $query->latest('transaction_date')->latest('id')->get()->map(function (BankTransaction $transaction) {
+            $payment = $transaction->payment;
+            return [
+                'id' => $transaction->id,
+                'bank_account' => $transaction->bankAccount ? ['id' => $transaction->bankAccount->id, 'bank_name' => $transaction->bankAccount->bank_name, 'account_number' => $transaction->bankAccount->account_number] : null,
+                'transaction_date' => $transaction->transaction_date?->toDateString(),
+                'reference' => $transaction->reference,
+                'description' => $transaction->description,
+                'debit' => (float) $transaction->debit,
+                'credit' => (float) $transaction->credit,
+                'status' => $transaction->status,
+                'payment' => $payment ? [
+                    'id' => $payment->id,
+                    'payment_number' => $payment->payment_number,
+                    'payment_date' => $payment->payment_date?->toDateString(),
+                    'amount' => (float) $payment->amount,
+                    'reference' => $payment->reference,
+                    'invoice_number' => $payment->supplierInvoice?->invoice_number ?? $payment->customerInvoice?->invoice_number ?? $payment->expenseRequest?->request_number,
+                    'journal' => $payment->journal ? ['journal_number' => $payment->journal->journal_number, 'journal_date' => $payment->journal->journal_date?->toDateString(), 'status' => $payment->journal->status] : null,
+                ] : null,
+                'history' => \App\Models\AuditLog::query()
+                    ->where('module', 'banking')
+                    ->where('entity_type', BankTransaction::class)
+                    ->where('entity_id', $transaction->id)
+                    ->orderByDesc('id')->limit(3)
+                    ->get(['action', 'new_values', 'created_at'])
+                    ->map(fn ($log) => ['action' => $log->action, 'values' => $log->new_values, 'at' => $log->created_at?->toIso8601String()])->values(),
+            ];
+        });
+
+        return response()->json(['success' => true, 'data' => $rows]);
     }
 
     /** Queue of imported statement lines that still need a finance decision. */
@@ -296,31 +328,145 @@ class AccountsPayableController extends Controller
     {
         $data = $request->validate([
             'bank_account_id' => ['required', 'integer', 'exists:bank_accounts,id'],
-            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
+            'preview' => ['nullable', 'in:0,1,true,false'],
         ]);
 
-        $handle = fopen($data['file']->getRealPath(), 'rb');
+        $previewOnly = filter_var($data['preview'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $extension = strtolower($data['file']->getClientOriginalExtension());
+        $rows = $this->readStatementRows($data['file']->getRealPath(), $extension);
+
+        $errorCount = 0;
         $created = 0;
-        $skipped = 0;
-        $row = 0;
-        while (($columns = fgetcsv($handle)) !== false) {
-            $row++;
-            if ($row === 1 && isset($columns[0]) && preg_match('/date|tanggal/i', (string) $columns[0])) continue;
-            if (count($columns) < 4 || ! trim((string) $columns[0])) { $skipped++; continue; }
+        $duplicates = 0;
+        $errors = [];
+        $inserts = [];
+
+        foreach ($rows as $index => $row) {
+            $lineNumber = $index + 2; // offset header row
             try {
-                $date = \Carbon\Carbon::parse(trim((string) $columns[0]))->toDateString();
-                $reference = trim((string) ($columns[1] ?? '')) ?: null;
-                $description = trim((string) ($columns[2] ?? '')) ?: null;
-                $debit = (float) str_replace([',', ' '], ['', ''], (string) ($columns[3] ?? 0));
-                $credit = (float) str_replace([',', ' '], ['', ''], (string) ($columns[4] ?? 0));
-                $exists = BankTransaction::where('bank_account_id', $data['bank_account_id'])->whereDate('transaction_date', $date)->where('reference', $reference)->where('debit', $debit)->where('credit', $credit)->exists();
-                if ($exists) { $skipped++; continue; }
-                BankTransaction::create(['bank_account_id' => $data['bank_account_id'], 'created_by' => $request->user()->id, 'transaction_date' => $date, 'reference' => $reference, 'description' => $description, 'debit' => $debit, 'credit' => $credit, 'status' => 'unmatched']);
+                $date = \Carbon\Carbon::parse(trim((string) $row[0]))->toDateString();
+                $reference = trim((string) ($row[1] ?? '')) ?: null;
+                $description = trim((string) ($row[2] ?? '')) ?: null;
+                $debit = (float) str_replace([',', ' '], ['', ''], (string) ($row[3] ?? 0));
+                $credit = (float) str_replace([',', ' '], ['', ''], (string) ($row[4] ?? 0));
+                if ($debit < 0 || $credit < 0) {
+                    throw new \InvalidArgumentException('Nominal debit/credit tidak boleh negatif.');
+                }
+                if ($debit <= 0 && $credit <= 0) {
+                    throw new \InvalidArgumentException('Baris harus memiliki debit atau credit.');
+                }
+                $duplicate = BankTransaction::where('bank_account_id', $data['bank_account_id'])
+                    ->whereDate('transaction_date', $date)
+                    ->where('reference', $reference)
+                    ->where('debit', $debit)
+                    ->where('credit', $credit)
+                    ->exists();
+                if ($duplicate) {
+                    $duplicates++;
+                    continue;
+                }
+                $inserts[] = [
+                    'bank_account_id' => $data['bank_account_id'],
+                    'created_by' => $request->user()->id,
+                    'transaction_date' => $date,
+                    'reference' => $reference,
+                    'description' => $description,
+                    'debit' => $debit,
+                    'credit' => $credit,
+                    'status' => 'unmatched',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
                 $created++;
-            } catch (\Throwable) { $skipped++; }
+            } catch (\Throwable $e) {
+                $errorCount++;
+                if (count($errors) < 50) {
+                    $errors[] = ['row' => $lineNumber, 'error' => mb_substr($e->getMessage(), 0, 200)];
+                }
+            }
+        }
+
+        if ($previewOnly) {
+            return response()->json([
+                'success' => true,
+                'preview' => true,
+                'data' => ['created' => $created, 'duplicates' => $duplicates, 'failed' => $errorCount, 'errors' => $errors, 'rows' => array_map(function (array $row, int $index) {
+                    return ['row' => $index + 2, 'transaction_date' => trim((string) $row[0]), 'reference' => trim((string) ($row[1] ?? '')), 'description' => trim((string) ($row[2] ?? '')), 'debit' => (float) str_replace([',', ' '], ['', ''], (string) ($row[3] ?? 0)), 'credit' => (float) str_replace([',', ' '], ['', ''], (string) ($row[4] ?? 0))];
+                }, array_slice($rows, 0, 20), array_slice(array_keys($rows), 0, 20))],
+            ]);
+        }
+
+        if (! empty($inserts)) {
+            foreach ($inserts as $insert) {
+                BankTransaction::create($insert);
+            }
+        }
+
+        \App\Models\AuditLog::create([
+            'user_id' => $request->user()->id,
+            'module' => 'banking',
+            'platform' => strtolower($request->header('X-Client-Platform', 'web')),
+            'action' => 'IMPORT',
+            'entity_type' => BankTransaction::class,
+            'entity_id' => null,
+            'previous_values' => [],
+            'new_values' => [
+                'bank_account_id' => (int) $data['bank_account_id'],
+                'created' => $created,
+                'duplicates' => $duplicates,
+                'failed' => $errorCount,
+                'errors' => array_slice($errors, 0, 10),
+            ],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$created} transaksi diimport, {$duplicates} duplikat dilewati, {$errorCount} baris gagal.",
+            'data' => ['created' => $created, 'duplicates' => $duplicates, 'failed' => $errorCount, 'errors' => $errors],
+        ]);
+    }
+
+    private function readStatementRows(string $path, string $extension): array
+    {
+        if (in_array($extension, ['xlsx', 'xls'], true)) {
+            $reader = IOFactory::createReaderForFile($path);
+            $reader->setReadDataOnly(true);
+            $sheet = $reader->load($path)->getActiveSheet();
+            $rows = [];
+            foreach ($sheet->toArray() as $cells) {
+                if ($this->isHeaderRow($cells)) {
+                    continue;
+                }
+                $rows[] = array_values(array_map(fn ($cell) => $cell === null ? '' : (string) $cell, $cells));
+            }
+
+            return $rows;
+        }
+
+        $handle = fopen($path, 'rb');
+        $rows = [];
+        while (($columns = fgetcsv($handle)) !== false) {
+            if ($this->isHeaderRow($columns)) {
+                continue;
+            }
+            $rows[] = $columns;
         }
         fclose($handle);
-        return response()->json(['success' => true, 'message' => "{$created} transaksi diimport, {$skipped} dilewati.", 'data' => ['created' => $created, 'skipped' => $skipped]]);
+
+        return $rows;
+    }
+
+    private function isHeaderRow(array $columns): bool
+    {
+        $first = trim((string) ($columns[0] ?? ''));
+        if ($first === '' || $first === null) {
+            return true;
+        }
+
+        return (bool) preg_match('/^date|^tanggal|^tgl|^transaction/i', (string) $first);
     }
 
     /**
@@ -508,6 +654,13 @@ class AccountsPayableController extends Controller
 
     private function formatInvoice(SupplierInvoice $invoice): array
     {
+        $approval = \App\Models\ApprovalWorkflowRun::query()
+            ->where('module', 'ap')
+            ->where('approvable_type', SupplierInvoice::class)
+            ->where('approvable_id', $invoice->id)
+            ->latest('id')
+            ->first();
+
         return [
             'id' => $invoice->id,
             'invoice_number' => $invoice->invoice_number,
@@ -518,6 +671,7 @@ class AccountsPayableController extends Controller
             'due_date' => $invoice->due_date?->toDateString(),
             'status' => $invoice->status,
             'match_status' => $invoice->match_status,
+            'approval_status' => $approval?->status,
             'total_amount' => $invoice->total_amount,
             'paid_amount' => $invoice->paid_amount,
             'outstanding_amount' => round((float) $invoice->total_amount - (float) $invoice->paid_amount, 2),

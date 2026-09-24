@@ -306,6 +306,13 @@ class AccountsReceivableController extends Controller
 
     private function formatInvoice(CustomerInvoice $invoice): array
     {
+        $approval = \App\Models\ApprovalWorkflowRun::query()
+            ->where('module', 'ar')
+            ->where('approvable_type', CustomerInvoice::class)
+            ->where('approvable_id', $invoice->id)
+            ->latest('id')
+            ->first();
+
         return [
             'id' => $invoice->id,
             'invoice_number' => $invoice->invoice_number,
@@ -317,6 +324,7 @@ class AccountsReceivableController extends Controller
             'due_date' => $invoice->due_date?->toDateString(),
             'currency_code' => $invoice->currency_code,
             'status' => $invoice->status,
+            'approval_status' => $approval?->status,
             'total_amount' => $invoice->total_amount,
             'received_amount' => $invoice->received_amount,
             'outstanding_amount' => round((float) $invoice->total_amount - (float) $invoice->received_amount, 2),

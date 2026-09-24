@@ -123,6 +123,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/v1/dashboard/overview', [ReportsDashboardController::class, 'dashboard'])->middleware('permission:dashboard.view');
     Route::get('/v1/reports/summary', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
+    // Dedicated report dashboards. They reuse the governed report services so every
+    // page has a stable API contract while respecting the same filters and scope.
+    Route::get('/v1/reports/financial', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/budget', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/project', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/procurement', [ReportsDashboardController::class, 'procurementDashboard'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/management', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/reports/balance-sheet', [ReportsDashboardController::class, 'balanceSheet'])->middleware('permission:reports.view');
     Route::get('/v1/reports/profit-loss/pdf', [ReportsDashboardController::class, 'profitLossPdf'])->middleware('permission:reports.export');
     Route::get('/v1/reports/balance-sheet/pdf', [ReportsDashboardController::class, 'balanceSheetPdf'])->middleware('permission:reports.export');
@@ -135,6 +142,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/v1/reports/custom/saved/{savedReport}', [SavedReportController::class, 'destroy'])->middleware('permission:reports.view');
     Route::post('/v1/automation/run', [AutomationController::class, 'run'])->middleware('permission:reports.view');
     Route::get('/v1/donors/dashboard', [ReportsDashboardController::class, 'donorDashboard'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/donor-grant', [ReportsDashboardController::class, 'donorDashboard'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/tax', [TaxTransactionController::class, 'report'])->middleware('permission:tax.view');
 
     Route::prefix('v1/approval-center')->group(function () {
         Route::get('/pending', [ApprovalCenterController::class, 'pending']);

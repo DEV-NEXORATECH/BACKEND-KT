@@ -27,6 +27,18 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ReportsDashboardController extends Controller
 {
+    public function procurementDashboard(Request $request): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'procurement' => [
+                'requests' => PurchaseRequest::query()->latest('id')->limit(100)->get(),
+                'orders' => PurchaseOrder::query()->latest('id')->limit(100)->get(),
+                'invoices' => SupplierInvoice::query()->latest('id')->limit(100)->get(),
+            ],
+        ]);
+    }
+
     public function dashboard(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
         $period = $this->period($request);
