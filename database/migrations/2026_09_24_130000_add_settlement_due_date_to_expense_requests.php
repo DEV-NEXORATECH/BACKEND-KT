@@ -7,21 +7,21 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        if (! Schema::hasColumn('expense_requests', 'settlement_due_date')) {
-            Schema::table('expense_requests', function (Blueprint $table) {
+        Schema::table('expense_requests', function (Blueprint $table) {
+            if (! Schema::hasColumn('expense_requests', 'settlement_due_date')) {
                 $table->date('settlement_due_date')->nullable()->after('settlement_status');
-                $table->index(['expense_type', 'settlement_status', 'settlement_due_date']);
-            });
-        }
+            }
+            $table->index(['expense_type', 'settlement_status', 'settlement_due_date'], 'exp_req_type_settle_due_idx');
+        });
     }
 
     public function down(): void
     {
-        if (Schema::hasColumn('expense_requests', 'settlement_due_date')) {
-            Schema::table('expense_requests', function (Blueprint $table) {
-                $table->dropIndex(['expense_type', 'settlement_status', 'settlement_due_date']);
+        Schema::table('expense_requests', function (Blueprint $table) {
+            $table->dropIndex('exp_req_type_settle_due_idx');
+            if (Schema::hasColumn('expense_requests', 'settlement_due_date')) {
                 $table->dropColumn('settlement_due_date');
-            });
-        }
+            }
+        });
     }
 };

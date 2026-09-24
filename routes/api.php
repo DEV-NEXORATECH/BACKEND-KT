@@ -133,6 +133,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/reports/budget', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/reports/project', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/reports/procurement', [ReportsDashboardController::class, 'procurementDashboard'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/procurement/audit-chain/{supplierInvoice}', [ReportsDashboardController::class, 'procurementAuditChain'])->middleware('permission:reports.view');
     Route::get('/v1/reports/management', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/reports/balance-sheet', [ReportsDashboardController::class, 'balanceSheet'])->middleware('permission:reports.view');
     Route::get('/v1/reports/aging', [ReportsDashboardController::class, 'aging'])->middleware('permission:reports.view');

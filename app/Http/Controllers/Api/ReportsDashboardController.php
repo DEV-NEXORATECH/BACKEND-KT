@@ -28,11 +28,11 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ReportsDashboardController extends Controller
 {
-    public function procurementDashboard(Request $request): JsonResponse
+        public function procurementDashboard(Request $request): JsonResponse
     {
-        $requests = PurchaseRequest::query()->latest('id')->limit(100)->get();
-        $orders = PurchaseOrder::query()->with('vendor:id,code,name')->latest('id')->limit(100)->get();
-        $invoices = SupplierInvoice::query()->with('vendor:id,code,name')->latest('id')->limit(100)->get();
+        $requests = PurchaseRequest::query()->with(['requester:id,name', 'project:id,code,name'])->latest('id')->limit(100)->get();
+        $orders = PurchaseOrder::query()->with(['vendor:id,code,name', 'purchaseRequest:id,pr_number,project_id', 'purchaseRequest.project:id,code,name'])->latest('id')->limit(100)->get();
+        $invoices = SupplierInvoice::query()->with(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number'])->latest('id')->limit(100)->get();
 
         $rfqsCount = \Illuminate\Support\Facades\Schema::hasTable('rfqs')
             ? \Illuminate\Support\Facades\DB::table('rfqs')->count()
@@ -55,6 +55,84 @@ class ReportsDashboardController extends Controller
             ['stage' => 'Goods Receipt Notes (GRN)', 'code' => 'GRN', 'count' => $grnCount, 'total_amount' => 0, 'color' => '#10b981'],
             ['stage' => 'Supplier Invoices', 'code' => 'INV', 'count' => SupplierInvoice::count(), 'total_amount' => (float) SupplierInvoice::sum('total_amount'), 'color' => '#d97706'],
         ];
+
+        // 4.2 Dashboard - 6 KPI Pipeline Statuses
+        $rfqOngoingCount = \Illuminate\Support\Facades\Schema::hasTable('rfqs')
+            ? \Illuminate\Support\Facades\DB::table('rfqs')->whereIn('status', ['published', 'open', 'draft'])->count()
+            : 0;
+        $cbaPendingCount = \Illuminate\Support\Facades\Schema::hasTable('rfqs')
+            ? \Illuminate\Support\Facades\DB::table('rfqs')->where('status', 'closed')->count()
+            : 0;
+
+        $grnPendingCount = PurchaseOrder::where('status', 'approved')
+            ->whereDoesntHave('goodsReceipts', fn ($q) => $q->where('status', '!=', 'cancelled'))
+            ->count();
+
+        $invoicePendingMatchCount = SupplierInvoice::where(function ($q) {
+            $q->whereIn('match_status', ['unchecked', 'mismatch', 'draft'])->orWhere('status', 'draft');
+        })->count();
+
+        $pipelineStatus = [
+            'pr_pending_approval' => PurchaseRequest::where('status', 'submitted')->count(),
+            'rfq_ongoing' => $rfqOngoingCount,
+            'cba_pending' => $cbaPendingCount,
+            'po_contract_active' => PurchaseOrder::where('status', 'approved')->count(),
+            'grn_pending' => $grnPendingCount,
+            'invoice_pending_match' => $invoicePendingMatchCount,
+        ];
+
+        // 4.2 Dashboard - Committed budget by project & donor
+        $committedByProject = collect();
+        if (\Illuminate\Support\Facades\Schema::hasTable('budget_commitments') && \Illuminate\Support\Facades\Schema::hasTable('budget_lines')) {
+            $committedByProject = \Illuminate\Support\Facades\DB::table('budget_commitments')
+                ->join('budget_lines', 'budget_commitments.budget_line_id', '=', 'budget_lines.id')
+                ->join('projects', 'budget_lines.project_id', '=', 'projects.id')
+                ->whereIn('budget_commitments.status', ['open', 'converted'])
+                ->groupBy('projects.id', 'projects.code', 'projects.name')
+                ->selectRaw('projects.id, projects.code, projects.name, SUM(budget_commitments.amount) as committed')
+                ->get()
+                ->map(fn ($r) => ['id' => $r->id, 'code' => $r->code, 'name' => $r->name, 'committed' => round((float) $r->committed, 2)]);
+        }
+
+        if ($committedByProject->isEmpty()) {
+            $committedByProject = \Illuminate\Support\Facades\DB::table('purchase_order_lines')
+                ->join('purchase_orders', 'purchase_order_lines.purchase_order_id', '=', 'purchase_orders.id')
+                ->join('purchase_requests', 'purchase_orders.purchase_request_id', '=', 'purchase_requests.id')
+                ->join('projects', 'purchase_requests.project_id', '=', 'projects.id')
+                ->where('purchase_orders.status', 'approved')
+                ->groupBy('projects.id', 'projects.code', 'projects.name')
+                ->selectRaw('projects.id, projects.code, projects.name, SUM(purchase_order_lines.total_amount) as committed')
+                ->get()
+                ->map(fn ($r) => ['id' => $r->id, 'code' => $r->code, 'name' => $r->name, 'committed' => round((float) $r->committed, 2)]);
+        }
+
+        $committedByDonor = collect();
+        if (\Illuminate\Support\Facades\Schema::hasTable('budget_commitments') && \Illuminate\Support\Facades\Schema::hasTable('budget_lines')) {
+            $committedByDonor = \Illuminate\Support\Facades\DB::table('budget_commitments')
+                ->join('budget_lines', 'budget_commitments.budget_line_id', '=', 'budget_lines.id')
+                ->join('grant_agreements', 'budget_lines.grant_agreement_id', '=', 'grant_agreements.id')
+                ->join('donors', 'grant_agreements.donor_id', '=', 'donors.id')
+                ->whereIn('budget_commitments.status', ['open', 'converted'])
+                ->groupBy('donors.id', 'donors.code', 'donors.name')
+                ->selectRaw('donors.id, donors.code, donors.name, SUM(budget_commitments.amount) as committed')
+                ->get()
+                ->map(fn ($r) => ['id' => $r->id, 'code' => $r->code, 'name' => $r->name, 'committed' => round((float) $r->committed, 2)]);
+        }
+
+        if ($committedByDonor->isEmpty()) {
+            $committedByDonor = \Illuminate\Support\Facades\DB::table('purchase_order_lines')
+                ->join('purchase_orders', 'purchase_order_lines.purchase_order_id', '=', 'purchase_orders.id')
+                ->join('purchase_requests', 'purchase_orders.purchase_request_id', '=', 'purchase_requests.id')
+                ->join('purchase_request_lines', 'purchase_requests.id', '=', 'purchase_request_lines.purchase_request_id')
+                ->join('budget_lines', 'purchase_request_lines.budget_line_id', '=', 'budget_lines.id')
+                ->join('grant_agreements', 'budget_lines.grant_agreement_id', '=', 'grant_agreements.id')
+                ->join('donors', 'grant_agreements.donor_id', '=', 'donors.id')
+                ->where('purchase_orders.status', 'approved')
+                ->groupBy('donors.id', 'donors.code', 'donors.name')
+                ->selectRaw('donors.id, donors.code, donors.name, SUM(purchase_order_lines.total_amount) as committed')
+                ->get()
+                ->map(fn ($r) => ['id' => $r->id, 'code' => $r->code, 'name' => $r->name, 'committed' => round((float) $r->committed, 2)]);
+        }
 
         $supplierSpend = SupplierInvoice::query()
             ->with('vendor:id,name,code')
@@ -84,11 +162,114 @@ class ReportsDashboardController extends Controller
                 'total_spend' => (float) SupplierInvoice::sum('paid_amount'),
             ],
             'pipeline' => $pipeline,
+            'pipeline_status' => $pipelineStatus,
+            'committed_budget' => [
+                'by_project' => $committedByProject,
+                'by_donor' => $committedByDonor,
+            ],
             'supplier_spend' => $supplierSpend,
             'procurement' => [
                 'requests' => $requests,
                 'orders' => $orders,
                 'invoices' => $invoices,
+            ],
+        ]);
+    }
+
+    public function procurementAuditChain(Request $request, SupplierInvoice $supplierInvoice): JsonResponse
+    {
+        $supplierInvoice->load([
+            'vendor:id,code,name',
+            'tax:id,code,name,rate',
+            'lines',
+            'goodsReceipt.lines',
+            'purchaseOrder.lines',
+            'purchaseOrder.vendor:id,code,name',
+            'purchaseOrder.purchaseRequest.requester:id,name,email',
+            'purchaseOrder.purchaseRequest.department:id,name',
+            'purchaseOrder.purchaseRequest.project:id,code,name',
+            'purchaseOrder.purchaseRequest.lines.budgetLine.grantAgreement.donor:id,code,name',
+        ]);
+
+        $po = $supplierInvoice->purchaseOrder;
+        $pr = $po?->purchaseRequest;
+        $grn = $supplierInvoice->goodsReceipt;
+
+        // Trace journal entry if exists
+        $journal = null;
+        if ($supplierInvoice->journal_id && \Illuminate\Support\Facades\Schema::hasTable('accounting_journals')) {
+            $journal = \App\Models\Accounting\Journal::with('lines.account:id,code,name')->find($supplierInvoice->journal_id);
+        }
+
+        // Trace budget line info
+        $budgetLines = $pr?->lines->map(fn ($line) => [
+            'budget_line_id' => $line->budget_line_id,
+            'budget_line_code' => $line->budgetLine?->code,
+            'budget_line_name' => $line->budgetLine?->name,
+            'donor_name' => $line->budgetLine?->grantAgreement?->donor?->name ?? 'Internal / General',
+            'item_description' => $line->item_description,
+            'total_amount' => (float) $line->total_amount,
+        ])->values() ?? [];
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'invoice' => [
+                    'id' => $supplierInvoice->id,
+                    'invoice_number' => $supplierInvoice->invoice_number,
+                    'invoice_date' => $supplierInvoice->invoice_date?->toDateString(),
+                    'due_date' => $supplierInvoice->due_date?->toDateString(),
+                    'total_amount' => (float) $supplierInvoice->total_amount,
+                    'paid_amount' => (float) $supplierInvoice->paid_amount,
+                    'status' => $supplierInvoice->status,
+                    'match_status' => $supplierInvoice->match_status,
+                    'notes' => $supplierInvoice->notes,
+                    'vendor' => $supplierInvoice->vendor,
+                    'tax' => $supplierInvoice->tax,
+                    'lines' => $supplierInvoice->lines,
+                ],
+                'grn' => $grn ? [
+                    'id' => $grn->id,
+                    'grn_number' => $grn->grn_number,
+                    'receipt_date' => $grn->receipt_date?->toDateString(),
+                    'delivery_order_number' => $grn->delivery_order_number,
+                    'status' => $grn->status,
+                    'lines' => $grn->lines,
+                ] : null,
+                'po' => $po ? [
+                    'id' => $po->id,
+                    'po_number' => $po->po_number,
+                    'contract_number' => $po->contract_number,
+                    'po_date' => $po->po_date?->toDateString(),
+                    'contract_date' => $po->contract_date?->toDateString(),
+                    'total_amount' => (float) $po->total_amount,
+                    'status' => $po->status,
+                    'terms' => $po->terms,
+                    'lines' => $po->lines,
+                ] : null,
+                'pr' => $pr ? [
+                    'id' => $pr->id,
+                    'pr_number' => $pr->pr_number,
+                    'request_date' => $pr->request_date?->toDateString(),
+                    'requester' => $pr->requester?->name,
+                    'department' => $pr->department?->name,
+                    'justification' => $pr->justification,
+                    'status' => $pr->status,
+                    'total_amount' => (float) $pr->total_amount,
+                ] : null,
+                'budget' => [
+                    'project' => $pr?->project,
+                    'lines' => $budgetLines,
+                ],
+                'journal' => $journal ? [
+                    'id' => $journal->id,
+                    'journal_number' => $journal->journal_number,
+                    'journal_date' => $journal->journal_date?->toDateString(),
+                    'status' => $journal->status,
+                    'total_debit' => (float) $journal->total_debit,
+                    'total_credit' => (float) $journal->total_credit,
+                    'lines' => $journal->lines,
+                ] : null,
             ],
         ]);
     }
