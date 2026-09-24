@@ -7,9 +7,11 @@ use App\Models\Accounting\Journal;
 use App\Models\Finance\BankTransaction;
 use App\Models\Finance\CustomerInvoice;
 use App\Models\Finance\Payment;
+use App\Models\Finance\TaxTransaction;
 use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\Customer;
+use App\Models\Master\Tax;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -20,7 +22,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AccountsReceivableController extends Controller
 {
-    private array $with = ['customer:id,code,name', 'project:id,code,name,program_id', 'program:id,code,name', 'donor:id,code,name', 'lines.revenueAccount:id,code,name'];
+    private array $with = ['customer:id,code,name', 'project:id,code,name,program_id', 'program:id,code,name', 'donor:id,code,name', 'tax:id,code,name,tax_type,rate_percent', 'lines.revenueAccount:id,code,name'];
 
     public function customers(): JsonResponse
     {
@@ -76,6 +78,7 @@ class AccountsReceivableController extends Controller
                 'project_id' => $payload['project_id'] ?? null,
                 'donor_id' => $payload['donor_id'] ?? null,
                 'program_id' => $payload['program_id'] ?? null,
+                'tax_id' => $payload['tax_id'] ?? null,
                 'invoice_date' => $payload['invoice_date'],
                 'due_date' => $payload['due_date'] ?? null,
                 'currency_code' => $payload['currency_code'] ?? 'IDR',
@@ -170,6 +173,30 @@ class AccountsReceivableController extends Controller
                 'posted_by' => request()->user()->id,
                 'posted_at' => now(),
             ]);
+
+            if ($customerInvoice->tax_id) {
+                $tax = Tax::findOrFail($customerInvoice->tax_id);
+                $rate = (float) $tax->rate_percent;
+                $taxable = round((float) $customerInvoice->total_amount, 2);
+                $taxAmount = round($taxable * $rate / 100, 2);
+                TaxTransaction::firstOrCreate(
+                    ['source_type' => CustomerInvoice::class, 'source_id' => $customerInvoice->id],
+                    [
+                        'tax_id' => $tax->id,
+                        'transaction_type' => 'ar_invoice',
+                        'reference' => $customerInvoice->invoice_number,
+                        'transaction_date' => $customerInvoice->invoice_date,
+                        'direction' => str_starts_with(strtoupper((string) $tax->tax_type), 'PPH') ? 'withholding_out' : 'sales',
+                        'taxable_amount' => $taxable,
+                        'tax_rate' => $rate,
+                        'tax_amount' => $taxAmount,
+                        'net_amount' => round($taxable - $taxAmount, 2),
+                        'gross_amount' => round($taxable + $taxAmount, 2),
+                        'status' => 'draft',
+                        'created_by' => request()->user()->id,
+                    ]
+                );
+            }
 
             return $customerInvoice->fresh($this->with);
         });
@@ -266,6 +293,7 @@ class AccountsReceivableController extends Controller
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'donor_id' => ['nullable', 'integer', 'exists:donors,id'],
             'program_id' => ['nullable', 'integer', 'exists:programs,id'],
+            'tax_id' => ['nullable', 'integer', 'exists:taxes,id'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date'],
             'currency_code' => ['nullable', 'string', 'max:10'],
@@ -320,6 +348,7 @@ class AccountsReceivableController extends Controller
             'project' => $invoice->project ? ['id' => $invoice->project->id, 'code' => $invoice->project->code, 'name' => $invoice->project->name] : null,
             'donor' => $invoice->donor ? ['id' => $invoice->donor->id, 'code' => $invoice->donor->code, 'name' => $invoice->donor->name] : null,
             'program' => $invoice->program ? ['id' => $invoice->program->id, 'code' => $invoice->program->code, 'name' => $invoice->program->name] : null,
+            'tax' => $invoice->tax ? ['id' => $invoice->tax->id, 'code' => $invoice->tax->code, 'name' => $invoice->tax->name, 'tax_type' => $invoice->tax->tax_type, 'rate_percent' => $invoice->tax->rate_percent] : null,
             'invoice_date' => $invoice->invoice_date?->toDateString(),
             'due_date' => $invoice->due_date?->toDateString(),
             'currency_code' => $invoice->currency_code,

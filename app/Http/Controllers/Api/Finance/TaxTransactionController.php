@@ -251,7 +251,7 @@ class TaxTransactionController extends Controller
 
         $vatInput = (float) $items->filter(fn (TaxTransaction $item) => strtoupper((string) $item->tax?->tax_type) === 'PPN' && $item->direction === 'purchase')->sum('tax_amount');
         $vatOutput = (float) $items->filter(fn (TaxTransaction $item) => strtoupper((string) $item->tax?->tax_type) === 'PPN' && $item->direction === 'sales')->sum('tax_amount');
-        $withholdingPayable = (float) $items->whereIn('direction', ['withholding_out', 'sales'])->sum('tax_amount');
+        $withholdingPayable = (float) $items->filter(fn (TaxTransaction $item) => $item->direction === 'withholding_out' || str_starts_with(strtoupper((string) $item->tax?->tax_type), 'PPH'))->sum('tax_amount');
 
         return response()->json([
             'success' => true,

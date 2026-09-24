@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
 use App\Models\Finance\BankTransaction;
 use App\Models\Finance\Payment;
+use App\Models\Finance\TaxTransaction;
 use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
+use App\Models\Master\Tax;
 use App\Models\Procurement\SupplierInvoice;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use App\Services\Accounting\AccountingPeriodService;
@@ -22,7 +24,7 @@ class AccountsPayableController extends Controller
 {
     public function invoices(Request $request): JsonResponse
     {
-        $query = SupplierInvoice::with(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines.purchaseOrderLine.budgetLine.glAccount']);
+        $query = SupplierInvoice::with(['vendor:id,code,name,npwp', 'tax:id,code,name,tax_type,rate_percent', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines.purchaseOrderLine.budgetLine.glAccount']);
         
         app(\App\Services\Rbac\DataScopeService::class)->applyScope(
             $query,
@@ -133,6 +135,31 @@ class AccountsPayableController extends Controller
                 'posted_at' => now(),
             ]);
 
+            if ($supplierInvoice->tax_id) {
+                $tax = Tax::findOrFail($supplierInvoice->tax_id);
+                $rate = (float) $tax->rate_percent;
+                $taxable = round((float) $supplierInvoice->total_amount, 2);
+                $taxAmount = round($taxable * $rate / 100, 2);
+                TaxTransaction::firstOrCreate(
+                    ['source_type' => SupplierInvoice::class, 'source_id' => $supplierInvoice->id],
+                    [
+                        'tax_id' => $tax->id,
+                        'transaction_type' => 'ap_invoice',
+                        'reference' => $supplierInvoice->invoice_number,
+                        'transaction_date' => $supplierInvoice->invoice_date,
+                        'direction' => str_starts_with(strtoupper((string) $tax->tax_type), 'PPH') ? 'withholding_in' : 'purchase',
+                        'taxable_amount' => $taxable,
+                        'tax_rate' => $rate,
+                        'tax_amount' => $taxAmount,
+                        'net_amount' => round($taxable - $taxAmount, 2),
+                        'gross_amount' => round($taxable + $taxAmount, 2),
+                        'npwp' => $supplierInvoice->vendor?->npwp,
+                        'status' => 'draft',
+                        'created_by' => request()->user()->id,
+                    ]
+                );
+            }
+
             // Budget is now consumed by actual expense; convert and release the
             // source PR commitment to prevent double counting in available budget.
             $purchaseRequestId = $supplierInvoice->purchaseOrder?->purchase_request_id;
@@ -146,7 +173,7 @@ class AccountsPayableController extends Controller
                     );
             }
 
-            return $supplierInvoice->fresh(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines']);
+            return $supplierInvoice->fresh(['vendor:id,code,name,npwp', 'tax:id,code,name,tax_type,rate_percent', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines']);
         });
 
         return response()->json(['success' => true, 'message' => 'Supplier invoice berhasil diposting ke AP.', 'data' => $this->formatInvoice($invoice)]);
@@ -665,6 +692,7 @@ class AccountsPayableController extends Controller
             'id' => $invoice->id,
             'invoice_number' => $invoice->invoice_number,
             'vendor_name' => $invoice->vendor?->name,
+            'tax' => $invoice->tax ? ['id' => $invoice->tax->id, 'code' => $invoice->tax->code, 'name' => $invoice->tax->name, 'tax_type' => $invoice->tax->tax_type, 'rate_percent' => $invoice->tax->rate_percent] : null,
             'po_number' => $invoice->purchaseOrder?->po_number,
             'grn_number' => $invoice->goodsReceipt?->grn_number,
             'invoice_date' => $invoice->invoice_date?->toDateString(),
