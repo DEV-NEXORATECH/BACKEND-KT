@@ -367,7 +367,9 @@ class ReportsDashboardController extends Controller
                 'status' => $line->journal?->status,
             ])->sortByDesc('date')->values()->take(100)->all();
 
-        $statusCounts = collect($deadlines)->countBy('status')->all();
+        $deadlineOverdue = collect($deadlines)
+            ->filter(fn (array $deadline) => $deadline['status'] === 'overdue' || ($deadline['days_remaining'] !== null && $deadline['days_remaining'] < 0))
+            ->count();
         $bankBalances = BankTransaction::query()
             ->selectRaw('bank_account_id, COALESCE(SUM(debit - credit), 0) as balance')
             ->groupBy('bank_account_id')
@@ -399,7 +401,7 @@ class ReportsDashboardController extends Controller
                 'utilization_percent' => $totals['utilization_percent'],
                 'projected_total' => round($totals['actual'] + $totals['committed'], 2),
                 'deadline_total' => count($deadlines),
-                'deadline_overdue' => (int) ($statusCounts['overdue'] ?? 0),
+                'deadline_overdue' => (int) $deadlineOverdue,
             ],
             'bva' => $bva,
             'variance' => collect($bva)->sortByDesc(fn (array $row) => abs($row['variance']))->values()->take(20)->all(),
