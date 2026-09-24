@@ -24,34 +24,83 @@ abstract class BaseMasterController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = $this->modelClass::query()->with($this->defaultWith)->withCount($this->defaultWithCount);
+        try {
+            $isOptions = $request->boolean('options') || $request->query('paginate') === 'false';
+            $query = $this->modelClass::query();
 
-        // Lightweight dropdown/options mode for Frontend Select components
-        if ($request->boolean('options') || $request->query('paginate') === 'false') {
-            $options = $query->applyFilters($request, $this->searchableColumns)->get();
-            return $this->successResponse($this->resourceClass::collection($options), 'Daftar opsi berhasil dimuat.');
+            // Lightweight dropdown/options mode for Frontend Select components
+            if ($isOptions) {
+                try {
+                    $table = (new $this->modelClass)->getTable();
+                    if (! $request->has('is_active') && \Illuminate\Support\Facades\Schema::hasColumn($table, 'is_active')) {
+                        $query->where('is_active', true);
+                    }
+                } catch (\Throwable $ignored) {
+                    // Safe fallback if schema check is not accessible
+                }
+
+                if (method_exists($this->modelClass, 'scopeApplyFilters')) {
+                    try {
+                        $query->applyFilters($request, $this->searchableColumns);
+                    } catch (\Throwable $ignored) {
+                        // Safe fallback
+                    }
+                }
+
+                $options = $query->get();
+
+                if (! empty($this->resourceClass) && class_exists($this->resourceClass)) {
+                    return $this->successResponse($this->resourceClass::collection($options), 'Daftar opsi berhasil dimuat.');
+                }
+
+                return $this->successResponse($options, 'Daftar opsi berhasil dimuat.');
+            }
+
+            if (! empty($this->defaultWith)) {
+                $query->with($this->defaultWith);
+            }
+            if (! empty($this->defaultWithCount)) {
+                $query->withCount($this->defaultWithCount);
+            }
+
+            if (method_exists($this->modelClass, 'scopeApplyFilters')) {
+                $query->applyFilters($request, $this->searchableColumns);
+            }
+
+            $perPage = (int) $request->query('per_page', 10);
+            if ($perPage > 100 || $perPage < 1) {
+                $perPage = 10;
+            }
+
+            $paginated = $query->paginate($perPage);
+
+            $items = (! empty($this->resourceClass) && class_exists($this->resourceClass))
+                ? $this->resourceClass::collection($paginated->items())
+                : $paginated->items();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data berhasil dimuat.',
+                'data' => $items,
+                'meta' => [
+                    'current_page' => $paginated->currentPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'per_page' => $paginated->perPage(),
+                    'total' => $paginated->total(),
+                    'from' => $paginated->firstItem(),
+                    'to' => $paginated->lastItem(),
+                ],
+            ], Response::HTTP_OK);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Master index error on ' . static::class . ': ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat data: ' . $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-
-        $perPage = (int) $request->query('per_page', 10);
-        if ($perPage > 100 || $perPage < 1) {
-            $perPage = 10;
-        }
-
-        $paginated = $query->applyFilters($request, $this->searchableColumns)->paginate($perPage);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Data berhasil dimuat.',
-            'data' => $this->resourceClass::collection($paginated->items()),
-            'meta' => [
-                'current_page' => $paginated->currentPage(),
-                'last_page' => $paginated->lastPage(),
-                'per_page' => $paginated->perPage(),
-                'total' => $paginated->total(),
-                'from' => $paginated->firstItem(),
-                'to' => $paginated->lastItem(),
-            ],
-        ], Response::HTTP_OK);
     }
 
     public function store(Request $request): JsonResponse
