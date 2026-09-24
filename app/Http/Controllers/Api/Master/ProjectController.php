@@ -14,5 +14,5 @@ class ProjectController extends BaseMasterController
     protected string $storeRequestClass = StoreProjectRequest::class;
     protected string $updateRequestClass = UpdateProjectRequest::class;
     protected array $searchableColumns = ['code', 'name', 'manager_name'];
-    protected array $defaultWith = ['program', 'grantAgreement', 'budgetCurrency'];
+    protected array $defaultWith = ['program', 'grantAgreement', 'budgetCurrency', 'bankAccount'];
 }

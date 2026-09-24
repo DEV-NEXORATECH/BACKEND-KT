@@ -14,7 +14,7 @@ class Project extends Model
 
     protected $table = 'projects';
 
-    protected $fillable = ['code', 'program_id', 'grant_agreement_id', 'name', 'manager_name', 'start_date', 'end_date', 'budget_currency_id', 'total_budget', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'program_id', 'grant_agreement_id', 'bank_account_id', 'name', 'manager_name', 'start_date', 'end_date', 'budget_currency_id', 'total_budget', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -33,6 +33,11 @@ class Project extends Model
     public function budgetCurrency()
     {
         return $this->belongsTo(\App\Models\Master\Currency::class, 'budget_currency_id');
+    }
+
+    public function bankAccount()
+    {
+        return $this->belongsTo(\App\Models\Master\BankAccount::class, 'bank_account_id');
     }
 
     public function activities()

@@ -322,6 +322,10 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1/expenses')->group(function () {
+        Route::get('template', [ExpenseRequestController::class, 'template'])->middleware('permission:expense.view');
+        Route::post('import', [ExpenseRequestController::class, 'import'])->middleware('permission:expense.create');
+        Route::get('requests/template', [ExpenseRequestController::class, 'template'])->middleware('permission:expense.view');
+        Route::post('requests/import', [ExpenseRequestController::class, 'import'])->middleware('permission:expense.create');
         Route::get('dashboard', [ExpenseRequestController::class, 'dashboard'])->middleware('permission:expense.view');
         Route::get('requests', [ExpenseRequestController::class, 'index'])->middleware('permission:expense.view');
         Route::post('requests', [ExpenseRequestController::class, 'store'])->middleware('permission:expense.create');

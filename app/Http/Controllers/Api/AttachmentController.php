@@ -33,7 +33,7 @@ class AttachmentController extends Controller
         $request->validate([
             'module' => ['required', 'string', 'in:expense,ap,pr,rfq,cba,po,grn,scn,invoice,journal,tax,asset'],
             'entity_id' => ['required', 'integer'],
-            'file' => ['required', 'file', 'mimes:pdf,png,jpg,jpeg,docx,xlsx', 'max:10240'],
+            'file' => ['required', 'file', 'mimes:pdf,png,jpg,jpeg,webp,gif,svg,doc,docx,xls,xlsx,csv,ppt,pptx,txt,zip,rar,7z', 'max:20480'],
         ]);
 
         $module = $request->input('module');

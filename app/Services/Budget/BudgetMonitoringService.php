@@ -114,6 +114,20 @@ class BudgetMonitoringService
                 ->firstWhere('budget_line_id', $budgetLineId);
         }
 
+        if (($item['grant_agreement']['id'] ?? null)) {
+            $grant = \App\Models\Master\GrantAgreement::query()->find($item['grant_agreement']['id']);
+            if ($grant && in_array($grant->status, ['closed', 'suspended'], true)) {
+                return [
+                    ...$item,
+                    'requested_amount' => round($amount, 2),
+                    'available_after' => round((float) $item['available'] - $amount, 2),
+                    'allowed' => false,
+                    'severity' => 'blocked',
+                    'message' => 'Grant sudah closed atau suspended; transaksi baru tidak diperbolehkan.',
+                ];
+            }
+        }
+
         $availableAfter = round((float) $item['available'] - $amount, 2);
 
         return [
