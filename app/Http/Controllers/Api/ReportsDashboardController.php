@@ -384,21 +384,27 @@ class ReportsDashboardController extends Controller
             ->groupBy('bank_account_id')
             ->pluck('balance', 'bank_account_id');
         $linkedBanking = \App\Models\Master\GrantAgreement::query()
-            ->with(['bankAccount:id,bank_name,account_number,account_name,currency_id', 'currency:id,code', 'projects:id,grant_agreement_id,code,name'])
+            ->with(['bankAccount:id,bank_name,account_number,account_name,currency_id', 'currency:id,code', 'projects:id,grant_agreement_id,code,name,bank_account_id', 'projects.bankAccount:id,bank_name,account_number,account_name,currency_id'])
             ->when($request->filled('grant_agreement_id'), fn (Builder $q) => $q->whereKey($request->integer('grant_agreement_id')))
-            ->whereNotNull('bank_account_id')
+            ->where(function (Builder $q) {
+                $q->whereNotNull('bank_account_id')->orWhereHas('projects', fn (Builder $project) => $project->whereNotNull('bank_account_id'));
+            })
             ->get()
-            ->flatMap(fn ($grant) => ($grant->projects->isNotEmpty() ? $grant->projects : collect([null]))->map(fn ($project) => [
-                'project' => $project?->name,
-                'grant' => $grant->grant_no,
-                'grant_name' => $grant->agreement_name,
-                'bank_account_id' => $grant->bank_account_id,
-                'bank_name' => $grant->bankAccount?->bank_name,
-                'account_name' => $grant->bankAccount?->account_name,
-                'account_number' => $grant->bankAccount?->account_number,
-                'currency' => $grant->currency?->code,
-                'balance' => round((float) ($bankBalances[$grant->bank_account_id] ?? 0), 2),
-            ]))->values()->all();
+            ->flatMap(fn ($grant) => ($grant->projects->isNotEmpty() ? $grant->projects : collect([null]))->map(function ($project) use ($grant, $bankBalances) {
+                $bank = $project?->bankAccount ?: $grant->bankAccount;
+                return [
+                    'project' => $project?->name,
+                    'grant' => $grant->grant_no,
+                    'grant_name' => $grant->agreement_name,
+                    'bank_account_id' => $bank?->id,
+                    'banking_source' => $project?->bankAccount ? 'project' : 'grant',
+                    'bank_name' => $bank?->bank_name,
+                    'account_name' => $bank?->account_name,
+                    'account_number' => $bank?->account_number,
+                    'currency' => $grant->currency?->code,
+                    'balance' => round((float) ($bankBalances[$bank?->id] ?? 0), 2),
+                ];
+            }))->values()->all();
         return response()->json([
             'success' => true,
             'period' => $period['label'],

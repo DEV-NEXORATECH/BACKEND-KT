@@ -29,4 +29,12 @@ class UpdateGrantAgreementRequest extends FormRequest
             'is_active' => 'boolean',
         ];
     }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $bank = $this->input('bank_account_id') ? \App\Models\Master\BankAccount::find($this->input('bank_account_id')) : null;
+            if ($bank && (int) $bank->currency_id !== (int) $this->input('currency_id')) $validator->errors()->add('bank_account_id', 'Currency rekening bank harus sama dengan currency grant.');
+        });
+    }
 }
