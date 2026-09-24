@@ -508,7 +508,24 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'funding_source' => $expense->fundingSource ? ['id' => $expense->fundingSource->id, 'code' => $expense->fundingSource->code, 'name' => $expense->fundingSource->name] : null,
             'document_type' => $expense->documentType ? ['id' => $expense->documentType->id, 'code' => $expense->documentType->code, 'name' => $expense->documentType->name] : null,
             'tax' => $expense->tax ? ['id' => $expense->tax->id, 'code' => $expense->tax->code, 'name' => $expense->tax->name] : null,
-            'attachments' => $expense->attachments ?? [],
+            'attachments' => collect((array) ($expense->attachments ?? []))->map(function ($item, $index) use ($expense) {
+                if (is_array($item)) {
+                    return $item;
+                }
+                $filename = basename((string) $item);
+                $cleanName = str_contains($filename, '_') ? \Illuminate\Support\Str::after($filename, '_') : $filename;
+                $isImage = in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                $url = url("/api/v1/expenses/requests/{$expense->id}/attachments/{$index}");
+
+                return [
+                    'index' => $index,
+                    'name' => $cleanName,
+                    'path' => (string) $item,
+                    'url' => $url,
+                    'download_url' => $url,
+                    'is_image' => $isImage,
+                ];
+            })->values()->all(),
             'project_id' => $expense->project_id,
             'project_name' => $expense->project?->name,
             'department_name' => $expense->department?->name,
