@@ -150,7 +150,9 @@ abstract class BaseMasterController extends Controller
         $columns = array_values(array_filter($model->getFillable(), fn ($column) => ! in_array($column, [
             'id', 'created_at', 'updated_at', 'deleted_at', 'created_by', 'updated_by', 'deleted_by',
         ], true)));
-        return response(implode(',', $columns)."\n", 200, [
+        // UTF-8 BOM keeps the template readable in Excel while preserving the
+        // exact machine headers required by the importer.
+        return response("\xEF\xBB\xBF".implode(',', $columns)."\r\n", 200, [
             'Content-Type' => 'text/csv; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="'.strtolower(class_basename($this->modelClass)).'-template.csv"',
         ]);
@@ -160,7 +162,7 @@ abstract class BaseMasterController extends Controller
     {
         $request->validate(['file' => ['required', 'file', 'mimes:csv,txt', 'max:10240']]);
         $handle = fopen($request->file('file')->getRealPath(), 'r');
-        $headers = array_map(fn ($header) => trim((string) $header), fgetcsv($handle) ?: []);
+        $headers = array_map(fn ($header) => ltrim(trim((string) $header), "\xEF\xBB\xBF"), fgetcsv($handle) ?: []);
         $model = new $this->modelClass;
         $fillableColumns = array_values(array_filter($model->getFillable(), fn ($column) => ! in_array($column, [
             'id', 'created_at', 'updated_at', 'deleted_at', 'created_by', 'updated_by', 'deleted_by',
