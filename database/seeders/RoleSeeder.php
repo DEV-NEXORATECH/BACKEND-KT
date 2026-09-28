@@ -91,6 +91,8 @@ class RoleSeeder extends Seeder
             ['name' => 'Post expense', 'slug' => 'expense.post'],
             ['name' => 'Pay expense', 'slug' => 'expense.pay'],
             ['name' => 'View timesheet', 'slug' => 'timesheet.view'],
+            ['name' => 'View team timesheets', 'slug' => 'timesheet.team.view'],
+            ['name' => 'View all timesheets', 'slug' => 'timesheet.view_all'],
             ['name' => 'Create timesheet', 'slug' => 'timesheet.create'],
             ['name' => 'Update timesheet', 'slug' => 'timesheet.update'],
             ['name' => 'Submit timesheet', 'slug' => 'timesheet.submit'],
@@ -215,11 +217,14 @@ class RoleSeeder extends Seeder
             ]],
             ['title' => 'Timesheet', 'slug' => 'timesheet', 'path' => '/timesheet', 'icon' => 'clock', 'sort_order' => 52, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'timesheet-dashboard', 'path' => '/timesheet/dashboard', 'sort_order' => 521],
-                ['title' => 'My Timesheet', 'slug' => 'timesheet-my', 'path' => '/timesheet/my-timesheet', 'sort_order' => 522],
-                ['title' => 'Team Timesheet', 'slug' => 'timesheet-team', 'path' => '/timesheet/team-timesheet', 'sort_order' => 523],
-                ['title' => 'Project Timesheet', 'slug' => 'timesheet-project', 'path' => '/timesheet/project-timesheet', 'sort_order' => 524],
-                ['title' => 'Approval', 'slug' => 'timesheet-approval', 'path' => '/timesheet/approval', 'sort_order' => 525],
-                ['title' => 'Reports', 'slug' => 'timesheet-reports', 'path' => '/timesheet/reports', 'sort_order' => 526],
+                ['title' => 'Internal Timesheet', 'slug' => 'timesheet-internal', 'path' => '/timesheet/internal', 'sort_order' => 522],
+                ['title' => 'External Timesheet', 'slug' => 'timesheet-external', 'path' => '/timesheet/external', 'sort_order' => 523],
+                ['title' => 'Consultant Timesheet', 'slug' => 'timesheet-consultant', 'path' => '/timesheet/consultant', 'sort_order' => 524],
+                ['title' => 'My Timesheet', 'slug' => 'timesheet-my', 'path' => '/timesheet/my-timesheet', 'sort_order' => 525],
+                ['title' => 'Team Timesheet', 'slug' => 'timesheet-team', 'path' => '/timesheet/team-timesheet', 'sort_order' => 526],
+                ['title' => 'Project Timesheet', 'slug' => 'timesheet-project', 'path' => '/timesheet/project-timesheet', 'sort_order' => 527],
+                ['title' => 'Approval', 'slug' => 'timesheet-approval', 'path' => '/timesheet/approval', 'sort_order' => 528],
+                ['title' => 'Reports', 'slug' => 'timesheet-reports', 'path' => '/timesheet/reports', 'sort_order' => 529],
             ]],
             ['title' => 'Reports', 'slug' => 'reports', 'path' => '/reports', 'icon' => 'reports', 'sort_order' => 55, 'children' => [
                 ['title' => 'Financial Reports', 'slug' => 'reports-financial', 'path' => '/reports/financial', 'sort_order' => 551],
@@ -289,7 +294,7 @@ class RoleSeeder extends Seeder
                 'expenses-approvals', 'expenses-dashboard', 'expense-requests', 'reimbursements', 'cash-advances', 'settlement', 'approval-center', 'finance-verification', 'payment-processing', 'expense-monitoring',
             ],
             'Timesheet' => [
-                'timesheet', 'timesheet-dashboard', 'timesheet-my', 'timesheet-team', 'timesheet-project', 'timesheet-approval', 'timesheet-reports',
+                'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external', 'timesheet-consultant', 'timesheet-my', 'timesheet-team', 'timesheet-project', 'timesheet-approval', 'timesheet-reports',
             ],
             'Procurement' => [
                 'procurement', 'procurement-dashboard', 'procurement-purchase-request', 'procurement-rfq-cba', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-contracts', 'procurement-scn', 'procurement-goods-receipts', 'procurement-supplier-invoices', 'procurement-waivers',
@@ -359,7 +364,7 @@ class RoleSeeder extends Seeder
                     'budget.view', 'budget.manage', 'budget.validate',
                     'expenses-approvals.view', 'expenses.approve', 'expense.view', 'expense.create', 'expense.submit', 'expense.approve',
                     'procurement.pr.view', 'procurement.pr.create', 'procurement.pr.update', 'procurement.pr.submit', 'procurement.pr.approve',
-                    'timesheet.view', 'timesheet.create', 'timesheet.update', 'timesheet.submit', 'timesheet.approve',
+                    'timesheet.view', 'timesheet.team.view', 'timesheet.create', 'timesheet.update', 'timesheet.submit', 'timesheet.approve',
                     'reports.view',
                 ],
                 'email' => 'budget.holder@kaoemtelapak.test',
@@ -416,7 +421,7 @@ class RoleSeeder extends Seeder
                 'menu_names' => ['Dashboard', 'Timesheet', 'Administration', 'Reports'], // NO Expenses / Approval
                 'permissions' => [
                     'dashboard.view',
-                    'timesheet.view', 'timesheet.create', 'timesheet.update', 'timesheet.submit', 'timesheet.approve',
+                    'timesheet.view', 'timesheet.team.view', 'timesheet.view_all', 'timesheet.create', 'timesheet.update', 'timesheet.submit', 'timesheet.approve',
                     'administration.manage', 'master-menu.view', 'master-menu.manage', 'role-access.view', 'role-access.manage',
                     'audit.view', 'user.manage', 'role.manage', 'permission.manage', 'menu.manage',
                     'master-data.view', 'master-data.manage',

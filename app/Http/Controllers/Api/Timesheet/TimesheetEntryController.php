@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Master\Activity;
 use App\Models\Master\Employee;
 use App\Models\Master\Project;
+use App\Models\ProjectAssignment;
 use App\Models\Timesheet\TimesheetEntry;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Approval\ApprovalWorkflowService;
@@ -23,11 +24,39 @@ class TimesheetEntryController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $canApprove = $this->userHasPermission($user, 'timesheet.approve');
+        $canViewAll = $this->userHasPermission($user, 'timesheet.view_all');
+        $canViewTeam = $this->userHasPermission($user, 'timesheet.team.view');
+        $workerType = $request->string('worker_type', 'internal')->toString();
+        if (! in_array($workerType, ['internal', 'external', 'consultant'], true)) {
+            $workerType = 'internal';
+        }
+        if ($workerType !== 'internal' && ! $canViewAll && ! $canViewTeam) {
+            abort(Response::HTTP_FORBIDDEN, 'Akses external/consultant timesheet hanya tersedia untuk manager atau administrator.');
+        }
 
         $entries = TimesheetEntry::query()
             ->with($this->with)
-            ->when(! $canApprove, fn (Builder $query) => $query->where('user_id', $user->id))
+            ->where('worker_type', $workerType)
+            ->when(! $canViewAll && ! $canViewTeam, fn (Builder $query) => $query->where('user_id', $user->id))
+            ->when(! $canViewAll && $canViewTeam, function (Builder $query) use ($user) {
+                $projectIds = ProjectAssignment::query()
+                    ->where('user_id', $user->id)
+                    ->where('is_active', true)
+                    ->where(function ($assignment) {
+                        $assignment->whereNull('assigned_from')->orWhereDate('assigned_from', '<=', now());
+                    })
+                    ->where(function ($assignment) {
+                        $assignment->whereNull('assigned_to')->orWhereDate('assigned_to', '>=', now());
+                    })
+                    ->pluck('project_id');
+
+                $query->where(function (Builder $scope) use ($user, $projectIds) {
+                    $scope->where('supervisor_id', $user->id);
+                    if ($projectIds->isNotEmpty()) {
+                        $scope->orWhereIn('project_id', $projectIds);
+                    }
+                });
+            })
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
             ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', $request->integer('project_id')))
             ->when($request->filled('program_id'), fn (Builder $query) => $query->where('program_id', $request->integer('program_id')))
@@ -54,6 +83,9 @@ class TimesheetEntryController extends Controller
     public function store(Request $request): JsonResponse
     {
         $payload = $this->validatePayload($request);
+        if ($payload['worker_type'] !== 'internal' && ! $this->userHasPermission($request->user(), 'timesheet.team.view') && ! $this->userHasPermission($request->user(), 'timesheet.view_all')) {
+            abort(Response::HTTP_FORBIDDEN, 'Hanya manager atau administrator yang dapat membuat timesheet external/consultant.');
+        }
         $employee = Employee::query()->find($payload['employee_id']);
         $project = isset($payload['project_id']) ? Project::query()->with('program.grantAgreement.donor')->find($payload['project_id']) : null;
         $activity = isset($payload['activity_id']) ? Activity::query()->find($payload['activity_id']) : null;
@@ -93,6 +125,9 @@ class TimesheetEntryController extends Controller
             abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengubah timesheet user lain.');
         }
 
+        if (! $request->filled('worker_type')) {
+            $request->merge(['worker_type' => $timesheetEntry->worker_type ?: 'internal']);
+        }
         $payload = $this->validatePayload($request);
         $project = isset($payload['project_id']) ? Project::query()->with('grantAgreement')->find($payload['project_id']) : null;
         $activity = isset($payload['activity_id']) ? Activity::query()->find($payload['activity_id']) : null;
@@ -263,9 +298,12 @@ class TimesheetEntryController extends Controller
     {
         return $request->validate([
             'employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'worker_type' => ['sometimes', 'string', 'in:internal,external,consultant'],
             'entry_date' => ['required', 'date'],
             'hours' => ['required', 'numeric', 'min:0.25', 'max:24'],
             'description' => ['required', 'string'],
+            'work_area' => ['nullable', 'string', 'max:120'],
+            'workstream' => ['nullable', 'string', 'max:120'],
             'donor_id' => ['nullable', 'integer', 'exists:donors,id'],
             'program_id' => ['nullable', 'integer', 'exists:programs,id'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
@@ -273,7 +311,7 @@ class TimesheetEntryController extends Controller
             'department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'is_billable' => ['nullable', 'boolean'],
             'supervisor_id' => ['nullable', 'integer', 'exists:users,id'],
-        ]);
+        ]) + ['worker_type' => $request->input('worker_type', 'internal')];
     }
 
     private function userHasPermission($user, string $permission): bool
@@ -285,10 +323,13 @@ class TimesheetEntryController extends Controller
     {
         return [
             'id' => $entry->id,
+            'worker_type' => $entry->worker_type ?: 'internal',
             'employee' => $entry->employee ? ['id' => $entry->employee->id, 'employee_id_number' => $entry->employee->employee_id_number, 'name' => $entry->employee->name, 'email' => $entry->employee->email] : null,
             'entry_date' => $entry->entry_date?->toDateString(),
             'hours' => $entry->hours,
             'description' => $entry->description,
+            'work_area' => $entry->work_area,
+            'workstream' => $entry->workstream,
             'donor' => $entry->donor ? ['id' => $entry->donor->id, 'code' => $entry->donor->code, 'name' => $entry->donor->name] : null,
             'program' => $entry->program ? ['id' => $entry->program->id, 'code' => $entry->program->code, 'name' => $entry->program->name] : null,
             'project' => $entry->project ? ['id' => $entry->project->id, 'code' => $entry->project->code, 'name' => $entry->project->name] : null,
