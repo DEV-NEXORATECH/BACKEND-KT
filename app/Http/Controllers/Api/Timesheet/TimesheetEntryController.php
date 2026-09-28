@@ -316,7 +316,7 @@ class TimesheetEntryController extends Controller
 
     private function userHasPermission($user, string $permission): bool
     {
-        return (bool) $user?->role?->permissions()->where('slug', $permission)->exists();
+        return (bool) $user?->hasPermission($permission);
     }
 
     private function format(TimesheetEntry $entry): array
