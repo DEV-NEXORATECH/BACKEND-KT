@@ -10,7 +10,7 @@ return new class extends Migration {
         if (! Schema::hasColumn('expense_requests', 'settlement_due_date')) {
             Schema::table('expense_requests', function (Blueprint $table) {
                 $table->date('settlement_due_date')->nullable()->after('settlement_status');
-                $table->index(['expense_type', 'settlement_status', 'settlement_due_date']);
+                $table->index(['expense_type', 'settlement_status', 'settlement_due_date'], 'exp_settlement_due_idx');
             });
         }
     }
@@ -19,7 +19,7 @@ return new class extends Migration {
     {
         if (Schema::hasColumn('expense_requests', 'settlement_due_date')) {
             Schema::table('expense_requests', function (Blueprint $table) {
-                $table->dropIndex(['expense_type', 'settlement_status', 'settlement_due_date']);
+                $table->dropIndex('exp_settlement_due_idx');
                 $table->dropColumn('settlement_due_date');
             });
         }

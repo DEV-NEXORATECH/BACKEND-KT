@@ -133,6 +133,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/reports/budget', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/reports/project', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/reports/procurement', [ReportsDashboardController::class, 'procurementDashboard'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/procurement/audit-chain/{supplierInvoice}', [ReportsDashboardController::class, 'procurementAuditChain'])->middleware('permission:reports.view');
     Route::get('/v1/reports/management', [ReportsDashboardController::class, 'reports'])->middleware('permission:reports.view');
     Route::get('/v1/reports/balance-sheet', [ReportsDashboardController::class, 'balanceSheet'])->middleware('permission:reports.view');
     Route::get('/v1/reports/aging', [ReportsDashboardController::class, 'aging'])->middleware('permission:reports.view');
@@ -321,6 +322,10 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1/expenses')->group(function () {
+        Route::get('template', [ExpenseRequestController::class, 'template'])->middleware('permission:expense.view');
+        Route::post('import', [ExpenseRequestController::class, 'import'])->middleware('permission:expense.create');
+        Route::get('requests/template', [ExpenseRequestController::class, 'template'])->middleware('permission:expense.view');
+        Route::post('requests/import', [ExpenseRequestController::class, 'import'])->middleware('permission:expense.create');
         Route::get('dashboard', [ExpenseRequestController::class, 'dashboard'])->middleware('permission:expense.view');
         Route::get('requests', [ExpenseRequestController::class, 'index'])->middleware('permission:expense.view');
         Route::post('requests', [ExpenseRequestController::class, 'store'])->middleware('permission:expense.create');

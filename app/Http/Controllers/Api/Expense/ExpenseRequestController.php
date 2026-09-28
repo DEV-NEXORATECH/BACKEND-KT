@@ -131,7 +131,7 @@ class ExpenseRequestController extends Controller
         }
 
         $data = $request->validate([
-            'file' => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,xls,xlsx,doc,docx'],
+            'file' => ['required', 'file', 'max:20480', 'mimes:pdf,png,jpg,jpeg,webp,gif,svg,doc,docx,xls,xlsx,csv,ppt,pptx,txt,zip,rar,7z'],
         ]);
         $file = $data['file'];
         $extension = strtolower($file->getClientOriginalExtension());
@@ -508,7 +508,24 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'funding_source' => $expense->fundingSource ? ['id' => $expense->fundingSource->id, 'code' => $expense->fundingSource->code, 'name' => $expense->fundingSource->name] : null,
             'document_type' => $expense->documentType ? ['id' => $expense->documentType->id, 'code' => $expense->documentType->code, 'name' => $expense->documentType->name] : null,
             'tax' => $expense->tax ? ['id' => $expense->tax->id, 'code' => $expense->tax->code, 'name' => $expense->tax->name] : null,
-            'attachments' => $expense->attachments ?? [],
+            'attachments' => collect((array) ($expense->attachments ?? []))->map(function ($item, $index) use ($expense) {
+                if (is_array($item)) {
+                    return $item;
+                }
+                $filename = basename((string) $item);
+                $cleanName = str_contains($filename, '_') ? \Illuminate\Support\Str::after($filename, '_') : $filename;
+                $isImage = in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                $url = url("/api/v1/expenses/requests/{$expense->id}/attachments/{$index}");
+
+                return [
+                    'index' => $index,
+                    'name' => $cleanName,
+                    'path' => (string) $item,
+                    'url' => $url,
+                    'download_url' => $url,
+                    'is_image' => $isImage,
+                ];
+            })->values()->all(),
             'project_id' => $expense->project_id,
             'project_name' => $expense->project?->name,
             'department_name' => $expense->department?->name,
@@ -541,5 +558,101 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'amount' => $line->amount,
             ])->values(),
         ];
+    }
+
+    public function template(): \Symfony\Component\HttpFoundation\Response
+    {
+        $columns = [
+            'request_number', 'expense_type', 'request_date', 'description',
+            'project_id', 'department_id', 'donor_id', 'grant_agreement_id',
+            'currency_code', 'exchange_rate',
+            'expense_category_id', 'budget_line_id', 'line_description', 'amount'
+        ];
+
+        return response("\xEF\xBB\xBF".implode(',', $columns)."\r\n", 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="expense-requests-template.csv"',
+        ]);
+    }
+
+    public function import(Request $request): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'mimes:csv,txt', 'max:10240']]);
+
+        $handle = fopen($request->file('file')->getRealPath(), 'r');
+        $headers = array_map(fn ($header) => ltrim(trim((string) $header), "\xEF\xBB\xBF"), fgetcsv($handle) ?: []);
+
+        $created = 0;
+        $skipped = 0;
+        $errors = [];
+        $currentExpense = null;
+
+        while (($row = fgetcsv($handle)) !== false) {
+            $data = [];
+            foreach ($headers as $index => $header) {
+                if ($header !== '') {
+                    $val = $row[$index] ?? null;
+                    $data[$header] = is_string($val) ? trim($val) : $val;
+                }
+            }
+
+            if (empty(array_filter($data))) continue;
+
+            try {
+                $reqNum = !empty($data['request_number']) ? $data['request_number'] : null;
+                $expenseType = $data['expense_type'] ?? 'reimbursement';
+                $requestDate = !empty($data['request_date']) ? $data['request_date'] : now()->toDateString();
+                $description = $data['description'] ?? 'Imported Expense';
+
+                if (!$currentExpense || ($reqNum && $currentExpense->request_number !== $reqNum)) {
+                    $generatedReqNum = $reqNum ?: 'EXP-'.now()->format('YmdHis').'-'.random_int(100, 999);
+                    $currentExpense = ExpenseRequest::create([
+                        'request_number' => $generatedReqNum,
+                        'requester_id' => $request->user()->id,
+                        'expense_type' => in_array($expenseType, ['reimbursement', 'cash_advance', 'supplier_payment', 'loan']) ? $expenseType : 'reimbursement',
+                        'request_date' => $requestDate,
+                        'description' => $description,
+                        'project_id' => !empty($data['project_id']) ? (int) $data['project_id'] : null,
+                        'department_id' => !empty($data['department_id']) ? (int) $data['department_id'] : null,
+                        'donor_id' => !empty($data['donor_id']) ? (int) $data['donor_id'] : null,
+                        'grant_agreement_id' => !empty($data['grant_agreement_id']) ? (int) $data['grant_agreement_id'] : null,
+                        'currency_code' => $data['currency_code'] ?? 'IDR',
+                        'exchange_rate' => !empty($data['exchange_rate']) ? (float) $data['exchange_rate'] : 1.0,
+                        'status' => 'draft',
+                        'created_by' => $request->user()->id,
+                    ]);
+                    $created++;
+                }
+
+                $amount = !empty($data['amount']) ? (float) $data['amount'] : 0.0;
+                $lineDesc = $data['line_description'] ?? $description;
+                $catId = !empty($data['expense_category_id']) ? (int) $data['expense_category_id'] : null;
+                $bLineId = !empty($data['budget_line_id']) ? (int) $data['budget_line_id'] : null;
+
+                $currentExpense->lines()->create([
+                    'expense_category_id' => $catId,
+                    'budget_line_id' => $bLineId,
+                    'description' => $lineDesc,
+                    'amount' => $amount,
+                    'line_order' => $currentExpense->lines()->count() + 1,
+                ]);
+            } catch (\Throwable $e) {
+                $skipped++;
+                if (count($errors) < 5) {
+                    $errors[] = $e->getMessage();
+                }
+            }
+        }
+        fclose($handle);
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$created} pengajuan expense berhasil diimport, {$skipped} baris bermasalah dilewati.",
+            'data' => [
+                'created' => $created,
+                'skipped' => $skipped,
+                'errors' => $errors,
+            ],
+        ]);
     }
 }
