@@ -213,6 +213,7 @@ class TimesheetEntryController extends Controller
 
         $entries = TimesheetEntry::whereIn('id', $data['timesheet_ids'])
             ->where('status', 'approved')
+            ->where('worker_type', 'internal')
             ->whereNull('journal_id')
             ->with('employee:id,hourly_cost_rate')
             ->get();
