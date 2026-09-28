@@ -27,6 +27,7 @@ class TimesheetEntryController extends Controller
         $canViewAll = $this->userHasPermission($user, 'timesheet.view_all');
         $canViewTeam = $this->userHasPermission($user, 'timesheet.team.view');
         $workerType = $request->string('worker_type', 'internal')->toString();
+        $scopeMine = $request->string('scope')->toString() === 'mine';
         if (! in_array($workerType, ['internal', 'external', 'consultant'], true)) {
             $workerType = 'internal';
         }
@@ -37,7 +38,7 @@ class TimesheetEntryController extends Controller
         $entries = TimesheetEntry::query()
             ->with($this->with)
             ->where('worker_type', $workerType)
-            ->when(! $canViewAll && ! $canViewTeam, fn (Builder $query) => $query->where('user_id', $user->id))
+            ->when($scopeMine || (! $canViewAll && ! $canViewTeam), fn (Builder $query) => $query->where('user_id', $user->id))
             ->when(! $canViewAll && $canViewTeam, function (Builder $query) use ($user) {
                 $projectIds = ProjectAssignment::query()
                     ->where('user_id', $user->id)
