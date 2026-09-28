@@ -217,14 +217,23 @@ class RoleSeeder extends Seeder
             ]],
             ['title' => 'Timesheet', 'slug' => 'timesheet', 'path' => '/timesheet', 'icon' => 'clock', 'sort_order' => 52, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'timesheet-dashboard', 'path' => '/timesheet/dashboard', 'sort_order' => 521],
-                ['title' => 'Internal Timesheet', 'slug' => 'timesheet-internal', 'path' => '/timesheet/internal', 'sort_order' => 522],
-                ['title' => 'External Timesheet', 'slug' => 'timesheet-external', 'path' => '/timesheet/external', 'sort_order' => 523],
-                ['title' => 'Consultant Timesheet', 'slug' => 'timesheet-consultant', 'path' => '/timesheet/consultant', 'sort_order' => 524],
-                ['title' => 'My Timesheet', 'slug' => 'timesheet-my', 'path' => '/timesheet/my-timesheet', 'sort_order' => 525],
-                ['title' => 'Team Timesheet', 'slug' => 'timesheet-team', 'path' => '/timesheet/team-timesheet', 'sort_order' => 526],
-                ['title' => 'Project Timesheet', 'slug' => 'timesheet-project', 'path' => '/timesheet/project-timesheet', 'sort_order' => 527],
-                ['title' => 'Approval', 'slug' => 'timesheet-approval', 'path' => '/timesheet/approval', 'sort_order' => 528],
-                ['title' => 'Reports', 'slug' => 'timesheet-reports', 'path' => '/timesheet/reports', 'sort_order' => 529],
+                ['title' => 'Internal Timesheet', 'slug' => 'timesheet-internal', 'path' => '/timesheet/internal', 'sort_order' => 522, 'children' => [
+                    ['title' => 'My Timesheet', 'slug' => 'timesheet-my', 'path' => '/timesheet/my-timesheet', 'sort_order' => 5221],
+                    ['title' => 'Team Timesheet', 'slug' => 'timesheet-team', 'path' => '/timesheet/team-timesheet', 'sort_order' => 5222],
+                    ['title' => 'Approval', 'slug' => 'timesheet-approval', 'path' => '/timesheet/approval', 'sort_order' => 5223],
+                ]],
+                ['title' => 'External Timesheet', 'slug' => 'timesheet-external', 'path' => '/timesheet/external', 'sort_order' => 523, 'children' => [
+                    ['title' => 'External Timesheet', 'slug' => 'timesheet-external-register', 'path' => '/timesheet/external/register', 'sort_order' => 5231],
+                    ['title' => 'Verification', 'slug' => 'timesheet-external-verification', 'path' => '/timesheet/external/verification', 'sort_order' => 5232],
+                    ['title' => 'Reports', 'slug' => 'timesheet-external-reports', 'path' => '/timesheet/external/reports', 'sort_order' => 5233],
+                ]],
+                ['title' => 'Consultant Timesheet', 'slug' => 'timesheet-consultant', 'path' => '/timesheet/consultant', 'sort_order' => 524, 'children' => [
+                    ['title' => 'Consultant Timesheet', 'slug' => 'timesheet-consultant-register', 'path' => '/timesheet/consultant/register', 'sort_order' => 5241],
+                    ['title' => 'Verification', 'slug' => 'timesheet-consultant-verification', 'path' => '/timesheet/consultant/verification', 'sort_order' => 5242],
+                    ['title' => 'Reports', 'slug' => 'timesheet-consultant-reports', 'path' => '/timesheet/consultant/reports', 'sort_order' => 5243],
+                ]],
+                ['title' => 'Project Timesheet', 'slug' => 'timesheet-project', 'path' => '/timesheet/project-timesheet', 'sort_order' => 525],
+                ['title' => 'Reports', 'slug' => 'timesheet-reports', 'path' => '/timesheet/reports', 'sort_order' => 526],
             ]],
             ['title' => 'Reports', 'slug' => 'reports', 'path' => '/reports', 'icon' => 'reports', 'sort_order' => 55, 'children' => [
                 ['title' => 'Financial Reports', 'slug' => 'reports-financial', 'path' => '/reports/financial', 'sort_order' => 551],
@@ -294,7 +303,7 @@ class RoleSeeder extends Seeder
                 'expenses-approvals', 'expenses-dashboard', 'expense-requests', 'reimbursements', 'cash-advances', 'settlement', 'approval-center', 'finance-verification', 'payment-processing', 'expense-monitoring',
             ],
             'Timesheet' => [
-                'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external', 'timesheet-consultant', 'timesheet-my', 'timesheet-team', 'timesheet-project', 'timesheet-approval', 'timesheet-reports',
+                'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external', 'timesheet-consultant', 'timesheet-my', 'timesheet-team', 'timesheet-approval', 'timesheet-external-register', 'timesheet-external-verification', 'timesheet-external-reports', 'timesheet-consultant-register', 'timesheet-consultant-verification', 'timesheet-consultant-reports', 'timesheet-project', 'timesheet-reports',
             ],
             'Procurement' => [
                 'procurement', 'procurement-dashboard', 'procurement-purchase-request', 'procurement-rfq-cba', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-contracts', 'procurement-scn', 'procurement-goods-receipts', 'procurement-supplier-invoices', 'procurement-waivers',
