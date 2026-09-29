@@ -105,6 +105,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/me/profile', [ProfileController::class, 'update']);
     Route::put('/me/password', [ProfileController::class, 'changePassword']);
     Route::get('/users', [UserSecurityController::class, 'users'])->middleware('permission:user.manage');
+    Route::put('/users/{user}/classification', [UserSecurityController::class, 'updateClassification'])->middleware('permission:user.manage');
     Route::get('/me/sessions', [UserSecurityController::class, 'sessions']);
     Route::delete('/me/sessions/{tokenId}', [UserSecurityController::class, 'revokeSession']);
     Route::get('/users/{user}/sessions', [UserSecurityController::class, 'sessions'])->middleware('permission:user.manage');

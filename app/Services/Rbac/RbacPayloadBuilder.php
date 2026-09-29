@@ -21,11 +21,14 @@ class RbacPayloadBuilder
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'employee_id' => $user->employee_id,
+                'worker_type' => $user->worker_type ?: 'internal',
                 'must_change_password' => (bool) $user->must_change_password,
             ],
             'role' => $this->formatRole($user),
             'roles' => $user->role ? [$this->formatRole($user)] : [],
             'permissions' => $this->formatPermissions($user),
+            'timesheet_access' => $this->timesheetAccess($user),
             'menus' => $this->formatMenus($user),
         ];
     }
@@ -54,6 +57,15 @@ class RbacPayloadBuilder
             ])
             ->values()
             ->all() ?? [];
+    }
+
+    private function timesheetAccess(User $user): array
+    {
+        if ($user->role?->slug === 'super-admin' || $user->hasPermission('timesheet.view_all')) {
+            return ['internal', 'external', 'consultant'];
+        }
+
+        return ['internal'];
     }
 
     private function formatMenus(User $user): array
