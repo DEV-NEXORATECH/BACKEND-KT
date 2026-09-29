@@ -16,10 +16,27 @@ class UserSecurityController extends Controller
     public function users(Request $request): JsonResponse
     {
         abort_unless($request->user()->hasPermission('user.manage'), 403);
-        return response()->json(['success' => true, 'data' => User::query()->with('role:id,name')->orderBy('name')->get(['id','name','email','role_id','is_active','must_change_password'])->map(fn (User $user) => [
+        return response()->json(['success' => true, 'data' => User::query()->with('role:id,name')->orderBy('name')->get(['id','name','email','role_id','worker_type','external_party_name','contract_reference','is_active','must_change_password'])->map(fn (User $user) => [
             'id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'role' => $user->role?->name,
+            'worker_type' => $user->worker_type ?: 'internal', 'external_party_name' => $user->external_party_name, 'contract_reference' => $user->contract_reference,
             'is_active' => $user->is_active, 'must_change_password' => $user->must_change_password,
         ])]);
+    }
+
+    public function updateClassification(Request $request, User $user): JsonResponse
+    {
+        abort_unless($request->user()->hasPermission('user.manage'), 403);
+        $data = $request->validate([
+            'worker_type' => ['required', 'string', 'in:internal,external,consultant'],
+            'external_party_name' => ['nullable', 'required_if:worker_type,external', 'required_if:worker_type,consultant', 'string', 'max:180'],
+            'contract_reference' => ['nullable', 'required_if:worker_type,external', 'required_if:worker_type,consultant', 'string', 'max:120'],
+        ]);
+        if ($data['worker_type'] === 'internal') {
+            $data['external_party_name'] = null;
+            $data['contract_reference'] = null;
+        }
+        $user->update($data);
+        return response()->json(['success' => true, 'message' => 'Klasifikasi user berhasil disimpan.', 'data' => $user->fresh()->only(['id', 'worker_type', 'external_party_name', 'contract_reference'])]);
     }
 
     public function sessions(Request $request, ?User $user = null): JsonResponse

@@ -25,6 +25,7 @@ use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierContractNotification;
 use App\Models\Procurement\SupplierInvoice;
+use App\Models\ProjectAssignment;
 use App\Models\Timesheet\TimesheetEntry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -251,8 +252,19 @@ class ApprovalCenterController extends Controller
         // 9. Timesheets
         if (! $moduleFilter || $moduleFilter === 'timesheet') {
             if ($user->hasAnyPermission(['timesheet.approve'])) {
-                $ts = TimesheetEntry::with(['employee', 'project'])
-                    ->where('status', 'submitted')
+                $canViewAllTimesheets = $user->hasPermission('timesheet.view_all');
+                $canViewTeamTimesheets = $user->hasPermission('timesheet.team.view');
+                $tsQuery = TimesheetEntry::with(['employee', 'project'])->where('worker_type', 'internal')->where('status', 'submitted');
+                if (! $canViewAllTimesheets && $canViewTeamTimesheets) {
+                    $projectIds = ProjectAssignment::where('user_id', $user->id)->where('is_active', true)->pluck('project_id');
+                    $tsQuery->where(function ($scope) use ($user, $projectIds) {
+                        $scope->where('supervisor_id', $user->id);
+                        if ($projectIds->isNotEmpty()) $scope->orWhereIn('project_id', $projectIds);
+                    });
+                } elseif (! $canViewAllTimesheets) {
+                    $tsQuery->where('user_id', $user->id);
+                }
+                $ts = $tsQuery
                     ->latest('id')
                     ->get()
                     ->map(fn (TimesheetEntry $t) => [
@@ -261,8 +273,8 @@ class ApprovalCenterController extends Controller
                         'module_label' => 'Timesheet Pegawai',
                         'reference_number' => 'TS-'.$t->id,
                         'request_date' => $t->entry_date?->toDateString(),
-                        'title_summary' => 'Presensi/Jam Kerja: '.$t->task_description.' ('.$t->hours_spent.' jam)',
-                        'amount' => (float) $t->hours_spent,
+                        'title_summary' => 'Presensi/Jam Kerja: '.$t->description.' ('.$t->hours.' jam)',
+                        'amount' => (float) $t->hours,
                         'currency' => 'Jam',
                         'requester_name' => $t->employee?->name ?? 'Staff',
                         'department_name' => null,

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Master\Activity;
 use App\Models\Master\Employee;
 use App\Models\Master\Project;
+use App\Models\ProjectAssignment;
 use App\Models\Timesheet\TimesheetEntry;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Approval\ApprovalWorkflowService;
@@ -34,11 +35,41 @@ class TimesheetEntryController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $canApprove = $this->userHasPermission($user, 'timesheet.approve');
+        $canViewAll = $this->userHasPermission($user, 'timesheet.view_all');
+        $canViewTeam = $this->userHasPermission($user, 'timesheet.team.view');
+        $workerType = $request->string('worker_type', 'internal')->toString();
+        $scopeMine = $request->string('scope')->toString() === 'mine';
+        if (! in_array($workerType, ['internal', 'external', 'consultant'], true)) {
+            $workerType = 'internal';
+        }
+        $accountWorkerType = $user->worker_type ?: 'internal';
+        if ($workerType !== 'internal' && ! $canViewAll && ! $canViewTeam && $workerType !== $accountWorkerType) {
+            abort(Response::HTTP_FORBIDDEN, 'Akses external/consultant timesheet hanya tersedia untuk manager atau administrator.');
+        }
 
         $entries = TimesheetEntry::query()
             ->with($this->with)
-            ->when(! $canApprove, fn (Builder $query) => $query->where('user_id', $user->id))
+            ->where('worker_type', $workerType)
+            ->when($scopeMine || (! $canViewAll && ! $canViewTeam), fn (Builder $query) => $query->where('user_id', $user->id))
+            ->when(! $canViewAll && $canViewTeam, function (Builder $query) use ($user) {
+                $projectIds = ProjectAssignment::query()
+                    ->where('user_id', $user->id)
+                    ->where('is_active', true)
+                    ->where(function ($assignment) {
+                        $assignment->whereNull('assigned_from')->orWhereDate('assigned_from', '<=', now());
+                    })
+                    ->where(function ($assignment) {
+                        $assignment->whereNull('assigned_to')->orWhereDate('assigned_to', '>=', now());
+                    })
+                    ->pluck('project_id');
+
+                $query->where(function (Builder $scope) use ($user, $projectIds) {
+                    $scope->where('supervisor_id', $user->id);
+                    if ($projectIds->isNotEmpty()) {
+                        $scope->orWhereIn('project_id', $projectIds);
+                    }
+                });
+            })
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
             ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', $request->integer('project_id')))
             ->when($request->filled('program_id'), fn (Builder $query) => $query->where('program_id', $request->integer('program_id')))
@@ -90,7 +121,15 @@ class TimesheetEntryController extends Controller
 
     public function store(Request $request, TimesheetCalculationService $calculationService): JsonResponse
     {
+        if (! $request->filled('employee_id')) {
+            $request->merge(['employee_id' => $request->user()->employee?->id]);
+        }
         $payload = $this->validatePayload($request);
+        $isPrivileged = $this->userHasPermission($request->user(), 'timesheet.team.view') || $this->userHasPermission($request->user(), 'timesheet.view_all');
+        if (! $isPrivileged) {
+            $payload['worker_type'] = $request->user()->worker_type ?: 'internal';
+        }
+        $payload = $this->applyBillingCalculation($payload);
         $employee = Employee::query()->find($payload['employee_id']);
         $project = isset($payload['project_id']) ? Project::query()->with('program.grantAgreement.donor')->find($payload['project_id']) : null;
         $activity = isset($payload['activity_id']) ? Activity::query()->find($payload['activity_id']) : null;
@@ -123,6 +162,7 @@ class TimesheetEntryController extends Controller
             'applied_rate' => $calc['applied_rate'],
             'billable_hours' => $calc['billable_hours'],
             'calculated_amount' => $calc['calculated_amount'],
+            'prepared_signed_at' => ! empty($payload['prepared_signature']) ? now() : null,
             'user_id' => $employee?->user?->id ?? $request->user()->id,
             'department_id' => $payload['department_id'] ?? $employee?->department_id,
             'program_id' => $payload['program_id'] ?? $project?->program_id,
@@ -142,7 +182,11 @@ class TimesheetEntryController extends Controller
             abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengubah timesheet user lain.');
         }
 
+        if (! $request->filled('worker_type')) {
+            $request->merge(['worker_type' => $timesheetEntry->worker_type ?: 'internal']);
+        }
         $payload = $this->validatePayload($request);
+        $payload = $this->applyBillingCalculation($payload);
         $employee = Employee::query()->find($payload['employee_id']);
         $project = isset($payload['project_id']) ? Project::query()->with('grantAgreement')->find($payload['project_id']) : null;
         $activity = isset($payload['activity_id']) ? Activity::query()->find($payload['activity_id']) : null;
@@ -206,7 +250,7 @@ class TimesheetEntryController extends Controller
         if ($timesheetEntry->status !== 'submitted') {
             throw ValidationException::withMessages(['status' => 'Timesheet harus submitted untuk approval.']);
         }
-        $data = $request->validate(['notes' => ['nullable', 'string']]);
+        $data = $request->validate(['notes' => ['nullable', 'string'], 'signature' => ['nullable', 'string']]);
         if ($decision === 'approved') {
             $approval = $workflow->approve('timesheet', $timesheetEntry, $request->user(), $data['notes'] ?? null);
             if ($approval['managed'] && ! $approval['completed']) {
@@ -222,6 +266,8 @@ class TimesheetEntryController extends Controller
             "{$field}_by" => $request->user()->id,
             "{$field}_at" => now(),
             'decision_notes' => $data['notes'] ?? null,
+            'approved_signature' => $decision === 'approved' ? ($data['signature'] ?? null) : null,
+            'approved_signed_at' => $decision === 'approved' && ! empty($data['signature']) ? now() : null,
         ]);
 
         return response()->json(['success' => true, 'message' => "Timesheet berhasil {$decision}.", 'data' => $this->format($timesheetEntry->fresh($this->with))]);
@@ -243,6 +289,7 @@ class TimesheetEntryController extends Controller
 
         $entries = TimesheetEntry::whereIn('id', $data['timesheet_ids'])
             ->where('status', 'approved')
+            ->where('worker_type', 'internal')
             ->whereNull('journal_id')
             ->with(['employee:id,employee_id_number,name,hourly_cost_rate,daily_cost_rate,default_rate_scheme'])
             ->get();
@@ -347,9 +394,20 @@ class TimesheetEntryController extends Controller
     {
         return $request->validate([
             'employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'worker_type' => ['sometimes', 'string', 'in:internal,external,consultant'],
+            'vendor_name' => ['nullable', 'string', 'max:180'],
+            'contract_reference' => ['nullable', 'string', 'max:120'],
+            'invoice_reference' => ['nullable', 'string', 'max:120'],
+            'billing_mode' => ['nullable', 'string', 'in:daily,hourly'],
+            'fee_total' => ['nullable', 'numeric', 'min:0'],
+            'work_days' => ['nullable', 'numeric', 'min:0.01'],
+            'break_hours' => ['nullable', 'numeric', 'min:0', 'max:24'],
+            'normal_hours' => ['nullable', 'numeric', 'min:0', 'max:24'],
             'entry_date' => ['required', 'date'],
             'hours' => ['required', 'numeric', 'min:0.25', 'max:24'],
             'description' => ['required', 'string'],
+            'work_area' => ['nullable', 'string', 'max:120'],
+            'workstream' => ['nullable', 'string', 'max:120'],
             'donor_id' => ['nullable', 'integer', 'exists:donors,id'],
             'program_id' => ['nullable', 'integer', 'exists:programs,id'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
@@ -360,18 +418,56 @@ class TimesheetEntryController extends Controller
             'department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'is_billable' => ['nullable', 'boolean'],
             'supervisor_id' => ['nullable', 'integer', 'exists:users,id'],
-        ]);
+            'prepared_signature' => ['nullable', 'string'],
+        ]) + ['worker_type' => $request->input('worker_type', 'internal')];
+    }
+
+    private function applyBillingCalculation(array $payload): array
+    {
+        if (($payload['worker_type'] ?? 'internal') !== 'consultant' || empty($payload['fee_total']) || empty($payload['work_days'])) {
+            return $payload;
+        }
+
+        $fee = (float) $payload['fee_total'];
+        $days = (float) $payload['work_days'];
+        $hours = (float) ($payload['hours'] ?? 0);
+        $mode = $payload['billing_mode'] ?? 'daily';
+        $payload['billing_mode'] = $mode;
+        $payload['rate_per_day'] = round($fee / $days, 2);
+        $payload['rate_per_hour'] = round($fee / ($days * 8), 2);
+        $payload['normal_hours'] = min($hours, 8);
+        $payload['payable_amount'] = $mode === 'hourly'
+            ? round($hours * $payload['rate_per_hour'], 2)
+            : round(($hours / 8) * $payload['rate_per_day'], 2);
+
+        return $payload;
     }
 
     private function userHasPermission($user, string $permission): bool
     {
-        return (bool) $user?->role?->permissions()->where('slug', $permission)->exists();
+        return (bool) $user?->hasPermission($permission);
     }
 
     private function format(TimesheetEntry $entry): array
     {
         return [
             'id' => $entry->id,
+            'worker_type' => $entry->worker_type ?: 'internal',
+            'vendor_name' => $entry->vendor_name,
+            'contract_reference' => $entry->contract_reference,
+            'invoice_reference' => $entry->invoice_reference,
+            'billing_mode' => $entry->billing_mode,
+            'fee_total' => $entry->fee_total,
+            'work_days' => $entry->work_days,
+            'rate_per_day' => $entry->rate_per_day,
+            'rate_per_hour' => $entry->rate_per_hour,
+            'break_hours' => $entry->break_hours,
+            'normal_hours' => $entry->normal_hours,
+            'payable_amount' => $entry->payable_amount,
+            'prepared_signature' => $entry->prepared_signature,
+            'prepared_signed_at' => $entry->prepared_signed_at,
+            'approved_signature' => $entry->approved_signature,
+            'approved_signed_at' => $entry->approved_signed_at,
             'employee' => $entry->employee ? [
                 'id' => $entry->employee->id,
                 'employee_id_number' => $entry->employee->employee_id_number,
@@ -392,6 +488,8 @@ class TimesheetEntryController extends Controller
             'billable_hours' => $entry->billable_hours !== null ? (float) $entry->billable_hours : (float) $entry->hours,
             'calculated_amount' => $entry->calculated_amount !== null ? (float) $entry->calculated_amount : 0.0,
             'description' => $entry->description,
+            'work_area' => $entry->work_area,
+            'workstream' => $entry->workstream,
             'donor' => $entry->donor ? ['id' => $entry->donor->id, 'code' => $entry->donor->code, 'name' => $entry->donor->name] : null,
             'program' => $entry->program ? ['id' => $entry->program->id, 'code' => $entry->program->code, 'name' => $entry->program->name] : null,
             'project' => $entry->project ? ['id' => $entry->project->id, 'code' => $entry->project->code, 'name' => $entry->project->name] : null,

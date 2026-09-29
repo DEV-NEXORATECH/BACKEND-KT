@@ -23,6 +23,9 @@ class User extends Authenticatable
         'email',
         'password',
         'role_id',
+        'worker_type',
+        'external_party_name',
+        'contract_reference',
         'employee_id',
         'is_active',
         'must_change_password',
@@ -67,11 +70,19 @@ class User extends Authenticatable
 
     public function hasPermission(string $permission): bool
     {
+        if ($this->role?->slug === 'super-admin') {
+            return true;
+        }
+
         return (bool) $this->role?->permissions()->where('slug', $permission)->exists();
     }
 
     public function hasAnyPermission(array $permissions): bool
     {
+        if ($this->role?->slug === 'super-admin') {
+            return true;
+        }
+
         return (bool) $this->role?->permissions()->whereIn('slug', $permissions)->exists();
     }
 }
