@@ -9,6 +9,7 @@ use App\Models\Master\Project;
 use App\Models\Timesheet\TimesheetEntry;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Approval\ApprovalWorkflowService;
+use App\Services\Timesheet\TimesheetCalculationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,7 +19,17 @@ use Symfony\Component\HttpFoundation\Response;
 
 class TimesheetEntryController extends Controller
 {
-    private array $with = ['employee:id,employee_id_number,name,email,department_id', 'employee.department:id,code,name', 'project:id,code,name,program_id', 'project.program:id,code,name', 'activity:id,code,name,project_id', 'donor:id,code,name', 'program:id,code,name', 'department:id,code,name', 'supervisor:id,name,email'];
+    private array $with = [
+        'employee:id,employee_id_number,name,email,department_id,employment_type,contract_total_fee,contract_total_days,daily_cost_rate,hourly_cost_rate,default_rate_scheme',
+        'employee.department:id,code,name',
+        'project:id,code,name,program_id',
+        'project.program:id,code,name',
+        'activity:id,code,name,project_id',
+        'donor:id,code,name',
+        'program:id,code,name',
+        'department:id,code,name',
+        'supervisor:id,name,email',
+    ];
 
     public function index(Request $request): JsonResponse
     {
@@ -33,6 +44,8 @@ class TimesheetEntryController extends Controller
             ->when($request->filled('program_id'), fn (Builder $query) => $query->where('program_id', $request->integer('program_id')))
             ->when($request->filled('donor_id'), fn (Builder $query) => $query->where('donor_id', $request->integer('donor_id')))
             ->when($request->filled('employee_id'), fn (Builder $query) => $query->where('employee_id', $request->integer('employee_id')))
+            ->when($request->filled('task_type'), fn (Builder $query) => $query->where('task_type', $request->string('task_type')))
+            ->when($request->filled('rate_scheme'), fn (Builder $query) => $query->where('rate_scheme', $request->string('rate_scheme')))
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('entry_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('entry_date', '<=', $request->string('end_date')))
             ->latest('entry_date')
@@ -41,17 +54,41 @@ class TimesheetEntryController extends Controller
 
         $totals = [
             'hours' => round((float) $entries->sum('hours'), 2),
-            'billable_hours' => round((float) $entries->where('is_billable', true)->sum('hours'), 2),
+            'billable_hours' => round((float) $entries->sum(fn (TimesheetEntry $e) => (float) ($e->billable_hours ?? ($e->is_billable ? $e->hours : 0))), 2),
+            'calculated_amount' => round((float) $entries->sum('calculated_amount'), 2),
             'entries' => $entries->count(),
-            'by_employee' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->employee?->name ?? 'Unassigned')->map(fn ($rows, $label) => ['label' => $label, 'hours' => round((float) $rows->sum('hours'), 2), 'entries' => $rows->count()])->values(),
-            'by_project' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->project?->name ?? 'Unassigned')->map(fn ($rows, $label) => ['label' => $label, 'hours' => round((float) $rows->sum('hours'), 2), 'entries' => $rows->count()])->values(),
-            'by_donor' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->donor?->name ?? 'Unassigned')->map(fn ($rows, $label) => ['label' => $label, 'hours' => round((float) $rows->sum('hours'), 2), 'entries' => $rows->count()])->values(),
+            'by_employee' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->employee?->name ?? 'Unassigned')->map(fn ($rows, $label) => [
+                'label' => $label,
+                'hours' => round((float) $rows->sum('hours'), 2),
+                'billable_hours' => round((float) $rows->sum(fn ($r) => (float) ($r->billable_hours ?? $r->hours)), 2),
+                'amount' => round((float) $rows->sum('calculated_amount'), 2),
+                'entries' => $rows->count(),
+            ])->values(),
+            'by_project' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->project?->name ?? 'Unassigned')->map(fn ($rows, $label) => [
+                'label' => $label,
+                'hours' => round((float) $rows->sum('hours'), 2),
+                'amount' => round((float) $rows->sum('calculated_amount'), 2),
+                'entries' => $rows->count(),
+            ])->values(),
+            'by_donor' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->donor?->name ?? 'Unassigned')->map(fn ($rows, $label) => [
+                'label' => $label,
+                'hours' => round((float) $rows->sum('hours'), 2),
+                'amount' => round((float) $rows->sum('calculated_amount'), 2),
+                'entries' => $rows->count(),
+            ])->values(),
+            'by_rate_scheme' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->rate_scheme ?? 'daily_capped_8h')->map(fn ($rows, $scheme) => [
+                'scheme' => $scheme,
+                'hours' => round((float) $rows->sum('hours'), 2),
+                'billable_hours' => round((float) $rows->sum(fn ($r) => (float) ($r->billable_hours ?? $r->hours)), 2),
+                'amount' => round((float) $rows->sum('calculated_amount'), 2),
+                'entries' => $rows->count(),
+            ])->values(),
         ];
 
         return response()->json(['success' => true, 'totals' => $totals, 'data' => $entries->map(fn (TimesheetEntry $entry) => $this->format($entry))]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, TimesheetCalculationService $calculationService): JsonResponse
     {
         $payload = $this->validatePayload($request);
         $employee = Employee::query()->find($payload['employee_id']);
@@ -72,8 +109,20 @@ class TimesheetEntryController extends Controller
             abort(Response::HTTP_FORBIDDEN, 'Tidak boleh membuat timesheet untuk pegawai lain.');
         }
 
+        $calc = $calculationService->calculate(
+            $employee,
+            (float) $payload['hours'],
+            $payload['rate_scheme'] ?? null,
+            isset($payload['applied_rate']) ? (float) $payload['applied_rate'] : null
+        );
+
         $entry = TimesheetEntry::create([
             ...$payload,
+            'task_type' => $payload['task_type'] ?? (! empty($payload['activity_id']) ? 'project_activity' : 'general'),
+            'rate_scheme' => $calc['rate_scheme'],
+            'applied_rate' => $calc['applied_rate'],
+            'billable_hours' => $calc['billable_hours'],
+            'calculated_amount' => $calc['calculated_amount'],
             'user_id' => $employee?->user?->id ?? $request->user()->id,
             'department_id' => $payload['department_id'] ?? $employee?->department_id,
             'program_id' => $payload['program_id'] ?? $project?->program_id,
@@ -84,7 +133,7 @@ class TimesheetEntryController extends Controller
         return response()->json(['success' => true, 'message' => 'Timesheet entry berhasil dibuat.', 'data' => $this->format($entry)], Response::HTTP_CREATED);
     }
 
-    public function update(Request $request, TimesheetEntry $timesheetEntry): JsonResponse
+    public function update(Request $request, TimesheetEntry $timesheetEntry, TimesheetCalculationService $calculationService): JsonResponse
     {
         if ($timesheetEntry->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'Timesheet hanya dapat diubah saat draft.']);
@@ -94,8 +143,10 @@ class TimesheetEntryController extends Controller
         }
 
         $payload = $this->validatePayload($request);
+        $employee = Employee::query()->find($payload['employee_id']);
         $project = isset($payload['project_id']) ? Project::query()->with('grantAgreement')->find($payload['project_id']) : null;
         $activity = isset($payload['activity_id']) ? Activity::query()->find($payload['activity_id']) : null;
+        
         if ($activity && $project && (int) $activity->project_id !== (int) $project->id) {
             throw ValidationException::withMessages(['activity_id' => 'Activity tidak sesuai dengan project yang dipilih.']);
         }
@@ -105,7 +156,22 @@ class TimesheetEntryController extends Controller
         if ($project && isset($payload['donor_id']) && $payload['donor_id'] && (int) $project->grantAgreement?->donor_id !== (int) $payload['donor_id']) {
             throw ValidationException::withMessages(['donor_id' => 'Donor tidak sesuai dengan project yang dipilih.']);
         }
-        $timesheetEntry->update($payload);
+
+        $calc = $calculationService->calculate(
+            $employee,
+            (float) $payload['hours'],
+            $payload['rate_scheme'] ?? $timesheetEntry->rate_scheme,
+            isset($payload['applied_rate']) ? (float) $payload['applied_rate'] : (float) $timesheetEntry->applied_rate
+        );
+
+        $timesheetEntry->update([
+            ...$payload,
+            'task_type' => $payload['task_type'] ?? (! empty($payload['activity_id']) ? 'project_activity' : 'general'),
+            'rate_scheme' => $calc['rate_scheme'],
+            'applied_rate' => $calc['applied_rate'],
+            'billable_hours' => $calc['billable_hours'],
+            'calculated_amount' => $calc['calculated_amount'],
+        ]);
 
         return response()->json(['success' => true, 'message' => 'Timesheet entry berhasil diperbarui.', 'data' => $this->format($timesheetEntry->fresh($this->with))]);
     }
@@ -161,7 +227,7 @@ class TimesheetEntryController extends Controller
         return response()->json(['success' => true, 'message' => "Timesheet berhasil {$decision}.", 'data' => $this->format($timesheetEntry->fresh($this->with))]);
     }
 
-    public function postLaborCost(Request $request): JsonResponse
+    public function postLaborCost(Request $request, TimesheetCalculationService $calculationService): JsonResponse
     {
         $data = $request->validate([
             'timesheet_ids' => ['required', 'array', 'min:1'],
@@ -178,7 +244,7 @@ class TimesheetEntryController extends Controller
         $entries = TimesheetEntry::whereIn('id', $data['timesheet_ids'])
             ->where('status', 'approved')
             ->whereNull('journal_id')
-            ->with('employee:id,hourly_cost_rate')
+            ->with(['employee:id,employee_id_number,name,hourly_cost_rate,daily_cost_rate,default_rate_scheme'])
             ->get();
 
         if ($entries->isEmpty()) {
@@ -196,7 +262,8 @@ class TimesheetEntryController extends Controller
         }
 
         foreach ($entries as $entry) {
-            if (($overrideRate ?? (float) ($entry->employee?->hourly_cost_rate ?? 0)) <= 0) {
+            $effectiveRate = $overrideRate ?? (float) ($entry->applied_rate ?: ($entry->employee?->hourly_cost_rate ?: ($entry->employee?->daily_cost_rate ? $entry->employee->daily_cost_rate / 8 : 0)));
+            if ($effectiveRate <= 0 && ((float) ($entry->calculated_amount ?? 0) <= 0)) {
                 throw ValidationException::withMessages(['hourly_rate' => "Master hourly cost rate belum diisi untuk employee timesheet ID {$entry->id}."]);
             }
         }
@@ -204,10 +271,24 @@ class TimesheetEntryController extends Controller
         $postedCount = 0;
         $totalCost = 0;
 
-        DB::transaction(function () use ($entries, $postingDate, $overrideRate, $laborAccount, $payableAccount, &$postedCount, &$totalCost, $request) {
+        DB::transaction(function () use ($entries, $postingDate, $overrideRate, $laborAccount, $payableAccount, &$postedCount, &$totalCost, $request, $calculationService) {
             foreach ($entries as $entry) {
-                $rate = $overrideRate ?? (float) $entry->employee->hourly_cost_rate;
-                $cost = round((float) $entry->hours * $rate, 2);
+                if ($overrideRate !== null) {
+                    $calc = $calculationService->calculate($entry->employee, (float) $entry->hours, $entry->rate_scheme, $overrideRate);
+                    $cost = $calc['calculated_amount'];
+                    $usedRate = $calc['applied_rate'];
+                    $usedHours = $calc['billable_hours'];
+                } elseif ((float) ($entry->calculated_amount ?? 0) > 0) {
+                    $cost = (float) $entry->calculated_amount;
+                    $usedRate = (float) $entry->applied_rate;
+                    $usedHours = (float) ($entry->billable_hours ?? $entry->hours);
+                } else {
+                    $calc = $calculationService->calculate($entry->employee, (float) $entry->hours, $entry->rate_scheme);
+                    $cost = $calc['calculated_amount'];
+                    $usedRate = $calc['applied_rate'];
+                    $usedHours = $calc['billable_hours'];
+                }
+
                 $journal = \App\Models\Accounting\Journal::create([
                     'journal_number' => 'LABOR-'.now()->format('YmdHis').'-'.random_int(100, 999),
                     'journal_date' => $postingDate,
@@ -225,7 +306,7 @@ class TimesheetEntryController extends Controller
                     'donor_id' => $entry->donor_id,
                     'program_id' => $entry->program_id,
                     'department_id' => $entry->department_id,
-                    'line_description' => 'Labor cost ('.$entry->hours.' jam)',
+                    'line_description' => 'Labor cost ('.$usedHours.' jam @ Rp '.number_format($usedRate, 0, ',', '.').')',
                     'debit' => $cost,
                     'credit' => 0,
                     'line_order' => 1,
@@ -242,6 +323,9 @@ class TimesheetEntryController extends Controller
                 $entry->update([
                     'status' => 'posted',
                     'journal_id' => $journal->id,
+                    'applied_rate' => $usedRate,
+                    'billable_hours' => $usedHours,
+                    'calculated_amount' => $cost,
                     'posted_by' => $request->user()->id,
                     'posted_at' => now(),
                 ]);
@@ -270,6 +354,9 @@ class TimesheetEntryController extends Controller
             'program_id' => ['nullable', 'integer', 'exists:programs,id'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'activity_id' => ['nullable', 'integer', 'exists:activities,id'],
+            'task_type' => ['nullable', 'string', 'in:project_activity,general'],
+            'rate_scheme' => ['nullable', 'string', 'in:daily_capped_8h,hourly_unlimited'],
+            'applied_rate' => ['nullable', 'numeric', 'min:0'],
             'department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'is_billable' => ['nullable', 'boolean'],
             'supervisor_id' => ['nullable', 'integer', 'exists:users,id'],
@@ -285,9 +372,25 @@ class TimesheetEntryController extends Controller
     {
         return [
             'id' => $entry->id,
-            'employee' => $entry->employee ? ['id' => $entry->employee->id, 'employee_id_number' => $entry->employee->employee_id_number, 'name' => $entry->employee->name, 'email' => $entry->employee->email] : null,
+            'employee' => $entry->employee ? [
+                'id' => $entry->employee->id,
+                'employee_id_number' => $entry->employee->employee_id_number,
+                'name' => $entry->employee->name,
+                'email' => $entry->employee->email,
+                'employment_type' => $entry->employee->employment_type ?? 'internal',
+                'contract_total_fee' => $entry->employee->contract_total_fee ? (float) $entry->employee->contract_total_fee : null,
+                'contract_total_days' => $entry->employee->contract_total_days ? (int) $entry->employee->contract_total_days : null,
+                'daily_cost_rate' => $entry->employee->daily_cost_rate ? (float) $entry->employee->daily_cost_rate : null,
+                'hourly_cost_rate' => $entry->employee->hourly_cost_rate ? (float) $entry->employee->hourly_cost_rate : null,
+                'default_rate_scheme' => $entry->employee->default_rate_scheme ?? 'daily_capped_8h',
+            ] : null,
             'entry_date' => $entry->entry_date?->toDateString(),
-            'hours' => $entry->hours,
+            'hours' => (float) $entry->hours,
+            'task_type' => $entry->task_type ?? 'project_activity',
+            'rate_scheme' => $entry->rate_scheme ?? ($entry->employee?->default_rate_scheme ?? 'daily_capped_8h'),
+            'applied_rate' => $entry->applied_rate !== null ? (float) $entry->applied_rate : null,
+            'billable_hours' => $entry->billable_hours !== null ? (float) $entry->billable_hours : (float) $entry->hours,
+            'calculated_amount' => $entry->calculated_amount !== null ? (float) $entry->calculated_amount : 0.0,
             'description' => $entry->description,
             'donor' => $entry->donor ? ['id' => $entry->donor->id, 'code' => $entry->donor->code, 'name' => $entry->donor->name] : null,
             'program' => $entry->program ? ['id' => $entry->program->id, 'code' => $entry->program->code, 'name' => $entry->program->name] : null,

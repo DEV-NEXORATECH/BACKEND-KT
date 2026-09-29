@@ -18,11 +18,22 @@ class TimesheetEntry extends Model
 {
     use SoftDeletes, AuditTrailTrait;
 
-    protected $fillable = ['employee_id', 'user_id', 'entry_date', 'hours', 'description', 'donor_id', 'program_id', 'project_id', 'activity_id', 'department_id', 'is_billable', 'supervisor_id', 'status', 'journal_id', 'posted_by', 'posted_at', 'submitted_by', 'submitted_at', 'approved_by', 'approved_at', 'rejected_by', 'rejected_at', 'decision_notes', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = [
+        'employee_id', 'user_id', 'entry_date', 'hours', 'description',
+        'donor_id', 'program_id', 'project_id', 'activity_id', 'task_type',
+        'department_id', 'is_billable', 'rate_scheme', 'applied_rate', 'billable_hours', 'calculated_amount',
+        'supervisor_id', 'status', 'journal_id', 'posted_by', 'posted_at',
+        'submitted_by', 'submitted_at', 'approved_by', 'approved_at',
+        'rejected_by', 'rejected_at', 'decision_notes',
+        'created_by', 'updated_by', 'deleted_by'
+    ];
 
     protected $casts = [
         'entry_date' => 'date',
         'hours' => 'decimal:2',
+        'applied_rate' => 'decimal:2',
+        'billable_hours' => 'decimal:2',
+        'calculated_amount' => 'decimal:2',
         'is_billable' => 'boolean',
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
