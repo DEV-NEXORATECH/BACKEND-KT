@@ -84,6 +84,9 @@ class TimesheetEntryController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        if (! $request->filled('employee_id')) {
+            $request->merge(['employee_id' => $request->user()->employee?->id]);
+        }
         $payload = $this->validatePayload($request);
         $isPrivileged = $this->userHasPermission($request->user(), 'timesheet.team.view') || $this->userHasPermission($request->user(), 'timesheet.view_all');
         if (! $isPrivileged) {

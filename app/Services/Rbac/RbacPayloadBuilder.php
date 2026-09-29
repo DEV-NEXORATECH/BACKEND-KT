@@ -11,6 +11,7 @@ class RbacPayloadBuilder
     {
         $user->loadMissing([
             'role.permissions',
+            'employee:id,email',
             'role.menus' => fn ($query) => $query
                 ->where('is_active', true)
                 ->orderBy('sort_order'),
@@ -21,7 +22,7 @@ class RbacPayloadBuilder
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'employee_id' => $user->employee_id,
+                'employee_id' => $user->employee_id ?: $user->employee?->id,
                 'worker_type' => $user->worker_type ?: 'internal',
                 'must_change_password' => (bool) $user->must_change_password,
             ],
