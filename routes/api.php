@@ -397,6 +397,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('accounting-periods/{id}/close', [AccountingPeriodController::class, 'close'])->middleware('permission:settings.manage');
         Route::post('accounting-periods/{id}/reopen', [AccountingPeriodController::class, 'reopen'])->middleware('permission:settings.manage');
         Route::get('employees/quality', [EmployeeController::class, 'quality'])->middleware('permission:master-data.view');
+        Route::get('chart-of-accounts/{id}/transactions', [ChartOfAccountController::class, 'transactions'])->middleware('permission:master-data.view');
 
         foreach ($masterResources as $uri => $controller) {
             Route::get("{$uri}/template", [$controller, 'template'])->middleware('permission:master-data.view');

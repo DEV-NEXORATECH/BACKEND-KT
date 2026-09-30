@@ -24,6 +24,8 @@ class UpdateProjectRequest extends FormRequest
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'budget_currency_id' => 'nullable|integer|exists:currencies,id',
             'total_budget' => 'nullable|numeric|min:0',
+            'fiscal_year_ids' => 'nullable|array',
+            'fiscal_year_ids.*' => 'integer|exists:fiscal_years,id',
             'is_active' => 'boolean',
         ];
     }

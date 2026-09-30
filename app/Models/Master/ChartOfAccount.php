@@ -30,6 +30,11 @@ class ChartOfAccount extends Model
         return $this->hasMany(\App\Models\Master\ChartOfAccount::class);
     }
 
+    public function journalLines()
+    {
+        return $this->hasMany(\App\Models\Accounting\JournalLine::class, 'account_id');
+    }
+
     public function category() { return $this->belongsTo(AccountCategory::class, 'account_category_id'); }
 
 }

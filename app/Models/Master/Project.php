@@ -50,4 +50,10 @@ class Project extends Model
         return $this->hasMany(\App\Models\Master\BudgetLine::class);
     }
 
+    public function fiscalYears()
+    {
+        return $this->belongsToMany(FiscalYear::class, 'project_fiscal_year')
+            ->orderBy('year');
+    }
+
 }

@@ -9,6 +9,43 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MasterExportService
 {
+    public function template(string $entityName, array $columns)
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Data');
+        $sheet->fromArray([$columns], null, 'A1');
+        $lastColumn = $sheet->getHighestColumn();
+        $headerStyle = $sheet->getStyle("A1:{$lastColumn}1");
+        $headerStyle->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
+        $headerStyle->getFill()->setFillType('solid')->getStartColor()->setARGB('FF1F4E78');
+        $headerStyle->getAlignment()->setHorizontal('center');
+        $sheet->freezePane('A2');
+        $sheet->setAutoFilter("A1:{$lastColumn}1");
+        $columnCount = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($lastColumn);
+        for ($column = 1; $column <= $columnCount; $column++) {
+            $letter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($column);
+            $sheet->getColumnDimension($letter)->setAutoSize(true);
+        }
+
+        $instructions = $spreadsheet->createSheet();
+        $instructions->setTitle('Instructions');
+        $instructions->fromArray([
+            ['Template', $entityName],
+            ['Cara penggunaan', 'Isi data pada sheet Data. Jangan mengubah nama kolom. Hapus baris contoh jika tidak diperlukan.'],
+            ['Format import', 'Excel (.xlsx/.xls) atau CSV UTF-8. Nilai relasi menggunakan ID data terkait.'],
+        ], null, 'A1');
+        $instructions->getStyle('A1:A3')->getFont()->setBold(true);
+        $instructions->getColumnDimension('A')->setWidth(24);
+        $instructions->getColumnDimension('B')->setWidth(110);
+        $instructions->getStyle('B1:B3')->getAlignment()->setWrapText(true);
+
+        $writer = new Xlsx($spreadsheet);
+        $temp = tempnam(sys_get_temp_dir(), 'kt-template-');
+        $writer->save($temp);
+        return response()->download($temp, strtolower($entityName).'-template.xlsx')->deleteFileAfterSend(true);
+    }
+
     public function export(string $entityName, $collection, string $format = 'csv')
     {
         $filename = strtolower($entityName) . '_' . date('Ymd_His');

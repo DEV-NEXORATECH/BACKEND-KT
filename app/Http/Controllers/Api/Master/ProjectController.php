@@ -6,6 +6,9 @@ use App\Models\Master\Project;
 use App\Http\Requests\Master\StoreProjectRequest;
 use App\Http\Requests\Master\UpdateProjectRequest;
 use App\Http\Resources\Master\ProjectResource;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 class ProjectController extends BaseMasterController
 {
@@ -14,5 +17,31 @@ class ProjectController extends BaseMasterController
     protected string $storeRequestClass = StoreProjectRequest::class;
     protected string $updateRequestClass = UpdateProjectRequest::class;
     protected array $searchableColumns = ['code', 'name', 'manager_name'];
-    protected array $defaultWith = ['program', 'grantAgreement', 'budgetCurrency', 'bankAccount'];
+    protected array $defaultWith = ['program', 'grantAgreement', 'budgetCurrency', 'bankAccount', 'fiscalYears'];
+
+    public function store(Request $request): JsonResponse
+    {
+        $validated = app($this->storeRequestClass)->validated();
+        $fiscalYearIds = $validated['fiscal_year_ids'] ?? [];
+        unset($validated['fiscal_year_ids']);
+        $record = Project::create($validated);
+        $record->fiscalYears()->sync($fiscalYearIds);
+        $record->load($this->defaultWith);
+        return response()->json(['success' => true, 'message' => 'Data berhasil ditambahkan.', 'data' => new ProjectResource($record)], Response::HTTP_CREATED);
+    }
+
+    public function update(Request $request, $id): JsonResponse
+    {
+        $validated = app($this->updateRequestClass)->validated();
+        $hasFiscalYears = array_key_exists('fiscal_year_ids', $validated);
+        $fiscalYearIds = $validated['fiscal_year_ids'] ?? [];
+        unset($validated['fiscal_year_ids']);
+        $record = Project::findOrFail($id);
+        $record->update($validated);
+        if ($hasFiscalYears) {
+            $record->fiscalYears()->sync($fiscalYearIds);
+        }
+        $record->load($this->defaultWith);
+        return response()->json(['success' => true, 'message' => 'Data berhasil diperbarui.', 'data' => new ProjectResource($record)]);
+    }
 }

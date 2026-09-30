@@ -12,6 +12,7 @@ use App\Models\Finance\BankTransaction;
 use App\Models\Finance\CustomerInvoice;
 use App\Models\Finance\Payment;
 use App\Models\Master\ChartOfAccount;
+use App\Models\Master\FiscalYear;
 use App\Models\Master\GrantReportingDeadline;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
@@ -902,15 +903,23 @@ class ReportsDashboardController extends Controller
 
     private function period(Request $request): array
     {
-        $start = $request->filled('start_date') ? CarbonImmutable::parse($request->string('start_date'))->startOfDay() : null;
-        $end = $request->filled('end_date') ? CarbonImmutable::parse($request->string('end_date'))->endOfDay() : CarbonImmutable::now()->endOfDay();
+        $fiscalYear = $request->filled('fiscal_year_id') ? FiscalYear::query()->find($request->integer('fiscal_year_id')) : null;
+        $start = $request->filled('start_date')
+            ? CarbonImmutable::parse($request->string('start_date'))->startOfDay()
+            : ($fiscalYear?->start_date ? CarbonImmutable::parse($fiscalYear->start_date)->startOfDay() : null);
+        $end = $request->filled('end_date')
+            ? CarbonImmutable::parse($request->string('end_date'))->endOfDay()
+            : ($fiscalYear?->end_date ? CarbonImmutable::parse($fiscalYear->end_date)->endOfDay() : CarbonImmutable::now()->endOfDay());
 
         return [
             'start' => $start,
             'end' => $end,
+            'fiscal_year_id' => $fiscalYear?->id,
+            'fiscal_year' => $fiscalYear?->year,
             'label' => [
                 'start_date' => $start?->toDateString(),
                 'end_date' => $end?->toDateString(),
+                'fiscal_year' => $fiscalYear?->year,
             ],
         ];
     }

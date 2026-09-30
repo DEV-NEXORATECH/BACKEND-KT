@@ -193,14 +193,18 @@ abstract class BaseMasterController extends Controller
         return $exportService->export(class_basename($this->modelClass), $data, $format);
     }
 
-    public function template()
+    public function template(Request $request, MasterExportService $exportService)
     {
         $model = new $this->modelClass;
         $columns = array_values(array_filter($model->getFillable(), fn ($column) => ! in_array($column, [
             'id', 'created_at', 'updated_at', 'deleted_at', 'created_by', 'updated_by', 'deleted_by',
         ], true)));
-        // UTF-8 BOM keeps the template readable in Excel while preserving the
-        // exact machine headers required by the importer.
+        if (in_array(strtolower((string) $request->query('format')), ['xlsx', 'excel'], true)) {
+            return $exportService->template(class_basename($this->modelClass), $columns);
+        }
+
+        // UTF-8 BOM keeps the CSV template readable in Excel while preserving
+        // the exact machine headers required by the importer.
         return response("\xEF\xBB\xBF".implode(',', $columns)."\r\n", 200, [
             'Content-Type' => 'text/csv; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="'.strtolower(class_basename($this->modelClass)).'-template.csv"',
@@ -209,9 +213,19 @@ abstract class BaseMasterController extends Controller
 
     public function import(Request $request): JsonResponse
     {
-        $request->validate(['file' => ['required', 'file', 'mimes:csv,txt', 'max:10240']]);
-        $handle = fopen($request->file('file')->getRealPath(), 'r');
-        $headers = array_map(fn ($header) => ltrim(trim((string) $header), "\xEF\xBB\xBF"), fgetcsv($handle) ?: []);
+        $request->validate(['file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240']]);
+        $uploadedFile = $request->file('file');
+        $extension = strtolower($uploadedFile->getClientOriginalExtension());
+        $rows = [];
+        $handle = null;
+        if (in_array($extension, ['xlsx', 'xls'], true)) {
+            $sheetRows = \PhpOffice\PhpSpreadsheet\IOFactory::load($uploadedFile->getRealPath())->getActiveSheet()->toArray(null, true, true, false);
+            $headers = array_map(fn ($header) => trim((string) $header), array_shift($sheetRows) ?: []);
+            $rows = $sheetRows;
+        } else {
+            $handle = fopen($uploadedFile->getRealPath(), 'r');
+            $headers = array_map(fn ($header) => ltrim(trim((string) $header), "\xEF\xBB\xBF"), fgetcsv($handle) ?: []);
+        }
         $model = new $this->modelClass;
         $fillableColumns = array_values(array_filter($model->getFillable(), fn ($column) => ! in_array($column, [
             'id', 'created_at', 'updated_at', 'deleted_at', 'created_by', 'updated_by', 'deleted_by',
@@ -224,7 +238,9 @@ abstract class BaseMasterController extends Controller
         $created = 0;
         $skipped = 0;
         $errors = [];
-        while (($row = fgetcsv($handle)) !== false) {
+        while (true) {
+            $row = $rows ? array_shift($rows) : ($handle ? fgetcsv($handle) : false);
+            if ($row === false || $row === null) break;
             $payload = [];
             foreach ($headers as $index => $header) {
                 if ($header !== '' && isset($fillable[$header])) {
@@ -262,7 +278,7 @@ abstract class BaseMasterController extends Controller
                 if (count($errors) < 5) $errors[] = $exception->getMessage();
             }
         }
-        fclose($handle);
+        if ($handle) fclose($handle);
         $message = "{$created} data berhasil diimport, {$skipped} data duplikat/tidak valid dilewati.";
         return response()->json(['success' => true, 'message' => $message, 'data' => [
             'created' => $created,

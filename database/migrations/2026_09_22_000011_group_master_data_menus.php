@@ -11,7 +11,7 @@ return new class extends Migration {
         $groups = [
             ['title' => 'Organization & Structure', 'slug' => 'master-organization-structure', 'sort_order' => 16, 'children' => ['master-organizations', 'master-office-locations', 'master-departments', 'master-cost-centers', 'master-employees']],
             ['title' => 'Finance & Accounting', 'slug' => 'master-finance-accounting', 'sort_order' => 17, 'children' => ['master-currencies', 'master-exchange-rates', 'master-fiscal-years', 'master-accounting-periods', 'master-chart-of-accounts', 'master-taxes', 'master-bank-accounts', 'master-petty-cashes', 'master-payment-methods']],
-            ['title' => 'Funding & Projects', 'slug' => 'master-funding-projects', 'sort_order' => 18, 'children' => ['master-funding-sources', 'master-donors', 'master-grant-agreements', 'master-programs', 'master-projects', 'master-activities', 'master-beneficiary-partners']],
+            ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'sort_order' => 18, 'children' => ['master-funding-sources', 'master-donors', 'master-grant-agreements', 'master-programs', 'master-projects', 'master-activities', 'master-beneficiary-partners']],
             ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'sort_order' => 19, 'children' => ['master-reporting-dimensions', 'master-unit-of-measures', 'master-budget-categories', 'master-budget-lines']],
             ['title' => 'Expenses & Assets', 'slug' => 'master-expenses-assets', 'sort_order' => 20, 'children' => ['master-expense-categories', 'master-document-types', 'master-asset-categories']],
         ];

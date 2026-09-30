@@ -12,6 +12,11 @@ class ChartOfAccountResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        return parent::toArray($request);
+        $data = parent::toArray($request);
+        $debit = (float) ($this->posted_debit_total ?? 0);
+        $credit = (float) ($this->posted_credit_total ?? 0);
+        $data['balance'] = round(($this->normal_balance ?? 'debit') === 'credit' ? $credit - $debit : $debit - $credit, 2);
+        unset($data['posted_debit_total'], $data['posted_credit_total']);
+        return $data;
     }
 }
