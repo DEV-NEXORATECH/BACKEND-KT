@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
 use App\Models\Expense\ExpenseRequest;
 use App\Models\Expense\CashAdvanceReimbursement;
+use App\Models\Expense\CashAdvanceReturn;
 use App\Models\Finance\BankTransaction;
 use App\Models\Finance\Payment;
 use App\Models\Finance\TaxTransaction;
@@ -449,6 +450,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         }
         $data = $request->validate(['actual_expense_amount' => ['nullable', 'numeric', 'min:0.01'], 'amount' => ['nullable', 'numeric', 'min:0.01']]);
         $actual = round((float) ($data['actual_expense_amount'] ?? $data['amount'] ?? 0), 2);
+        $finalize = filter_var($request->input('finalize', true), FILTER_VALIDATE_BOOLEAN);
         $previousActual = round((float) ($expenseRequest->actual_expense_amount ?? 0), 2);
         if ($actual <= $previousActual) throw ValidationException::withMessages(['actual_expense_amount' => 'Nilai actual harus lebih besar dari settlement sebelumnya.']);
         $advance = round((float) $expenseRequest->paid_amount, 2);
@@ -459,14 +461,14 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         if ($deltaCleared < 0) throw ValidationException::withMessages(['actual_expense_amount' => 'Nilai settlement tidak valid.']);
         $returnRequired = round(max($advance - $actual, 0), 2);
         $reimbursementRequired = round(max($actual - $advance, 0), 2);
-        $status = $returnRequired > 0 ? 'awaiting_return' : ($reimbursementRequired > 0 ? 'awaiting_reimbursement' : 'settled');
-        $settlementJournal = DB::transaction(function () use ($expenseRequest, $actual, $deltaActual, $cleared, $deltaCleared, $returnRequired, $reimbursementRequired, $status) {
+        $status = $returnRequired > 0 ? ($finalize ? 'awaiting_return' : 'partially_settled') : ($reimbursementRequired > 0 ? 'awaiting_reimbursement' : 'settled');
+        $settlementJournal = DB::transaction(function () use ($expenseRequest, $actual, $deltaActual, $cleared, $deltaCleared, $returnRequired, $reimbursementRequired, $status, $finalize) {
             $staffAdvance = $this->staffAdvanceAccount();
             if (! $staffAdvance) throw ValidationException::withMessages(['account' => 'COA Employee Advances / Staff Receivable belum dikonfigurasi.']);
             $journal = Journal::create([
                 'journal_number' => 'EXPSET-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => now()->toDateString(),
-                'journal_type' => 'expense_settlement',
+                'journal_type' => 'manual',
                 'reference' => $expenseRequest->request_number,
                 'description' => 'Cash Advance settlement '.$expenseRequest->request_number,
                 'status' => 'posted',
@@ -495,7 +497,8 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             }
             $expenseRequest->update(['actual_expense_amount' => $actual, 'settled_amount' => $cleared, 'return_amount' => $returnRequired, 'additional_reimbursement_amount' => $reimbursementRequired, 'settlement_status' => $status === 'settled' ? 'settled' : 'partially_settled', 'settlement_state' => $status, 'settlement_journal_id' => $journal->id]);
             $budget = app(\App\Services\Budget\BudgetMonitoringService::class);
-            $budget->adjustCommitmentForSource(ExpenseRequest::class, $expenseRequest->id, max(0, (float) $expenseRequest->total_amount - $actual), request()->user()->id);
+            if ($finalize || $status === 'settled' || $status === 'awaiting_reimbursement') $budget->releaseForSource(ExpenseRequest::class, $expenseRequest->id, 'converted', request()->user()->id);
+            else $budget->adjustCommitmentForSource(ExpenseRequest::class, $expenseRequest->id, max(0, (float) $expenseRequest->total_amount - $actual), request()->user()->id);
             return $journal;
         });
         Notification::create(['user_id' => null, 'title' => 'Settlement Cash Advance dicatat', 'message' => "{$expenseRequest->request_number}: actual {$actual}, state {$status}.", 'type' => 'info', 'action_url' => '/expenses-approvals/cash-advance']);
@@ -515,7 +518,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         $return = DB::transaction(function () use ($expenseRequest, $data, $bank) {
             $staffAdvance = $this->staffAdvanceAccount();
             if (! $staffAdvance) throw ValidationException::withMessages(['account' => 'COA Employee Advances / Staff Receivable belum dikonfigurasi.']);
-            $journal = Journal::create(['journal_number' => 'CAR-'.now()->format('YmdHis').'-'.random_int(100,999), 'journal_date' => $data['return_date'], 'journal_type' => 'cash_advance_return', 'reference' => $data['reference'] ?? $expenseRequest->request_number, 'description' => 'Cash Advance return '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now()]);
+            $journal = Journal::create(['journal_number' => 'CAR-'.now()->format('YmdHis').'-'.random_int(100,999), 'journal_date' => $data['return_date'], 'journal_type' => 'manual', 'reference' => $data['reference'] ?? $expenseRequest->request_number.'-RETURN', 'description' => 'Cash Advance return '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now()]);
             $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Cash Advance return received', 'debit' => $data['amount'], 'credit' => 0, 'line_order' => 1]);
             $journal->lines()->create(['account_id' => $staffAdvance->id, 'line_description' => 'Clear Staff Advance return', 'debit' => 0, 'credit' => $data['amount'], 'line_order' => 2]);
             $return = CashAdvanceReturn::create(['expense_request_id' => $expenseRequest->id, 'employee_id' => $expenseRequest->requester_id, 'bank_account_id' => $bank->id, 'return_amount' => $data['amount'], 'payment_method' => 'bank_transfer', 'return_date' => $data['return_date'], 'reference_no' => $data['reference'] ?? null, 'status' => 'received', 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
@@ -540,7 +543,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         $payable = ChartOfAccount::where('account_type', 'liability')->where('is_header', false)->first();
         if (! $payable) throw ValidationException::withMessages(['account' => 'COA payable belum dikonfigurasi.']);
         DB::transaction(function () use ($expenseRequest, $reimbursement, $data, $bank, $payable) {
-            $journal = Journal::create(['journal_number' => 'CARPAY-'.now()->format('YmdHis').'-'.random_int(100,999), 'journal_date' => $data['payment_date'], 'journal_type' => 'cash_advance_reimbursement', 'reference' => $data['reference'] ?? $expenseRequest->request_number, 'description' => 'Additional reimbursement '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now()]);
+            $journal = Journal::create(['journal_number' => 'CARPAY-'.now()->format('YmdHis').'-'.random_int(100,999), 'journal_date' => $data['payment_date'], 'journal_type' => 'manual', 'reference' => $data['reference'] ?? $expenseRequest->request_number.'-REIMBURSEMENT', 'description' => 'Additional reimbursement '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now()]);
             $journal->lines()->create(['account_id' => $payable->id, 'line_description' => 'Additional reimbursement payable', 'debit' => $reimbursement->amount, 'credit' => 0, 'line_order' => 1]);
             $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Additional reimbursement payment', 'debit' => 0, 'credit' => $reimbursement->amount, 'line_order' => 2]);
             $payment = Payment::create(['payment_number' => 'CARPAY-'.now()->format('YmdHis').'-'.random_int(100,999), 'expense_request_id' => $expenseRequest->id, 'bank_account_id' => $bank->id, 'payment_date' => $data['payment_date'], 'amount' => $reimbursement->amount, 'reference' => $data['reference'] ?? null, 'status' => 'paid', 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
