@@ -352,8 +352,9 @@ class MasterDataSeeder extends Seeder
 
         $pph21Staff = Tax::updateOrCreate(['code' => 'PPh 21 – Staff'], [
             'name' => 'PPh 21',
-            'tax_type' => 'Staff / Employee',
+            'tax_type' => 'PPH21',
             'rate_percent' => 0.00,
+            'applicable_rule' => 'TER',
             'description' => 'Mengikuti ketentuan tarif TER (Tarif Efektif Rata-rata) sesuai status dan penghasilan',
             'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
             'is_active' => true,
@@ -361,8 +362,9 @@ class MasterDataSeeder extends Seeder
 
         $pph21NonStaff = Tax::updateOrCreate(['code' => 'PPh 21 – Non Staff'], [
             'name' => 'PPh 21',
-            'tax_type' => 'Non-Employee / Professional',
+            'tax_type' => 'PPH21',
             'rate_percent' => 0.00,
+            'applicable_rule' => 'Pasal 17 progressive',
             'description' => 'Mengikuti ketentuan PPh 21 untuk bukan pegawai; menggunakan dasar pengenaan pajak sesuai ketentuan yang berlaku',
             'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
             'is_active' => true,
@@ -370,7 +372,7 @@ class MasterDataSeeder extends Seeder
 
         $pph23 = Tax::updateOrCreate(['code' => 'PPh 23'], [
             'name' => 'PPh 23',
-            'tax_type' => 'Corporate / Service Income',
+            'tax_type' => 'PPH23',
             'rate_percent' => 2.00,
             'description' => '2% untuk jenis penghasilan yang dikenakan tarif 2%',
             'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
@@ -379,7 +381,7 @@ class MasterDataSeeder extends Seeder
 
         $pph42 = Tax::updateOrCreate(['code' => 'PPh 4(2)'], [
             'name' => 'PPh Final Pasal 4(2)',
-            'tax_type' => 'Rental of Building/Land',
+            'tax_type' => 'PPH_FINAL',
             'rate_percent' => 10.00,
             'description' => '10% untuk persewaan tanah dan/atau bangunan',
             'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
