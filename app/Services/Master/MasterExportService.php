@@ -3,6 +3,8 @@
 namespace App\Services\Master;
 
 use Barryvdh\DomPDF\Facade\Pdf;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MasterExportService
@@ -13,6 +15,10 @@ class MasterExportService
 
         if ($format === 'pdf') {
             return $this->exportPdf($entityName, $collection, $filename);
+        }
+
+        if (in_array($format, ['xlsx', 'excel'], true)) {
+            return $this->exportXlsx($entityName, $collection, $filename);
         }
 
         // Default CSV Streaming
@@ -59,6 +65,32 @@ class MasterExportService
         ])->setPaper('a4', 'landscape');
 
         return $pdf->download("{$filename}.pdf");
+    }
+
+    private function exportXlsx(string $entityName, $collection, string $filename)
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle(substr(preg_replace('/[^A-Za-z0-9 ]/', '', $entityName), 0, 31) ?: 'Report');
+        $rows = [];
+        if ($collection->isNotEmpty()) {
+            $first = $this->flattenArray($collection->first()->toArray());
+            $rows[] = array_keys($first);
+            foreach ($collection as $item) $rows[] = array_values($this->flattenArray($item->toArray()));
+        } else {
+            $rows[] = ['No data available'];
+        }
+        $sheet->fromArray($rows, null, 'A1');
+        $lastColumn = $sheet->getHighestColumn();
+        $sheet->getStyle("A1:{$lastColumn}1")->getFont()->setBold(true);
+        $sheet->freezePane('A2');
+        foreach (range(1, $sheet->getHighestColumn() ? \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($lastColumn) : 1) as $column) {
+            $sheet->getColumnDimension(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($column))->setAutoSize(true);
+        }
+        $writer = new Xlsx($spreadsheet);
+        $temp = tempnam(sys_get_temp_dir(), 'kt-export-');
+        $writer->save($temp);
+        return response()->download($temp, "{$filename}.xlsx")->deleteFileAfterSend(true);
     }
 
     private function flattenArray(array $array, string $prefix = ''): array

@@ -17,6 +17,8 @@ class UpdateEmployeeRequest extends FormRequest
             'employee_id_number' => 'required|string|max:50|unique:employees,employee_id_number,' . $this->route('id') . ',id',
             'name' => 'required|string|max:150',
             'email' => 'nullable|email|max:100',
+            'join_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:join_date',
             'department_id' => 'nullable|integer|exists:departments,id',
             'office_location_id' => 'nullable|integer|exists:office_locations,id',
             'position_id' => 'nullable|integer|exists:positions,id',

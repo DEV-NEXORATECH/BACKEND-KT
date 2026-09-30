@@ -75,6 +75,7 @@ use App\Http\Controllers\Api\Master\ProcurementItemController;
 use App\Http\Controllers\Api\Master\PositionController;
 use App\Http\Controllers\Api\Master\ProjectLogframeController;
 use App\Http\Controllers\Api\Master\GrantReportingDeadlineController;
+use App\Http\Controllers\Api\Master\OrganizationStructureController;
 
 Route::get('/health', function () {
     $dbStatus = 'ok';
@@ -341,12 +342,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('requests/{expenseRequest}/post', [ExpenseRequestController::class, 'post'])->middleware('permission:expense.post');
         Route::post('requests/{expenseRequest}/pay', [ExpenseRequestController::class, 'pay'])->middleware('permission:expense.pay');
         Route::post('requests/{expenseRequest}/settle', [ExpenseRequestController::class, 'settle'])->middleware('permission:expense.submit');
+        Route::post('requests/{expenseRequest}/return', [ExpenseRequestController::class, 'returnAdvance'])->middleware('permission:expense.submit');
+        Route::post('requests/{expenseRequest}/reimbursement/pay', [ExpenseRequestController::class, 'payReimbursement'])->middleware('permission:expense.pay');
     });
 
     // -------------------------------------------------------------
     // V1 MASTER DATA ROUTES (30 Entities + Export + Toggle Status)
     // -------------------------------------------------------------
     Route::prefix('v1/master')->group(function () {
+        Route::get('organization-structure', [OrganizationStructureController::class, 'index'])->middleware('permission:master-data.view');
         Route::apiResource('project-logframes', ProjectLogframeController::class)->middleware('permission:master-data');
         Route::apiResource('grant-reporting-deadlines', GrantReportingDeadlineController::class)->middleware('permission:master-data');
         Route::get('roles', [RoleMenuController::class, 'options'])->middleware('permission:master-data.view');

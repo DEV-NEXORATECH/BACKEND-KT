@@ -269,6 +269,7 @@ class AccountsPayableController extends Controller
     public function bankTransactions(Request $request): JsonResponse
     {
         $query = BankTransaction::with(['bankAccount:id,bank_name,account_number', 'payment:id,payment_number,payment_date,amount,reference,journal_id,bank_account_id', 'payment.journal:id,journal_number,journal_date,status', 'payment.supplierInvoice:id,invoice_number', 'payment.customerInvoice:id,invoice_number', 'payment.expenseRequest:id,request_number']);
+        if ($request->filled('bank_account_id')) $query->where('bank_account_id', $request->integer('bank_account_id'));
         if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
             $query->where(function ($scoped) use ($request) {
                 $scoped->where('created_by', $request->user()->id)
@@ -313,6 +314,7 @@ class AccountsPayableController extends Controller
     public function bankExceptions(Request $request): JsonResponse
     {
         $query = BankTransaction::query()->with('bankAccount:id,bank_name,account_number')->where('status', 'unmatched');
+        if ($request->filled('bank_account_id')) $query->where('bank_account_id', $request->integer('bank_account_id'));
         $this->applyBankTransactionScope($query, $request);
         $user = $request->user();
         $scope = app(\App\Services\Rbac\DataScopeService::class);

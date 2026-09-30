@@ -54,7 +54,7 @@ class MasterDataSeeder extends Seeder
             'symbol' => 'Rp',
             'decimal_places' => 0,
             'is_base_currency' => true,
-            'is_active' => true,
+            'is_active' => false,
         ]);
 
         $usd = Currency::updateOrCreate(['code' => 'USD'], [
@@ -62,15 +62,19 @@ class MasterDataSeeder extends Seeder
             'symbol' => '$',
             'decimal_places' => 2,
             'is_base_currency' => false,
-            'is_active' => true,
+            'is_active' => false,
         ]);
+
+        // Kaoem Telapak currently operates from one active office. Keep legacy
+        // locations for referential integrity, but archive them on reseed.
+        OfficeLocation::whereIn('code', ['FO-PTK', 'RO-JKT'])->update(['is_active' => false]);
 
         $gbp = Currency::updateOrCreate(['code' => 'GBP'], [
             'name' => 'British Pound Sterling',
             'symbol' => '£',
             'decimal_places' => 2,
             'is_base_currency' => false,
-            'is_active' => true,
+            'is_active' => false,
         ]);
 
         $nok = Currency::updateOrCreate(['code' => 'NOK'], [
@@ -160,7 +164,7 @@ class MasterDataSeeder extends Seeder
             'phone' => '0561-765432',
             'email' => 'pontianak@kaoemtelapak.org',
             'is_head_office' => false,
-            'is_active' => true,
+            'is_active' => false,
         ]);
 
         $jakartaOffice = OfficeLocation::updateOrCreate(['code' => 'RO-JKT'], [
@@ -171,8 +175,10 @@ class MasterDataSeeder extends Seeder
             'phone' => null,
             'email' => 'siti@contoh.org',
             'is_head_office' => false,
-            'is_active' => true,
+            'is_active' => false,
         ]);
+
+        OfficeLocation::whereIn('code', ['FO-PTK', 'RO-JKT'])->update(['is_active' => false]);
 
         $deptFin = Department::updateOrCreate(['code' => 'Fin'], [
             'organization_id' => $org->id,
@@ -306,6 +312,7 @@ class MasterDataSeeder extends Seeder
             ['code' => '11000', 'name' => 'ACCOUNTS RECEIVABLE', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => true, 'parent_code' => null],
             ['code' => '11400', 'name' => 'AR PROJECT', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => true, 'parent_code' => '11000'],
             ['code' => '11410', 'name' => 'AR FGMC EIA', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '11400'],
+            ['code' => '11500', 'name' => 'Employee Advances / Staff Receivable', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '11000'],
         ];
 
         $createdCoa = [];
@@ -334,7 +341,7 @@ class MasterDataSeeder extends Seeder
             'description' => 'Tarif PPN 11.00%',
             'sales_gl_account_id' => $createdCoa['2120']->id ?? null,
             'purchase_gl_account_id' => $createdCoa['1150']->id ?? null,
-            'is_active' => true,
+            'is_active' => false,
         ]);
 
         $pph21Staff = Tax::updateOrCreate(['code' => 'PPh 21 – Staff'], [

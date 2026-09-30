@@ -11,6 +11,9 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Database\Eloquent\Builder;
 use App\Services\Rbac\DataScopeService;
+use Barryvdh\DomPDF\Facade\Pdf;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 class CustomReportController extends Controller
 {
     public function options(): JsonResponse
@@ -32,12 +35,14 @@ class CustomReportController extends Controller
         return response()->json(['success' => true, ...$this->reportPayload($request)]);
     }
 
-    public function export(Request $request): StreamedResponse
+    public function export(Request $request)
     {
         $payload = $this->reportPayload($request);
         $rows = collect($payload['data']);
         $headings = $rows->flatMap(fn (array $row) => array_keys($row))->unique()->values()->all();
         $slug = $payload['filters']['report_type'];
+        $format = strtolower((string) $request->input('format', 'csv'));
+        abort_unless(in_array($format, ['csv', 'xlsx', 'pdf'], true), 422, 'Format export tidak didukung.');
 
         \App\Models\AuditLog::create([
             'user_id' => $request->user()->id,
@@ -47,11 +52,22 @@ class CustomReportController extends Controller
             'entity_type' => ReportDefinition::class,
             'entity_id' => ReportDefinition::query()->where('slug', $slug)->value('id'),
             'previous_values' => null,
-            'new_values' => ['report_type' => $slug, 'filters' => $payload['filters'], 'rows' => $rows->count(), 'format' => 'csv'],
+            'new_values' => ['report_type' => $slug, 'filters' => $payload['filters'], 'rows' => $rows->count(), 'format' => $format],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
 
+        $period = ($payload['filters']['start_date'] ?? 'all').'_'.$payload['filters']['end_date'];
+        $filename = "{$slug}_{$period}_".now()->format('YmdHis');
+        if ($format === 'xlsx') {
+            $spreadsheet = new Spreadsheet(); $sheet = $spreadsheet->getActiveSheet(); $sheet->fromArray([$headings, ...$rows->map(fn ($row) => collect($headings)->map(fn ($key) => $row[$key] ?? null)->all())->all()]); $sheet->getStyle('A1:'.$sheet->getHighestColumn().'1')->getFont()->setBold(true); $sheet->freezePane('A2');
+            $temp = tempnam(sys_get_temp_dir(), 'kt-report-'); (new Xlsx($spreadsheet))->save($temp);
+            return response()->download($temp, "{$filename}.xlsx")->deleteFileAfterSend(true);
+        }
+        if ($format === 'pdf') {
+            $html = '<h2>'.e($slug).'</h2><table border="1" cellpadding="4" cellspacing="0" width="100%"><thead><tr>'.collect($headings)->map(fn ($h) => '<th>'.e($h).'</th>')->implode('').'</tr></thead><tbody>'. $rows->map(fn ($row) => '<tr>'.collect($headings)->map(fn ($h) => '<td>'.e((string) ($row[$h] ?? '')).'</td>')->implode('').'</tr>')->implode('') .'</tbody></table>';
+            return Pdf::loadHTML($html)->setPaper('a4', 'landscape')->download("{$filename}.pdf");
+        }
         return response()->streamDownload(function () use ($headings, $rows) {
             $out = fopen('php://output', 'wb');
             // UTF-8 BOM keeps Indonesian headers and names readable in Excel.
@@ -61,7 +77,7 @@ class CustomReportController extends Controller
                 fputcsv($out, collect($headings)->map(fn (string $key) => $row[$key] ?? null)->all());
             }
             fclose($out);
-        }, "report-{$slug}-".now()->format('YmdHis').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
+        }, "{$filename}.csv", ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     private function reportPayload(Request $request): array

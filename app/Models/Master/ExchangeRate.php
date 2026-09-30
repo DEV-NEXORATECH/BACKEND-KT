@@ -14,7 +14,7 @@ class ExchangeRate extends Model
 
     protected $table = 'exchange_rates';
 
-    protected $fillable = ['date', 'from_currency_id', 'to_currency_id', 'rate', 'source', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['date', 'from_currency_id', 'to_currency_id', 'rate', 'rate_type', 'source', 'reference', 'notes', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',

@@ -14,5 +14,5 @@ class PositionController extends BaseMasterController
     protected string $storeRequestClass = StorePositionRequest::class;
     protected string $updateRequestClass = UpdatePositionRequest::class;
     protected array $searchableColumns = ['code', 'name'];
-    protected array $defaultWith = ['department:id,code,name'];
+    protected array $defaultWith = ['department:id,code,name', 'reportsTo:id,code,name'];
 }

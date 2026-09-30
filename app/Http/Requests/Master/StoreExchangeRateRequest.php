@@ -18,7 +18,10 @@ class StoreExchangeRateRequest extends FormRequest
             'from_currency_id' => 'required|integer|exists:currencies,id',
             'to_currency_id' => 'required|integer|exists:currencies,id',
             'rate' => 'required|numeric|min:0',
+            'rate_type' => 'required|in:spot,average,donor,bank,manual',
             'source' => 'nullable|string|max:100',
+            'reference' => 'nullable|string|max:150',
+            'notes' => 'nullable|string|max:2000',
             'is_active' => 'boolean',
         ];
     }

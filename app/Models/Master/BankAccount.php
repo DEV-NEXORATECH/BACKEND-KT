@@ -14,10 +14,12 @@ class BankAccount extends Model
 
     protected $table = 'bank_accounts';
 
-    protected $fillable = ['organization_id', 'bank_name', 'account_number', 'account_name', 'swift_code', 'description', 'currency_id', 'gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['organization_id', 'bank_name', 'account_number', 'account_name', 'swift_code', 'description', 'currency_id', 'gl_account_id', 'opening_balance', 'opening_balance_date', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'opening_balance' => 'decimal:2',
+        'opening_balance_date' => 'date',
     ];
 
     public function organization()
@@ -38,6 +40,11 @@ class BankAccount extends Model
     public function transactions()
     {
         return $this->hasMany(\App\Models\Finance\BankTransaction::class, 'bank_account_id');
+    }
+
+    public function projects()
+    {
+        return $this->hasMany(\App\Models\Master\Project::class, 'bank_account_id');
     }
 
 }

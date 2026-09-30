@@ -15,10 +15,14 @@ class Tax extends Model
     protected $table = 'taxes';
 
     protected $fillable = [
+        'organization_id',
         'code',
         'name',
         'tax_type',
         'rate_percent',
+        'effective_start_date',
+        'effective_end_date',
+        'applicable_rule',
         'description',
         'sales_gl_account_id',
         'purchase_gl_account_id',
@@ -30,6 +34,8 @@ class Tax extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'effective_start_date' => 'date',
+        'effective_end_date' => 'date',
     ];
 
     public function salesGlAccount()

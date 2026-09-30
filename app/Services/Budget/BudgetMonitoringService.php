@@ -195,6 +195,15 @@ class BudgetMonitoringService
             ]);
     }
 
+    public function adjustCommitmentForSource(string $sourceType, int $sourceId, float $amount, int $userId): int
+    {
+        return BudgetCommitment::query()
+            ->where('source_type', $sourceType)
+            ->where('source_id', $sourceId)
+            ->where('status', 'open')
+            ->update(['amount' => round($amount, 2), 'created_by' => $userId]);
+    }
+
     /**
      * Mark an open commitment as converted, meaning budget was actually
      * consumed (actual expense has been posted against the budget line).

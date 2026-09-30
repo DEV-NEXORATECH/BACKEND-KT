@@ -22,6 +22,8 @@ class StoreBankAccountRequest extends FormRequest
             'description' => 'nullable|string|max:255',
             'currency_id' => 'required|integer|exists:currencies,id',
             'gl_account_id' => 'nullable|integer|exists:chart_of_accounts,id',
+            'opening_balance' => 'nullable|numeric',
+            'opening_balance_date' => 'nullable|date',
             'is_active' => 'boolean',
         ];
     }

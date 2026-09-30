@@ -13,13 +13,23 @@ class Position extends Model
 {
     use SoftDeletes, FilterableSearchableTrait, AuditTrailTrait;
 
-    protected $fillable = ['code', 'name', 'department_id', 'description', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'name', 'department_id', 'reports_to_position_id', 'description', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = ['is_active' => 'boolean'];
 
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
+    }
+
+    public function reportsTo(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'reports_to_position_id');
+    }
+
+    public function directReports(): HasMany
+    {
+        return $this->hasMany(self::class, 'reports_to_position_id');
     }
 
     public function employees(): HasMany
