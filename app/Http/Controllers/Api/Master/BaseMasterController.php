@@ -204,9 +204,16 @@ abstract class BaseMasterController extends Controller
             return $exportService->template(class_basename($this->modelClass), $columns);
         }
 
-        // UTF-8 BOM keeps the CSV template readable in Excel while preserving
-        // the exact machine headers required by the importer.
-        return response("\xEF\xBB\xBF".implode(',', $columns)."\r\n", 200, [
+        // CSV templates use the same readable labels as the Excel template.
+        // The importer maps these labels back to the model field names.
+        $headers = $exportService->templateHeaders($columns);
+        $handle = fopen('php://temp', 'w+');
+        fprintf($handle, "\xEF\xBB\xBF");
+        fputcsv($handle, $headers);
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+        return response($csv, 200, [
             'Content-Type' => 'text/csv; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="'.strtolower(class_basename($this->modelClass)).'-template.csv"',
         ]);

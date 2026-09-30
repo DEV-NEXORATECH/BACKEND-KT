@@ -14,7 +14,7 @@ class MasterExportService
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Input Data');
-        $displayColumns = array_map(fn (string $column): string => $this->displayHeader($column), $columns);
+        $displayColumns = $this->templateHeaders($columns);
         $sheet->fromArray([$displayColumns], null, 'A1');
         $lastColumn = $sheet->getHighestColumn();
         $headerStyle = $sheet->getStyle("A1:{$lastColumn}1");
@@ -63,6 +63,11 @@ class MasterExportService
         $temp = tempnam(sys_get_temp_dir(), 'kt-template-');
         $writer->save($temp);
         return response()->download($temp, strtolower($entityName).'-template.xlsx')->deleteFileAfterSend(true);
+    }
+
+    public function templateHeaders(array $columns): array
+    {
+        return array_map(fn (string $column): string => $this->displayHeader($column), $columns);
     }
 
     private function displayHeader(string $column): string
