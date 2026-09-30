@@ -24,12 +24,6 @@ class MasterExportService
         $headerStyle->getAlignment()->setVertical('center');
         $headerStyle->getAlignment()->setWrapText(true);
         $sheet->getRowDimension(1)->setRowHeight(30);
-        foreach ($columns as $index => $column) {
-            $letter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
-            $sheet->getComment($letter.'1')->getText()->createText(
-                'Field import: '.$column
-            );
-        }
         $sheet->freezePane('A2');
         $sheet->setAutoFilter("A1:{$lastColumn}1");
         $columnCount = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($lastColumn);
