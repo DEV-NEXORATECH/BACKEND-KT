@@ -114,6 +114,7 @@ class RoleSeeder extends Seeder
             ['title' => 'Dashboard', 'slug' => 'dashboard', 'path' => '/dashboard', 'icon' => 'dashboard', 'sort_order' => 10],
             ['title' => 'Master Data', 'slug' => 'master-data', 'path' => '/master-data', 'icon' => 'database', 'sort_order' => 15, 'children' => [
                 ['title' => 'Organization & Structure', 'slug' => 'master-organization-structure', 'path' => '/master-data', 'sort_order' => 16, 'children' => [
+                    ['title' => 'Organization Chart', 'slug' => 'master-organization-chart', 'path' => '/master-data/structure', 'sort_order' => 160],
                     ['title' => 'Structure', 'slug' => 'master-structure', 'path' => '/master-data/structure', 'sort_order' => 160],
                     ['title' => 'Organizations', 'slug' => 'master-organizations', 'path' => '/master-data/organizations', 'sort_order' => 161],
                     ['title' => 'Office Locations', 'slug' => 'master-office-locations', 'path' => '/master-data/office-locations', 'sort_order' => 162],
@@ -287,7 +288,7 @@ class RoleSeeder extends Seeder
         $menuGroups = [
             'Dashboard' => ['dashboard'],
             'Master Data' => [
-                'master-data', 'master-organization-structure', 'master-organizations', 'master-office-locations', 'master-departments', 'master-positions', 'master-employees',
+                'master-data', 'master-organization-structure', 'master-organization-chart', 'master-organizations', 'master-office-locations', 'master-departments', 'master-positions', 'master-employees',
                 'master-finance-accounting', 'master-chart-of-accounts', 'master-account-categories', 'master-bank-accounts', 'master-payment-methods', 'master-fx-rates', 'master-currencies', 'master-fiscal-years', 'master-accounting-periods', 'master-taxes',
                 'master-funding-projects', 'master-donors', 'master-grant-agreements', 'master-programs', 'master-projects', 'master-activities', 'master-budget-codes', 'master-sof',
                 'master-budget-reporting', 'master-budget-categories', 'master-budget-templates', 'master-reporting-categories', 'master-reporting-dimensions',

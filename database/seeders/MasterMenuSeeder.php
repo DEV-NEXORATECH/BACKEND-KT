@@ -26,6 +26,7 @@ class MasterMenuSeeder extends Seeder
 
         $groups = [
             ['title' => 'Organization & Structure', 'slug' => 'master-organization-structure', 'sort_order' => 16, 'children' => [
+                ['title' => 'Organization Chart', 'slug' => 'master-organization-chart', 'path' => '/master-data/structure', 'sort_order' => 160],
                 ['title' => 'Organizations', 'slug' => 'master-organizations', 'path' => '/master-data/organizations', 'sort_order' => 161],
                 ['title' => 'Office Locations', 'slug' => 'master-office-locations', 'path' => '/master-data/office-locations', 'sort_order' => 162],
                 ['title' => 'Departments', 'slug' => 'master-departments', 'path' => '/master-data/departments', 'sort_order' => 163],
