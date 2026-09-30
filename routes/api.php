@@ -143,6 +143,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/reports/drilldown', [ReportsDashboardController::class, 'drilldown'])->middleware('permission:reports.view');
     Route::get('/v1/reports/profit-loss/pdf', [ReportsDashboardController::class, 'profitLossPdf'])->middleware('permission:reports.export');
     Route::get('/v1/reports/balance-sheet/pdf', [ReportsDashboardController::class, 'balanceSheetPdf'])->middleware('permission:reports.export');
+    Route::get('/v1/reports/export/{report}/{format}', [ReportsDashboardController::class, 'exportStandard'])->middleware('permission:reports.export');
+    Route::get('/v1/reports/fx-adjustments', [ReportsDashboardController::class, 'fxAdjustments'])->middleware('permission:reports.view');
     Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');
     Route::get('/v1/reports/custom/options', [CustomReportController::class, 'options'])->middleware('permission:reports.view');
     Route::post('/v1/reports/custom', [CustomReportController::class, 'build'])->middleware('permission:reports.view');
@@ -394,6 +396,7 @@ Route::middleware('auth:sanctum')->group(function () {
         ];
         Route::post('accounting-periods/{id}/close', [AccountingPeriodController::class, 'close'])->middleware('permission:settings.manage');
         Route::post('accounting-periods/{id}/reopen', [AccountingPeriodController::class, 'reopen'])->middleware('permission:settings.manage');
+        Route::get('employees/quality', [EmployeeController::class, 'quality'])->middleware('permission:master-data.view');
 
         foreach ($masterResources as $uri => $controller) {
             Route::get("{$uri}/template", [$controller, 'template'])->middleware('permission:master-data.view');

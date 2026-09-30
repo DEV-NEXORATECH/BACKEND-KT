@@ -13,6 +13,7 @@ use App\Models\Procurement\SupplierInvoice;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class AccountingDashboardController extends Controller
 {
@@ -25,6 +26,13 @@ class AccountingDashboardController extends Controller
         $end = $request->query('end_date', $today);
         $bankAccountId = $request->integer('bank_account_id') ?: null;
         $projectId = $request->integer('project_id') ?: null;
+
+        if ($bankAccountId && $projectId) {
+            $projectBankAccountId = \App\Models\Master\Project::query()->whereKey($projectId)->value('bank_account_id');
+            if (! $projectBankAccountId || (int) $projectBankAccountId !== $bankAccountId) {
+                throw ValidationException::withMessages(['bank_account_id' => 'Bank account harus terhubung dengan project yang dipilih.']);
+            }
+        }
 
         $postedLines = fn () => JournalLine::query()->with(['account.category', 'project:id,code,name', 'donor:id,code,name', 'program:id,code,name'])
             ->whereHas('journal', fn (Builder $query) => $query->where('status', 'posted')->whereBetween('journal_date', [$start, $end]));
@@ -50,7 +58,7 @@ class AccountingDashboardController extends Controller
         $pending = Journal::query()->whereIn('status', ['submitted', 'reviewed'])->latest('journal_date')->limit(10)->get()->map(fn ($journal) => ['id' => $journal->id, 'journal_number' => $journal->journal_number, 'date' => $journal->journal_date?->toDateString(), 'status' => $journal->status, 'description' => $journal->description, 'total' => (float) $journal->lines()->sum('debit')])->values();
         $recent = Journal::query()->with('lines.project:id,code,name', 'lines.donor:id,code,name')->where('status', 'posted')->latest('journal_date')->latest('id')->limit(10)->get()->map(function ($journal) {
             $line = $journal->lines->first();
-            return ['id' => $journal->id, 'journal_number' => $journal->journal_number, 'date' => $journal->journal_date?->toDateString(), 'reference' => $journal->reference, 'description' => $journal->description, 'fund_grant' => $line?->project?->name ?? $line?->donor?->name, 'status' => $journal->status, 'amount' => round((float) $journal->lines->sum('debit'), 2), 'source_url' => '/accounting/journal/'.$journal->id];
+            return ['id' => $journal->id, 'journal_number' => $journal->journal_number, 'date' => $journal->journal_date?->toDateString(), 'reference' => $journal->reference, 'source_type' => $journal->source_type, 'source_id' => $journal->source_id, 'description' => $journal->description, 'fund_grant' => $line?->project?->name ?? $line?->donor?->name, 'status' => $journal->status, 'amount' => round((float) $journal->lines->sum('debit'), 2), 'source_url' => '/accounting/journal/'.$journal->id];
         })->values();
 
         $budget = BudgetLine::query()->with(['project:id,code,name', 'grantAgreement.donor:id,code,name'])->get()->groupBy(fn ($line) => $line->project_id ?: 'unassigned')->map(function ($rows) use ($periodLines) {

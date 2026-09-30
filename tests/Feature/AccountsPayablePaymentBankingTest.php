@@ -79,6 +79,24 @@ class AccountsPayablePaymentBankingTest extends TestCase
         $this->assertDatabaseHas('approval_workflow_runs', ['module' => 'ap', 'approvable_id' => $invoice->id, 'status' => 'approved']);
     }
 
+    public function test_payment_rate_difference_creates_fx_adjustment_line(): void
+    {
+        [$user, $invoice, $bank] = $this->fixture();
+        $invoice->update(['exchange_rate' => 2]);
+        $this->actingAs($user, 'sanctum')->postJson("/api/v1/finance/ap/invoices/{$invoice->id}/post")->assertOk();
+
+        $this->postJson("/api/v1/finance/ap/invoices/{$invoice->id}/payments", [
+            'bank_account_id' => $bank->id,
+            'payment_date' => '2026-09-23',
+            'amount' => 100,
+            'exchange_rate' => 3,
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('payments', ['original_amount' => 100, 'converted_amount' => 300, 'fx_gain_loss' => 100]);
+        $journalId = \App\Models\Finance\Payment::latest('id')->value('journal_id');
+        $this->assertDatabaseHas('journal_lines', ['journal_id' => $journalId, 'account_id' => ChartOfAccount::where('code', 'FX-LOSS')->value('id'), 'debit' => 100]);
+    }
+
     public function test_ap_posting_cannot_bypass_configured_approval_matrix(): void
     {
         [$user, $invoice] = $this->fixture();

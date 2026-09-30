@@ -18,9 +18,9 @@ class Payment extends Model
 {
     use SoftDeletes, AuditTrailTrait;
 
-    protected $fillable = ['payment_number', 'supplier_invoice_id', 'expense_request_id', 'customer_invoice_id', 'vendor_id', 'bank_account_id', 'payment_method_id', 'payment_date', 'amount', 'reference', 'status', 'journal_id', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['payment_number', 'supplier_invoice_id', 'expense_request_id', 'customer_invoice_id', 'vendor_id', 'bank_account_id', 'payment_method_id', 'payment_date', 'amount', 'exchange_rate', 'original_amount', 'converted_amount', 'fx_gain_loss', 'rate_source', 'rate_date', 'reference', 'status', 'journal_id', 'created_by', 'updated_by', 'deleted_by'];
 
-    protected $casts = ['payment_date' => 'date', 'amount' => 'decimal:2'];
+    protected $casts = ['payment_date' => 'date', 'rate_date' => 'date', 'amount' => 'decimal:2', 'exchange_rate' => 'decimal:6', 'original_amount' => 'decimal:2', 'converted_amount' => 'decimal:2', 'fx_gain_loss' => 'decimal:2'];
 
     public function supplierInvoice(): BelongsTo { return $this->belongsTo(SupplierInvoice::class); }
     public function expenseRequest(): BelongsTo { return $this->belongsTo(ExpenseRequest::class); }

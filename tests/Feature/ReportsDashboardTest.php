@@ -76,6 +76,11 @@ class ReportsDashboardTest extends TestCase
         $this->get('/api/v1/reports/profit-loss/pdf?end_date=2026-09-30')
             ->assertOk()
             ->assertDownload();
+        foreach (['csv', 'xlsx', 'pdf'] as $format) {
+            $this->get('/api/v1/reports/export/profit-loss/'.$format.'?end_date=2026-09-30')
+                ->assertOk()
+                ->assertDownload();
+        }
 
         $this->post('/api/v1/reports/custom/export', [
             'report_type' => 'project',
@@ -85,6 +90,25 @@ class ReportsDashboardTest extends TestCase
             ->assertDownload();
 
         $this->assertDatabaseHas('audit_logs', ['user_id' => $user->id, 'module' => 'reports', 'action' => 'EXPORT']);
+    }
+
+    public function test_profit_loss_preview_and_csv_xlsx_pdf_exports_have_consistent_rows_and_period_filter(): void
+    {
+        [$user, $budgetLine, $expenseAccount, $liabilityAccount] = $this->fixture();
+        $journal = Journal::create(['journal_number' => 'JV-CONSISTENT', 'journal_date' => '2026-09-20', 'journal_type' => 'manual', 'reference' => 'CONSISTENT', 'description' => 'Consistent report', 'status' => 'posted', 'posted_by' => $user->id, 'posted_at' => now()]);
+        $journal->lines()->create(['account_id' => $expenseAccount->id, 'budget_line_id' => $budgetLine->id, 'debit' => 300, 'credit' => 0, 'line_order' => 1]);
+        $journal->lines()->create(['account_id' => $liabilityAccount->id, 'budget_line_id' => $budgetLine->id, 'debit' => 0, 'credit' => 300, 'line_order' => 2]);
+        $query = '?start_date=2026-09-01&end_date=2026-09-30';
+        $preview = $this->actingAs($user, 'sanctum')->getJson('/api/v1/reports/summary'.$query)->assertOk()->json('profit_loss.rows');
+        $previewRows = count($preview); $previewDebit = round(array_sum(array_map(fn ($row) => (float) $row['debit'], $preview)), 2);
+        $csv = $this->get('/api/v1/reports/export/profit-loss/csv'.$query)->assertOk()->assertHeader('content-type', 'text/csv; charset=UTF-8');
+        $csvRows = array_values(array_filter(array_map('str_getcsv', preg_split('/\r\n|\r|\n/', $csv->streamedContent()))));
+        $this->assertNotEmpty($csvRows); $exportRows = count($csvRows) - 1; $this->assertGreaterThanOrEqual($previewRows, $exportRows);
+        $xlsx = $this->get('/api/v1/reports/export/profit-loss/xlsx'.$query)->assertOk();
+        $this->assertStringContainsString('spreadsheetml', strtolower((string) $xlsx->headers->get('content-type'))); $xlsxBytes = file_get_contents($xlsx->baseResponse->getFile()->getPathname()); $this->assertNotEmpty($xlsxBytes); $this->assertSame('PK', substr($xlsxBytes, 0, 2));
+        $pdf = $this->get('/api/v1/reports/export/profit-loss/pdf'.$query)->assertOk();
+        $this->assertStringContainsString('pdf', strtolower((string) $pdf->headers->get('content-type'))); $this->assertNotEmpty($pdf->getContent());
+        $this->assertGreaterThan(0, $previewDebit);
     }
 
     private function fixture(): array

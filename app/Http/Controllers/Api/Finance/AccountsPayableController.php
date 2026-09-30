@@ -103,6 +103,7 @@ class AccountsPayableController extends Controller
                 'status' => 'posted',
                 'posted_by' => request()->user()->id,
                 'posted_at' => now(),
+                'source_type' => 'supplier_invoice', 'source_id' => $supplierInvoice->id,
             ]);
 
             foreach ($supplierInvoice->lines as $line) {
@@ -190,6 +191,7 @@ class AccountsPayableController extends Controller
             'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
             'payment_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'min:0.01'],
+            'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
             'reference' => ['nullable', 'string', 'max:100'],
         ]);
         app(AccountingPeriodService::class)->ensureOpen($data['payment_date'], 'payment_date');
@@ -209,6 +211,12 @@ class AccountsPayableController extends Controller
         }
 
         $payment = DB::transaction(function () use ($supplierInvoice, $data, $bank, $apAccount) {
+            $invoiceRate = max((float) ($supplierInvoice->exchange_rate ?: 1), 0.000001);
+            $paymentRate = max((float) ($data['exchange_rate'] ?? $invoiceRate), 0.000001);
+            $functionalAmount = round((float) $data['amount'] * $paymentRate, 2);
+            $invoiceFunctionalAmount = round((float) $data['amount'] * $invoiceRate, 2);
+            $fxGainLoss = round($functionalAmount - $invoiceFunctionalAmount, 2);
+            $fxAccount = $fxGainLoss > 0 ? ChartOfAccount::where('code', 'FX-LOSS')->first() : ChartOfAccount::where('code', 'FX-GAIN')->first();
             $journal = Journal::create([
                 'journal_number' => 'PAY-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $data['payment_date'],
@@ -218,9 +226,18 @@ class AccountsPayableController extends Controller
                 'status' => 'posted',
                 'posted_by' => request()->user()->id,
                 'posted_at' => now(),
+                'original_amount' => $data['amount'],
+                'converted_amount' => $functionalAmount,
+                'exchange_rate' => $paymentRate,
+                'rate_date' => $data['payment_date'],
+                'rate_source' => 'payment_snapshot',
+                'fx_gain_loss' => $fxGainLoss,
             ]);
-            $journal->lines()->create(['account_id' => $apAccount->id, 'line_description' => 'AP payment', 'debit' => $data['amount'], 'credit' => 0, 'line_order' => 1]);
-            $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank payment', 'debit' => 0, 'credit' => $data['amount'], 'line_order' => 2]);
+            $journal->lines()->create(['account_id' => $apAccount->id, 'line_description' => 'AP payment at invoice rate', 'debit' => $invoiceFunctionalAmount, 'credit' => 0, 'line_order' => 1]);
+            $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank payment', 'debit' => 0, 'credit' => $functionalAmount, 'line_order' => 2]);
+            if (abs($fxGainLoss) >= 0.01 && $fxAccount) {
+                $journal->lines()->create(['account_id' => $fxAccount->id, 'line_description' => $fxGainLoss > 0 ? 'FX loss on payment' : 'FX gain on payment', 'debit' => $fxGainLoss > 0 ? $fxGainLoss : 0, 'credit' => $fxGainLoss < 0 ? abs($fxGainLoss) : 0, 'line_order' => 3]);
+            }
 
             $payment = Payment::create([
                 'payment_number' => 'PAY-'.now()->format('YmdHis').'-'.random_int(100, 999),
@@ -230,6 +247,12 @@ class AccountsPayableController extends Controller
                 'payment_method_id' => $data['payment_method_id'] ?? null,
                 'payment_date' => $data['payment_date'],
                 'amount' => $data['amount'],
+                'exchange_rate' => $paymentRate,
+                'original_amount' => $data['amount'],
+                'converted_amount' => $functionalAmount,
+                'fx_gain_loss' => $fxGainLoss,
+                'rate_source' => 'payment_snapshot',
+                'rate_date' => $data['payment_date'],
                 'reference' => $data['reference'] ?? null,
                 'status' => 'paid',
                 'journal_id' => $journal->id,

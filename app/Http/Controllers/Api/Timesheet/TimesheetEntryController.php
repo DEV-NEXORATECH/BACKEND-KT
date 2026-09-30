@@ -345,6 +345,7 @@ class TimesheetEntryController extends Controller
                     'status' => 'posted',
                     'posted_by' => $request->user()->id,
                     'posted_at' => now(),
+                    'source_type' => 'timesheet_entry', 'source_id' => $entry->id,
                 ]);
 
                 $journal->lines()->create([

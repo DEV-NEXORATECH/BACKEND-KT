@@ -115,6 +115,23 @@ class AccountsReceivableCustomerInvoiceTest extends TestCase
             ->assertJsonPath('data.0.status', 'posted');
     }
 
+    public function test_ar_receipt_fx_snapshot_and_partial_receipts_balance_each_rate(): void
+    {
+        [$user, $customer, $revenue, $bank] = $this->fixture();
+        $invoiceId = $this->actingAs($user, 'sanctum')->postJson('/api/v1/finance/ar/invoices', [
+            'invoice_number' => 'AR-FX-001', 'customer_id' => $customer->id, 'invoice_date' => '2026-09-20', 'currency_code' => 'USD', 'exchange_rate' => 15000,
+            'lines' => [['revenue_account_id' => $revenue->id, 'description' => 'FX receivable', 'quantity' => 1, 'unit_price' => 1000]],
+        ])->assertCreated()->json('data.id');
+        $this->postJson("/api/v1/finance/ar/invoices/{$invoiceId}/post")->assertOk();
+        $this->postJson("/api/v1/finance/ar/invoices/{$invoiceId}/receipts", ['bank_account_id' => $bank->id, 'payment_date' => '2026-09-22', 'amount' => 400, 'exchange_rate' => 15500])->assertCreated();
+        $this->postJson("/api/v1/finance/ar/invoices/{$invoiceId}/receipts", ['bank_account_id' => $bank->id, 'payment_date' => '2026-09-23', 'amount' => 600, 'exchange_rate' => 16000])->assertCreated();
+        $this->assertDatabaseHas('payments', ['customer_invoice_id' => $invoiceId, 'original_amount' => 400, 'converted_amount' => 6200000, 'exchange_rate' => 15500]);
+        $this->assertDatabaseHas('payments', ['customer_invoice_id' => $invoiceId, 'original_amount' => 600, 'converted_amount' => 9600000, 'exchange_rate' => 16000]);
+        $this->assertDatabaseHas('customer_invoices', ['id' => $invoiceId, 'exchange_rate' => 15000, 'currency_code' => 'USD']);
+        $journalIds = \App\Models\Finance\Payment::where('customer_invoice_id', $invoiceId)->pluck('journal_id');
+        foreach ($journalIds as $journalId) $this->assertSame((float) \App\Models\Accounting\JournalLine::where('journal_id', $journalId)->sum('debit'), (float) \App\Models\Accounting\JournalLine::where('journal_id', $journalId)->sum('credit'));
+    }
+
     private function fixture(): array
     {
         $role = Role::create(['name' => 'AR Role', 'slug' => 'ar-role']);

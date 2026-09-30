@@ -20,9 +20,11 @@ class Journal extends Model
         'journal_date',
         'journal_type',
         'reference',
+        'source_type', 'source_id',
         'description',
         'currency_id',
         'exchange_rate',
+        'functional_currency_code', 'original_amount', 'converted_amount', 'rate_source', 'rate_date', 'fx_gain_loss',
         'status',
         'reversal_of_id',
         'submitted_by',
@@ -42,12 +44,24 @@ class Journal extends Model
     protected $casts = [
         'journal_date' => 'date',
         'exchange_rate' => 'decimal:6',
+        'original_amount' => 'decimal:2', 'converted_amount' => 'decimal:2', 'fx_gain_loss' => 'decimal:2', 'rate_date' => 'date',
         'attachments' => 'array',
         'submitted_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'posted_at' => 'datetime',
         'reversed_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (Journal $journal) {
+            if ($journal->original_amount !== null && $journal->exchange_rate !== null) {
+                $journal->converted_amount = round((float) $journal->original_amount * (float) $journal->exchange_rate, 2);
+                $journal->rate_date ??= $journal->journal_date?->toDateString() ?? now()->toDateString();
+                $journal->rate_source ??= 'transaction_snapshot';
+            }
+        });
+    }
 
     public function lines(): HasMany
     {

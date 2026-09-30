@@ -13,6 +13,11 @@ class OrganizationStructureController extends Controller
         $organizations = Organization::query()->where('is_active', true)->with([
             'departments' => fn ($query) => $query->where('is_active', true)->with([
                 'children' => fn ($child) => $child->where('is_active', true),
+                'positions' => fn ($position) => $position->where('is_active', true)->with([
+                    'reportsTo:id,name,reports_to_position_id',
+                    'directReports:id,name,reports_to_position_id',
+                    'employees' => fn ($employee) => $employee->where('is_active', true),
+                ]),
                 'employees' => fn ($employee) => $employee->where('is_active', true)->with('positionMaster.reportsTo'),
             ]),
         ])->get();

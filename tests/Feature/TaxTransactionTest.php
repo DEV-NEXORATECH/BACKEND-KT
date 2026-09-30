@@ -62,6 +62,14 @@ class TaxTransactionTest extends TestCase
             ->assertJsonPath('by_type.0.tax_type', 'PPN');
     }
 
+    public function test_authoritative_calculator_uses_tax_master_rule_and_effective_date(): void
+    {
+        [$user] = $this->fixture();
+        $tax = Tax::create(['code' => 'PPH21-P17', 'name' => 'PPh 21 Progressive', 'tax_type' => 'PPH21', 'rate_percent' => 0, 'applicable_rule' => 'progressive', 'effective_start_date' => '2026-01-01', 'is_active' => true]);
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/tax/calculate', ['tax_id' => $tax->id, 'gross_amount' => 120000000, 'tax_date' => '2026-09-30'])->assertOk()->assertJsonPath('data.calculation_method', 'pasal_17_progressive')->assertJsonPath('data.tax_rule', 'progressive');
+        $this->postJson('/api/v1/tax/calculate', ['tax_id' => $tax->id, 'gross_amount' => 100, 'tax_date' => '2025-12-31'])->assertStatus(422);
+    }
+
     private function fixture(): array
     {
         $role = Role::create(['name' => 'Tax Role', 'slug' => 'tax-role']);

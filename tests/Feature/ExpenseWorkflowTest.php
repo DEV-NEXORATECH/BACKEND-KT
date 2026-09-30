@@ -87,6 +87,24 @@ class ExpenseWorkflowTest extends TestCase
             ->assertJsonPath('data.status', 'submitted');
     }
 
+    public function test_expense_payment_uses_new_fx_rate_and_preserves_request_snapshot(): void
+    {
+        [$user, $budgetLine, $category, $bank] = $this->fixture();
+        $expenseId = $this->actingAs($user, 'sanctum')->postJson('/api/v1/expenses/requests', [
+            'expense_type' => 'reimbursement', 'request_date' => '2026-09-20', 'currency_code' => 'USD', 'exchange_rate' => 15000, 'description' => 'FX expense', 'attachments' => ['receipt-fx.pdf'],
+            'lines' => [['expense_category_id' => $category->id, 'budget_line_id' => $budgetLine->id, 'description' => 'FX travel', 'amount' => 100]],
+        ])->assertCreated()->json('data.id');
+        $this->postJson("/api/v1/expenses/requests/{$expenseId}/submit")->assertOk();
+        $this->postJson("/api/v1/expenses/requests/{$expenseId}/verify")->assertOk();
+        $this->postJson("/api/v1/expenses/requests/{$expenseId}/approve")->assertOk();
+        $this->postJson("/api/v1/expenses/requests/{$expenseId}/post")->assertOk();
+        $this->postJson("/api/v1/expenses/requests/{$expenseId}/pay", ['bank_account_id' => $bank->id, 'payment_date' => '2026-09-21', 'amount' => 100, 'exchange_rate' => 15300])->assertCreated();
+        $this->assertDatabaseHas('expense_requests', ['id' => $expenseId, 'exchange_rate' => 15000, 'currency_code' => 'USD']);
+        $this->assertDatabaseHas('payments', ['expense_request_id' => $expenseId, 'exchange_rate' => 15300, 'converted_amount' => 1530000, 'fx_gain_loss' => 30000]);
+        $journalId = \App\Models\Finance\Payment::where('expense_request_id', $expenseId)->value('journal_id');
+        $this->assertSame((float) \App\Models\Accounting\JournalLine::where('journal_id', $journalId)->sum('debit'), (float) \App\Models\Accounting\JournalLine::where('journal_id', $journalId)->sum('credit'));
+    }
+
     private function fixture(): array
     {
         $role = Role::create(['name' => 'Expense Role', 'slug' => 'expense-role']);

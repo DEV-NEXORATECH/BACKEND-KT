@@ -7,6 +7,8 @@ use App\Models\Finance\TaxTransaction;
 use App\Models\Master\Tax;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Rbac\DataScopeService;
+use App\Services\Settings\SystemPolicyService;
+use App\Services\Tax\TaxCalculationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,30 +19,40 @@ class TaxTransactionController extends Controller
 {
     public function taxes(): JsonResponse
     {
+        $today = now()->toDateString();
         return response()->json([
             'success' => true,
             'data' => Tax::query()
                 ->where('is_active', true)
+                ->when(! app(SystemPolicyService::class)->vatEnabled(), fn (Builder $query) => $query->whereRaw("upper(tax_type) not in ('PPN','VAT')"))
+                ->where(fn (Builder $query) => $query->whereNull('effective_start_date')->orWhereDate('effective_start_date', '<=', $today))
+                ->where(fn (Builder $query) => $query->whereNull('effective_end_date')->orWhereDate('effective_end_date', '>=', $today))
                 ->orderBy('tax_type')
                 ->orderBy('code')
-                ->get(['id', 'code', 'name', 'tax_type', 'rate_percent', 'description']),
+                ->get(['id', 'code', 'name', 'tax_type', 'rate_percent', 'effective_start_date', 'effective_end_date', 'applicable_rule', 'description']),
         ]);
     }
 
-    public function calculate(Request $request): JsonResponse
+    public function calculate(Request $request, TaxCalculationService $calculator): JsonResponse
     {
+        if ($request->filled('tax_type') || $request->filled('gross_amount')) {
+            $data = $request->validate(['tax_id' => ['nullable', 'integer', 'exists:taxes,id'], 'tax_type' => ['nullable', 'string'], 'gross_amount' => ['required', 'numeric', 'min:0'], 'tax_date' => ['nullable', 'date'], 'is_inclusive' => ['nullable', 'boolean'], 'direction' => ['nullable', 'string']]);
+            if (strtoupper((string) ($data['tax_type'] ?? '')) === 'PPN' && ! app(SystemPolicyService::class)->vatEnabled()) abort(422, 'PPN/VAT tidak diaktifkan untuk organisasi ini.');
+            return response()->json(['success' => true, 'data' => $calculator->resolve($data)]);
+        }
         $data = $request->validate([
             'tax_id' => ['required', 'integer', 'exists:taxes,id'],
             'amount' => ['required', 'numeric', 'min:0'],
             'is_inclusive' => ['nullable', 'boolean'],
             'direction' => ['nullable', 'in:sales,purchase,withholding_in,withholding_out'],
+            'as_of' => ['nullable', 'date'],
         ]);
 
-        $tax = Tax::findOrFail($data['tax_id']);
+        $tax = $this->resolveTax((int) $data['tax_id'], $request->date('as_of')?->toDateString() ?? now()->toDateString());
 
         return response()->json([
             'success' => true,
-            'data' => $this->calculateTax($tax, (float) $data['amount'], (bool) ($data['is_inclusive'] ?? false), $data['direction'] ?? 'purchase'),
+            'data' => app(TaxCalculationService::class)->calculate($tax, (float) $data['amount'], (bool) ($data['is_inclusive'] ?? false), $data['direction'] ?? 'purchase'),
         ]);
     }
 
@@ -93,7 +105,7 @@ class TaxTransactionController extends Controller
 
         app(AccountingPeriodService::class)->ensureOpen($data['transaction_date'], 'transaction_date');
 
-        $tax = Tax::findOrFail($data['tax_id']);
+        $tax = $this->resolveTax((int) $data['tax_id'], $data['transaction_date']);
         $calculation = $this->calculateTax($tax, (float) $data['amount'], (bool) ($data['is_inclusive'] ?? false), $data['direction']);
 
         $item = TaxTransaction::create([
@@ -329,11 +341,8 @@ class TaxTransactionController extends Controller
 
     private function calculateTax(Tax $tax, float $amount, bool $isInclusive, string $direction): array
     {
-        $rate = round((float) $tax->rate_percent, 4);
-        $rateFactor = $rate / 100;
-        $taxable = $isInclusive && $rateFactor > 0 ? round($amount / (1 + $rateFactor), 2) : round($amount, 2);
-        $taxAmount = round($taxable * $rateFactor, 2);
-        $gross = $isInclusive ? round($amount, 2) : round($taxable + $taxAmount, 2);
+        $calculation = app(TaxCalculationService::class)->calculate($tax, $amount, $isInclusive, $direction);
+        $rate = $calculation['rate']; $taxable = $calculation['taxable_amount']; $taxAmount = $calculation['tax_amount']; $gross = $calculation['gross_amount'];
 
         $isWithholding = str_starts_with($direction, 'withholding');
 
@@ -349,7 +358,27 @@ class TaxTransactionController extends Controller
             'tax_amount' => $taxAmount,
             'gross_amount' => $gross,
             'net_amount' => $isWithholding ? round($taxable - $taxAmount, 2) : $gross,
+            'tax_rule' => $calculation['tax_rule'], 'calculation_method' => $calculation['calculation_method'],
         ];
+    }
+
+    private function resolveTax(int $taxId, string $date): Tax
+    {
+        $tax = Tax::findOrFail($taxId);
+        $type = strtoupper((string) $tax->tax_type);
+        if (in_array($type, ['PPN', 'VAT'], true) && ! app(SystemPolicyService::class)->vatEnabled()) {
+            abort(Response::HTTP_UNPROCESSABLE_ENTITY, 'PPN/VAT tidak diaktifkan untuk organisasi ini.');
+        }
+        if (! $tax->is_active) {
+            abort(Response::HTTP_UNPROCESSABLE_ENTITY, 'Tarif pajak tidak aktif. Pilih tarif aktif dari Tax Master.');
+        }
+        if ($tax->effective_start_date && $date < $tax->effective_start_date->toDateString()) {
+            abort(Response::HTTP_UNPROCESSABLE_ENTITY, 'Tarif pajak belum berlaku pada tanggal transaksi.');
+        }
+        if ($tax->effective_end_date && $date > $tax->effective_end_date->toDateString()) {
+            abort(Response::HTTP_UNPROCESSABLE_ENTITY, 'Tarif pajak sudah tidak berlaku pada tanggal transaksi.');
+        }
+        return $tax;
     }
 
     private function format(TaxTransaction $item): array

@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Accounting\Journal;
 use App\Models\Accounting\JournalLine;
+use App\Models\ApplicationSetting;
 use App\Models\Budget\BudgetCommitment;
 use App\Models\Notification;
 use App\Models\Master\Activity;
@@ -48,6 +49,11 @@ class MasterDataSeeder extends Seeder
 {
     public function run(): void
     {
+        // Kaoem Telapak does not use VAT/PPN. Keep the switch explicit so all
+        // tax entry points (calculator and transactions) share the same policy.
+        ApplicationSetting::updateOrCreate(['key' => 'tax_policy'], [
+            'value' => ['vat_enabled' => false],
+        ]);
         // 1. Currencies (Base foundation)
         $idr = Currency::updateOrCreate(['code' => 'IDR'], [
             'name' => 'Indonesian Rupiah / Rupiah',

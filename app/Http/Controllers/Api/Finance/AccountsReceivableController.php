@@ -215,6 +215,7 @@ class AccountsReceivableController extends Controller
             'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
             'payment_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'min:0.01'],
+            'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
             'reference' => ['nullable', 'string', 'max:100'],
         ]);
         app(AccountingPeriodService::class)->ensureOpen($data['payment_date'], 'payment_date');
@@ -236,6 +237,12 @@ class AccountsReceivableController extends Controller
         }
 
         $payment = DB::transaction(function () use ($customerInvoice, $data, $bank, $arAccount) {
+            $invoiceRate = max((float) ($customerInvoice->exchange_rate ?: 1), 0.000001);
+            $receiptRate = max((float) ($data['exchange_rate'] ?? $invoiceRate), 0.000001);
+            $functionalAmount = round((float) $data['amount'] * $receiptRate, 2);
+            $invoiceFunctionalAmount = round((float) $data['amount'] * $invoiceRate, 2);
+            $fxGainLoss = round($functionalAmount - $invoiceFunctionalAmount, 2);
+            $fxAccount = $fxGainLoss >= 0 ? ChartOfAccount::where('code', 'FX-GAIN')->first() : ChartOfAccount::where('code', 'FX-LOSS')->first();
             $journal = Journal::create([
                 'journal_number' => 'RCV-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $data['payment_date'],
@@ -245,9 +252,13 @@ class AccountsReceivableController extends Controller
                 'status' => 'posted',
                 'posted_by' => request()->user()->id,
                 'posted_at' => now(),
+                'source_type' => 'customer_invoice', 'source_id' => $customerInvoice->id,
+                'original_amount' => $data['amount'], 'converted_amount' => $functionalAmount,
+                'exchange_rate' => $receiptRate, 'rate_date' => $data['payment_date'], 'rate_source' => 'receipt_snapshot', 'fx_gain_loss' => $fxGainLoss,
             ]);
-            $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank receipt', 'debit' => $data['amount'], 'credit' => 0, 'line_order' => 1]);
-            $journal->lines()->create(['account_id' => $arAccount->id, 'line_description' => 'AR receipt', 'debit' => 0, 'credit' => $data['amount'], 'line_order' => 2]);
+            $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank receipt', 'debit' => $functionalAmount, 'credit' => 0, 'line_order' => 1]);
+            $journal->lines()->create(['account_id' => $arAccount->id, 'line_description' => 'AR receipt at invoice rate', 'debit' => 0, 'credit' => $invoiceFunctionalAmount, 'line_order' => 2]);
+            if (abs($fxGainLoss) >= 0.01 && $fxAccount) $journal->lines()->create(['account_id' => $fxAccount->id, 'line_description' => $fxGainLoss > 0 ? 'FX gain on receipt' : 'FX loss on receipt', 'debit' => $fxGainLoss < 0 ? abs($fxGainLoss) : 0, 'credit' => $fxGainLoss > 0 ? $fxGainLoss : 0, 'line_order' => 3]);
 
             $payment = Payment::create([
                 'payment_number' => 'RCV-'.now()->format('YmdHis').'-'.random_int(100, 999),
@@ -256,6 +267,7 @@ class AccountsReceivableController extends Controller
                 'payment_method_id' => $data['payment_method_id'] ?? null,
                 'payment_date' => $data['payment_date'],
                 'amount' => $data['amount'],
+                'exchange_rate' => $receiptRate, 'original_amount' => $data['amount'], 'converted_amount' => $functionalAmount, 'fx_gain_loss' => $fxGainLoss, 'rate_source' => 'receipt_snapshot', 'rate_date' => $data['payment_date'],
                 'reference' => $data['reference'] ?? null,
                 'status' => 'paid',
                 'journal_id' => $journal->id,

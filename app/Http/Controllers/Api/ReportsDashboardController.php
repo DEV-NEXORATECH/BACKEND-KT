@@ -25,6 +25,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ReportsDashboardController extends Controller
 {
@@ -683,6 +686,7 @@ class ReportsDashboardController extends Controller
             'success' => true,
             'period' => $period['label'],
             'financial_statement' => $this->financialStatement($postedLines),
+            'profit_loss' => ['rows' => collect($this->financialStatement($postedLines)['rows'])->filter(fn (array $row) => in_array(strtolower((string) ($row['account_type'] ?? '')), ['revenue', 'income', 'expense'], true))->values()->all()],
             'balance_sheet' => $this->balanceSheetData($request->input('as_of', $period['end']?->toDateString())),
             'budget_vs_actual' => [
                 'totals' => $this->budgetTotals($budgetRows),
@@ -802,6 +806,80 @@ class ReportsDashboardController extends Controller
 
         return Pdf::loadView('reports.balance-sheet-pdf', ['data' => $data, 'as_of' => $asOf])
             ->setPaper('a4')->download('neraca-'.now()->format('YmdHis').'.pdf');
+    }
+
+    /** Export the same filtered report data used by the on-screen report. */
+    public function exportStandard(Request $request, string $report, string $format): Response|StreamedResponse
+    {
+        $this->ensureExportScope($request);
+        abort_unless(in_array($report, ['profit-loss', 'balance-sheet', 'aging', 'cash-bank', 'procurement', 'donor-grant'], true), 404);
+        abort_unless(in_array($format, ['csv', 'xlsx', 'pdf'], true), 422, 'Format export tidak didukung.');
+
+        if ($report === 'profit-loss') {
+            $period = $this->period($request);
+            $rows = collect($this->financialStatement($this->postedLines($period['start'], $period['end'], $request->input('project_id')))['rows'])
+                ->filter(fn (array $row) => in_array(strtolower((string) ($row['account_type'] ?? '')), ['revenue', 'income', 'expense'], true))->values()->all();
+            $title = 'Profit & Loss';
+            $filename = 'laporan-laba-rugi-'.now()->format('Ymd_His');
+            $pdfData = ['rows' => collect($rows), 'period_label' => $this->periodLabel($period)];
+        } elseif ($report === 'balance-sheet') {
+            $asOf = $request->filled('as_of') ? CarbonImmutable::parse($request->string('as_of'))->toDateString() : CarbonImmutable::now()->toDateString();
+            $data = $this->balanceSheetData($asOf);
+            $rows = $data['accounts'];
+            $title = 'Balance Sheet';
+            $filename = 'neraca-'.$asOf.'-'.now()->format('His');
+            $pdfData = ['data' => $data, 'as_of' => $asOf];
+        } elseif ($report === 'aging') {
+            $asOf = $request->filled('as_of') ? CarbonImmutable::parse($request->string('as_of')) : CarbonImmutable::now();
+            $ap = $this->apAging($asOf)['rows']; $ar = $this->arAging($asOf)['rows'];
+            $rows = collect($ap)->map(fn ($row) => ['direction' => 'AP', ...$row])->merge(collect($ar)->map(fn ($row) => ['direction' => 'AR', ...$row]))->values()->all();
+            $title = 'Aging'; $filename = 'aging-'.$asOf->toDateString(); $pdfData = null;
+        } elseif ($report === 'cash-bank') {
+            $period = $this->period($request); $rows = $this->cashBank($period['start'], $period['end'])['rows'];
+            $title = 'Cash Bank'; $filename = 'cash-bank-'.now()->format('Ymd_His'); $pdfData = null;
+        } elseif ($report === 'procurement') {
+            $summary = $this->procurementReport();
+            $rows = collect($summary['purchase_requests'])->map(fn ($total, $status) => ['section' => 'Purchase Requests', 'status' => $status, 'total' => $total])->merge(collect($summary['purchase_orders'])->map(fn ($total, $status) => ['section' => 'Purchase Orders', 'status' => $status, 'total' => $total]))->push(['section' => 'Commitments', 'status' => 'open', 'total' => $summary['commitments_open']])->values()->all();
+            $title = 'Procurement'; $filename = 'procurement-'.now()->format('Ymd_His'); $pdfData = null;
+        } else {
+            $payload = $this->donorDashboard($request, app(BudgetMonitoringService::class))->getData(true);
+            $rows = collect($payload['donors'] ?? [])->map(fn ($row) => ['section' => 'Donor', ...$row])->merge(collect($payload['grants'] ?? [])->map(fn ($row) => ['section' => 'Grant', ...$row]))->values()->all();
+            $title = 'Donor Grant'; $filename = 'donor-grant-'.now()->format('Ymd_His'); $pdfData = null;
+        }
+        $this->auditExport($request, $report.'_'.$format, count($rows));
+
+        if ($format === 'pdf' && $pdfData) {
+            $view = $report === 'profit-loss' ? 'reports.profit-loss-pdf' : 'reports.balance-sheet-pdf';
+            return Pdf::loadView($view, $pdfData)->setPaper('a4')->download($filename.'.pdf');
+        }
+        if ($format === 'pdf') {
+            $safe = fn ($value) => e((string) $value);
+            $html = '<h1>'.e($title).'</h1><table border="1" cellspacing="0" cellpadding="5"><thead><tr>'.implode('', array_map(fn ($header) => '<th>'.$safe($header).'</th>', array_keys((array) ($rows[0] ?? ['No data' => ''])))).'</tr></thead><tbody>';
+            foreach ($rows as $row) $html .= '<tr>'.implode('', array_map(fn ($value) => '<td>'.$safe($value).'</td>', (array) $row)).'</tr>';
+            return Pdf::loadHTML($html.'</tbody></table>')->setPaper('a4', 'landscape')->download($filename.'.pdf');
+        }
+
+        $headers = array_keys((array) ($rows[0] ?? ['No data' => '']));
+        $normalized = collect($rows)->map(fn ($row) => (array) $row)->values();
+        if ($format === 'csv') {
+            return response()->streamDownload(function () use ($normalized, $headers) {
+                $handle = fopen('php://output', 'w'); fwrite($handle, "\xEF\xBB\xBF"); fputcsv($handle, $headers);
+                foreach ($normalized as $row) fputcsv($handle, array_map(fn ($header) => $row[$header] ?? '', $headers)); fclose($handle);
+            }, $filename.'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
+        }
+
+        $spreadsheet = new Spreadsheet(); $sheet = $spreadsheet->getActiveSheet(); $sheet->setTitle(substr($title, 0, 31));
+        $sheet->fromArray([$headers, ...$normalized->map(fn ($row) => array_map(fn ($header) => $row[$header] ?? '', $headers))->all()], null, 'A1');
+        $sheet->getStyle('A1:'.$sheet->getHighestColumn().'1')->getFont()->setBold(true); $sheet->freezePane('A2');
+        $temp = tempnam(sys_get_temp_dir(), 'kt-report-'); (new Xlsx($spreadsheet))->save($temp);
+        return response()->download($temp, $filename.'.xlsx')->deleteFileAfterSend(true);
+    }
+
+    public function fxAdjustments(Request $request): JsonResponse
+    {
+        $rows = Journal::query()->where('status', 'posted')->where('fx_gain_loss', '!=', 0)->latest('journal_date')->limit(500)->get()
+            ->map(fn (Journal $journal) => ['id' => $journal->id, 'journal_number' => $journal->journal_number, 'date' => $journal->journal_date?->toDateString(), 'source_type' => $journal->source_type, 'source_id' => $journal->source_id, 'gain_loss' => round((float) $journal->fx_gain_loss, 2), 'currency' => $journal->functional_currency_code, 'rate' => $journal->exchange_rate])->values();
+        return response()->json(['success' => true, 'data' => $rows]);
     }
 
     public function forecast(Request $request): JsonResponse

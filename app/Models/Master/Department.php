@@ -45,6 +45,11 @@ class Department extends Model
         return $this->hasMany(\App\Models\Master\Employee::class);
     }
 
+    public function positions()
+    {
+        return $this->hasMany(\App\Models\Master\Position::class);
+    }
+
     public function approvalMatrices()
     {
         return $this->hasMany(\App\Models\Master\ApprovalMatrix::class);

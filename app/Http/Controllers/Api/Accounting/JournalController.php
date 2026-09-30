@@ -306,9 +306,15 @@ class JournalController extends Controller
             'journal_date' => ['required', 'date'],
             'journal_type' => ['required', 'in:manual,adjustment,recurring,accrual,reversal,fx_adjustment'],
             'reference' => ['nullable', 'string', 'max:100'],
+            'source_type' => ['nullable', 'string', 'max:80'],
+            'source_id' => ['nullable', 'integer'],
             'description' => ['required', 'string'],
             'currency_id' => ['nullable', 'integer', 'exists:currencies,id'],
             'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
+            'functional_currency_code' => ['nullable', 'string', 'max:10'],
+            'original_amount' => ['nullable', 'numeric', 'min:0'],
+            'rate_source' => ['nullable', 'string', 'max:50'],
+            'rate_date' => ['nullable', 'date'],
             'lines' => ['required', 'array', 'min:2'],
             'lines.*.account_id' => ['required', 'integer', 'exists:chart_of_accounts,id'],
             'lines.*.donor_id' => ['nullable', 'integer', 'exists:donors,id'],
@@ -348,6 +354,11 @@ class JournalController extends Controller
         }
 
         $payload['exchange_rate'] = $payload['exchange_rate'] ?? 1;
+        if (array_key_exists('original_amount', $payload)) {
+            $payload['converted_amount'] = round((float) $payload['original_amount'] * (float) $payload['exchange_rate'], 2);
+            $payload['rate_date'] = $payload['rate_date'] ?? $payload['journal_date'];
+            $payload['rate_source'] = $payload['rate_source'] ?? 'transaction_snapshot';
+        }
 
         return $payload;
     }

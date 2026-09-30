@@ -22,12 +22,14 @@ class CashAdvanceWorkflowTest extends TestCase
     {
         [$user, $bank, $line, $category] = $this->fixture();
         $id = $this->createAndApprove($user, $line, $category, 1000);
+        \DB::table('expense_requests')->where('id', $id)->update(['currency_code' => 'USD', 'exchange_rate' => 15000]);
         $this->postJson("/api/v1/expenses/requests/{$id}/post")->assertOk();
-        $this->postJson("/api/v1/expenses/requests/{$id}/pay", ['bank_account_id' => $bank->id, 'payment_date' => '2026-09-21', 'amount' => 1000])->assertCreated();
-        $this->postJson("/api/v1/expenses/requests/{$id}/settle", ['actual_expense_amount' => 1000])->assertOk()->assertJsonPath('data.settlement_state', 'settled');
+        $this->postJson("/api/v1/expenses/requests/{$id}/pay", ['bank_account_id' => $bank->id, 'payment_date' => '2026-09-21', 'amount' => 1000, 'exchange_rate' => 15000])->assertCreated();
+        $this->postJson("/api/v1/expenses/requests/{$id}/settle", ['actual_expense_amount' => 1000, 'exchange_rate' => 15500])->assertOk()->assertJsonPath('data.settlement_state', 'settled');
         $this->assertDatabaseHas('journals', ['journal_type' => 'manual', 'reference' => 'CA-TEST-1000']);
         $this->assertDatabaseHas('bank_transactions', ['credit' => 1000, 'status' => 'matched']);
         $this->assertEquals(0, (float) \DB::table('expense_requests')->where('id', $id)->value('return_amount'));
+        $this->assertDatabaseHas('journals', ['source_type' => 'cash_advance_settlement', 'exchange_rate' => 15500, 'converted_amount' => 15500000]);
     }
 
     public function test_partial_settlement_requires_return_and_closes_after_return(): void
