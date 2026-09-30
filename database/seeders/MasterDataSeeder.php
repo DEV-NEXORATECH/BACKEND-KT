@@ -340,32 +340,36 @@ class MasterDataSeeder extends Seeder
         Tax::where('code', 'PPN-11')->update(['code' => 'PPN11']);
         Tax::where('code', 'PPH-23')->update(['code' => 'PPh 23']);
 
-        $ppn = Tax::updateOrCreate(['code' => 'PPN11'], [
-            'name' => 'PPN',
-            'tax_type' => 'PPN',
-            'rate_percent' => 11.00,
-            'description' => 'Tarif PPN 11.00%',
-            'sales_gl_account_id' => $createdCoa['2120']->id ?? null,
-            'purchase_gl_account_id' => $createdCoa['1150']->id ?? null,
-            'is_active' => false,
-        ]);
+        // Feedback 11: Kaoem Telapak does not levy PPN. Archive / delete PPN config.
+        Tax::whereIn('code', ['PPN11', 'PPN-11'])->forceDelete();
 
-        $pph21Staff = Tax::updateOrCreate(['code' => 'PPh 21 – Staff'], [
-            'name' => 'PPh 21',
+        // Feedback 12: Tax rate reference matching official tax calculator & severance / paklaring
+        $pph21Staff = Tax::updateOrCreate(['code' => 'PPH21-TER-STAFF'], [
+            'name' => 'PPh 21 Staff (Tarif Efektif Rata-Rata / TER)',
             'tax_type' => 'PPH21',
-            'rate_percent' => 0.00,
-            'applicable_rule' => 'TER',
-            'description' => 'Mengikuti ketentuan tarif TER (Tarif Efektif Rata-rata) sesuai status dan penghasilan',
+            'rate_percent' => 5.00,
+            'applicable_rule' => 'PP 58/2023 & PMK 168/2023 (Kategori TER A, B, C: 0% - 34%)',
+            'description' => 'Pemotongan PPh 21 gaji pegawai tetap menggunakan skema TER bulanan dan penyesuaian masa pajak Desember.',
             'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
             'is_active' => true,
         ]);
 
-        $pph21NonStaff = Tax::updateOrCreate(['code' => 'PPh 21 – Non Staff'], [
-            'name' => 'PPh 21',
+        $pph21NonStaff = Tax::updateOrCreate(['code' => 'PPH21-PASAL17-NONSTAFF'], [
+            'name' => 'PPh 21 Tenaga Ahli / Non-Staff (Pasal 17)',
             'tax_type' => 'PPH21',
-            'rate_percent' => 0.00,
-            'applicable_rule' => 'Pasal 17 progressive',
-            'description' => 'Mengikuti ketentuan PPh 21 untuk bukan pegawai; menggunakan dasar pengenaan pajak sesuai ketentuan yang berlaku',
+            'rate_percent' => 5.00,
+            'applicable_rule' => 'Tarif Progresif UU HPP Pasal 17 (5% s.d. 35%) atas 50% Penghasilan Bruto',
+            'description' => 'Pemotongan PPh 21 atas imbalan jasa konsultan, tenaga ahli, dan narasumber non-pegawai tetap.',
+            'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
+            'is_active' => true,
+        ]);
+
+        $pphPesangon = Tax::updateOrCreate(['code' => 'PPH21-PESANGON'], [
+            'name' => 'PPh 21 Uang Pesangon & Paklaring (PP 68/2009)',
+            'tax_type' => 'PPH21',
+            'rate_percent' => 5.00,
+            'applicable_rule' => 'PP 68/2009: 0% (<=50jt), 5% (>50jt-100jt), 15% (>100jt-500jt), 25% (>500jt)',
+            'description' => 'Pemotongan pajak final uang pesangon, kompensasi kerja, paklaring, dan pensiun dibayarkan sekaligus.',
             'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
             'is_active' => true,
         ]);
@@ -791,19 +795,7 @@ class MasterDataSeeder extends Seeder
 
         // 14. Employees & Vendors
         $employeesList = [
-            [
-                'employee_id_number' => 'EMP001',
-                'name' => 'Siti Aminah',
-                'email' => 'siti@contoh.org',
-                'department_id' => $deptFin->id,
-                'office_location_id' => $jakartaOffice->id,
-                'position' => 'Finance Staff',
-                'bank_name' => 'BCA',
-                'bank_account_number' => '1234567890',
-                'bank_account_holder' => 'Siti Aminah',
-                'project_bank_name' => null,
-                'project_bank_account_number' => null,
-            ],
+
             [
                 'employee_id_number' => 'ID00012',
                 'name' => 'ABIL ACHMAD AKBAR',
@@ -1052,7 +1044,7 @@ class MasterDataSeeder extends Seeder
                 'project_bank_account_number' => null,
             ],
             [
-                'employee_id_number' => 'EMP-TBC-01',
+                'employee_id_number' => 'ID00038',
                 'name' => 'KWEE VIENA LESTARI TANJUNG',
                 'email' => 'viena.tanjung@kaoemtelapak.org',
                 'department_id' => $deptCamp->id,
@@ -1064,19 +1056,7 @@ class MasterDataSeeder extends Seeder
                 'project_bank_name' => 'TBC',
                 'project_bank_account_number' => null,
             ],
-            [
-                'employee_id_number' => 'EMP-TBC-02',
-                'name' => 'Senior Campaigner (TBC)',
-                'email' => 'campaigner.tbc@kaoemtelapak.org',
-                'department_id' => $deptCamp->id,
-                'office_location_id' => $headOffice->id,
-                'position' => 'Sr. Campaigner',
-                'bank_name' => null,
-                'bank_account_number' => null,
-                'bank_account_holder' => 'TBC',
-                'project_bank_name' => 'TBC',
-                'project_bank_account_number' => null,
-            ],
+
         ];
 
         foreach ($employeesList as $empData) {
@@ -1150,7 +1130,7 @@ class MasterDataSeeder extends Seeder
             'bank_name' => 'Bank BCA',
             'bank_account_number' => '029-123456-7',
             'bank_account_holder' => 'PT Graha Santika Pontianak',
-            'tax_id' => $ppn->id,
+            'tax_id' => null,
             'is_active' => true,
         ]);
 
