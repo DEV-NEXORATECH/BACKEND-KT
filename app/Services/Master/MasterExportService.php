@@ -13,13 +13,23 @@ class MasterExportService
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Data');
-        $sheet->fromArray([$columns], null, 'A1');
+        $sheet->setTitle('Input Data');
+        $displayColumns = array_map(fn (string $column): string => $this->displayHeader($column), $columns);
+        $sheet->fromArray([$displayColumns], null, 'A1');
         $lastColumn = $sheet->getHighestColumn();
         $headerStyle = $sheet->getStyle("A1:{$lastColumn}1");
         $headerStyle->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
         $headerStyle->getFill()->setFillType('solid')->getStartColor()->setARGB('FF1F4E78');
         $headerStyle->getAlignment()->setHorizontal('center');
+        $headerStyle->getAlignment()->setVertical('center');
+        $headerStyle->getAlignment()->setWrapText(true);
+        $sheet->getRowDimension(1)->setRowHeight(30);
+        foreach ($columns as $index => $column) {
+            $letter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+            $sheet->getComment($letter.'1')->getText()->createText(
+                'Field import: '.$column
+            );
+        }
         $sheet->freezePane('A2');
         $sheet->setAutoFilter("A1:{$lastColumn}1");
         $columnCount = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($lastColumn);
@@ -30,12 +40,21 @@ class MasterExportService
 
         $instructions = $spreadsheet->createSheet();
         $instructions->setTitle('Instructions');
-        $instructions->fromArray([
+        $instructionRows = [
             ['Template', $entityName],
-            ['Cara penggunaan', 'Isi data pada sheet Data. Jangan mengubah nama kolom. Hapus baris contoh jika tidak diperlukan.'],
-            ['Format import', 'Excel (.xlsx/.xls) atau CSV UTF-8. Nilai relasi menggunakan ID data terkait.'],
-        ], null, 'A1');
-        $instructions->getStyle('A1:A3')->getFont()->setBold(true);
+            ['Cara penggunaan', 'Isi data pada sheet Input Data. Jangan mengubah urutan kolom. Tambahkan satu baris untuk setiap data baru.'],
+            ['Format import', 'Excel (.xlsx/.xls) atau CSV UTF-8. Kolom tampilan yang mudah dibaca dan nama field API sama-sama diterima saat import.'],
+            ['Relasi', 'Kolom bertanda (ID) diisi dengan ID data terkait.'],
+            ['', ''],
+            ['Kolom pada template', 'Field import'],
+        ];
+        foreach ($columns as $column) {
+            $instructionRows[] = [$this->displayHeader($column), $column];
+        }
+        $instructions->fromArray($instructionRows, null, 'A1');
+        $instructions->getStyle('A1:A6')->getFont()->setBold(true);
+        $instructions->getStyle('A6:B6')->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
+        $instructions->getStyle('A6:B6')->getFill()->setFillType('solid')->getStartColor()->setARGB('FF1F4E78');
         $instructions->getColumnDimension('A')->setWidth(24);
         $instructions->getColumnDimension('B')->setWidth(110);
         $instructions->getStyle('B1:B3')->getAlignment()->setWrapText(true);
@@ -44,6 +63,15 @@ class MasterExportService
         $temp = tempnam(sys_get_temp_dir(), 'kt-template-');
         $writer->save($temp);
         return response()->download($temp, strtolower($entityName).'-template.xlsx')->deleteFileAfterSend(true);
+    }
+
+    private function displayHeader(string $column): string
+    {
+        if ($column === 'is_active') return 'Active';
+        if (str_ends_with($column, '_id')) {
+            return ucwords(str_replace('_', ' ', substr($column, 0, -3))).' (ID)';
+        }
+        return ucwords(str_replace('_', ' ', $column));
     }
 
     public function export(string $entityName, $collection, string $format = 'csv')

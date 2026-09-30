@@ -7,6 +7,7 @@ use App\Services\Master\MasterExportService;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -231,6 +232,23 @@ abstract class BaseMasterController extends Controller
             'id', 'created_at', 'updated_at', 'deleted_at', 'created_by', 'updated_by', 'deleted_by',
         ], true)));
         $fillable = array_flip($fillableColumns);
+        // Accept both the API field names and the readable headers used by
+        // the Excel template (for example "Fiscal Year (ID)").
+        $headerMap = [];
+        foreach ($headers as $header) {
+            $normalized = Str::snake(str_replace(['(', ')'], '', $header));
+            $mapped = null;
+            if (isset($fillable[$header])) {
+                $mapped = $header;
+            } elseif (isset($fillable[$normalized])) {
+                $mapped = $normalized;
+            } elseif (isset($fillable[$normalized.'_id'])) {
+                $mapped = $normalized.'_id';
+            } elseif ($normalized === 'active' && isset($fillable['is_active'])) {
+                $mapped = 'is_active';
+            }
+            $headerMap[] = $mapped;
+        }
         $identityColumns = array_values(array_filter([
             'code', 'slug', 'email', 'nik', 'nip', 'account_number', 'number', 'name',
         ], fn ($column) => isset($fillable[$column])));
@@ -242,8 +260,8 @@ abstract class BaseMasterController extends Controller
             $row = $rows ? array_shift($rows) : ($handle ? fgetcsv($handle) : false);
             if ($row === false || $row === null) break;
             $payload = [];
-            foreach ($headers as $index => $header) {
-                if ($header !== '' && isset($fillable[$header])) {
+            foreach ($headerMap as $index => $header) {
+                if ($header !== null) {
                     $value = $row[$index] ?? null;
                     $payload[$header] = is_string($value) ? trim($value) : $value;
                 }
