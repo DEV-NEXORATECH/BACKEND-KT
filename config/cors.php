@@ -25,6 +25,7 @@ return [
         'Origin',
         'X-Requested-With',
         'X-Client-Platform',
+        'X-Fiscal-Year-Id',
     ],
 
     'exposed_headers' => ['Content-Disposition', 'Content-Type'],
