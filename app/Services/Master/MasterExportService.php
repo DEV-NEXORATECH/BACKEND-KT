@@ -9,6 +9,52 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MasterExportService
 {
+    public function attachment(string $entityName, $collection, string $format): array
+    {
+        $format = strtolower($format);
+        $safeName = strtolower(preg_replace('/[^A-Za-z0-9_-]/', '-', $entityName));
+        $base = tempnam(sys_get_temp_dir(), 'kt-mail-');
+
+        if ($format === 'pdf') {
+            $path = $base . '.pdf';
+            file_put_contents($path, Pdf::loadView('exports.master.template', [
+                'entityName' => $entityName,
+                'collection' => $collection,
+                'timestamp' => now()->translatedFormat('d F Y H:i:s'),
+            ])->setPaper('a4', 'landscape')->output());
+            @unlink($base);
+            return [$path, "{$safeName}.pdf", 'application/pdf'];
+        }
+
+        if (in_array($format, ['xlsx', 'excel'], true)) {
+            $path = $base . '.xlsx';
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            $rows = [];
+            if ($collection->isNotEmpty()) {
+                $first = $this->flattenArray($collection->first()->toArray());
+                $rows[] = array_map(fn (string $key): string => $this->displayHeader($key), array_keys($first));
+                foreach ($collection as $item) $rows[] = array_values($this->flattenArray($item->toArray()));
+            } else $rows[] = ['Tidak ada data'];
+            $sheet->fromArray($rows, null, 'A1');
+            $writer = new Xlsx($spreadsheet);
+            $writer->save($path);
+            @unlink($base);
+            return [$path, "{$safeName}.xlsx", 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+        }
+
+        $path = $base . '.csv';
+        $handle = fopen($path, 'w');
+        fprintf($handle, "\xEF\xBB\xBF");
+        if ($collection->isNotEmpty()) {
+            $first = $this->flattenArray($collection->first()->toArray());
+            fputcsv($handle, array_map(fn (string $key): string => $this->displayHeader($key), array_keys($first)));
+            foreach ($collection as $item) fputcsv($handle, array_values($this->flattenArray($item->toArray())));
+        } else fputcsv($handle, ['Tidak ada data']);
+        fclose($handle);
+        @unlink($base);
+        return [$path, "{$safeName}.csv", 'text/csv'];
+    }
     public function template(string $entityName, array $columns)
     {
         $spreadsheet = new Spreadsheet();
@@ -158,7 +204,7 @@ class MasterExportService
         return response()->download($temp, "{$filename}.xlsx")->deleteFileAfterSend(true);
     }
 
-    private function flattenArray(array $array, string $prefix = ''): array
+    public function flattenArray(array $array, string $prefix = ''): array
     {
         $result = [];
         foreach ($array as $key => $value) {

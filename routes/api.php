@@ -404,6 +404,7 @@ Route::middleware('auth:sanctum')->group(function () {
         foreach ($masterResources as $uri => $controller) {
             Route::get("{$uri}/template", [$controller, 'template'])->middleware('permission:master-data.view');
             Route::get("{$uri}/export", [$controller, 'export'])->middleware('permission:master-data.export');
+            Route::post("{$uri}/export/email", [$controller, 'emailExport'])->middleware('permission:master-data.export');
             Route::post("{$uri}/import", [$controller, 'import'])->middleware('permission:master-data.manage');
             Route::patch("{$uri}/{id}/toggle-status", [$controller, 'toggleStatus'])->middleware('permission:master-data.manage');
             Route::apiResource($uri, $controller)

@@ -209,6 +209,29 @@ abstract class BaseMasterController extends Controller
         return $exportService->export(class_basename($this->modelClass), $data, $format);
     }
 
+    public function emailExport(Request $request, MasterExportService $exportService)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:180'],
+            'format' => ['required', 'in:csv,xlsx,pdf'],
+        ]);
+        $query = $this->modelClass::query()->with($this->defaultWith)->applyFilters($request, $this->searchableColumns);
+        $data = $query->get();
+        [$path, $filename, $mime] = $exportService->attachment(class_basename($this->modelClass), $data, $validated['format']);
+
+        try {
+            \Illuminate\Support\Facades\Mail::raw('Berikut lampiran export data '.class_basename($this->modelClass).'.', function ($message) use ($validated, $path, $filename, $mime) {
+                $message->to($validated['email'])
+                    ->subject('Export Data '.class_basename($this->modelClass))
+                    ->attach($path, ['as' => $filename, 'mime' => $mime]);
+            });
+        } finally {
+            @unlink($path);
+        }
+
+        return $this->successResponse(null, 'File export berhasil dikirim ke email.');
+    }
+
     public function template(Request $request, MasterExportService $exportService)
     {
         $model = new $this->modelClass;
