@@ -22,7 +22,8 @@ class StoreDonorRequest extends FormRequest
             'email' => 'nullable|email|max:100',
             'phone' => 'nullable|string|max:30',
             'default_currency_id' => 'nullable|integer|exists:currencies,id',
-            'is_active' => 'boolean',
+            'status' => 'nullable|in:active,terminated,completed,inactive',
+            'is_active' => 'sometimes|boolean',
         ];
     }
 }

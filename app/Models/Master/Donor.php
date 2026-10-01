@@ -14,11 +14,22 @@ class Donor extends Model
 
     protected $table = 'donors';
 
-    protected $fillable = ['code', 'name', 'type', 'country', 'contact_person', 'email', 'phone', 'default_currency_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'name', 'type', 'country', 'contact_person', 'email', 'phone', 'default_currency_id', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (Donor $donor) {
+            if ($donor->isDirty('status') && $donor->status !== null) {
+                $donor->is_active = $donor->status === 'active';
+            } elseif ($donor->isDirty('is_active')) {
+                $donor->status = $donor->is_active ? 'active' : 'inactive';
+            }
+        });
+    }
 
     public function defaultCurrency()
     {
