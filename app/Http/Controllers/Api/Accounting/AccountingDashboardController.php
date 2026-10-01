@@ -9,6 +9,7 @@ use App\Models\Finance\BankTransaction;
 use App\Models\Finance\CustomerInvoice;
 use App\Models\Master\BankAccount;
 use App\Models\Master\BudgetLine;
+use App\Models\Master\FiscalYear;
 use App\Models\Procurement\SupplierInvoice;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -19,11 +20,18 @@ class AccountingDashboardController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $today = now()->toDateString();
+        $selectedFiscalYear = $request->filled('fiscal_year_id')
+            ? FiscalYear::query()->find($request->integer('fiscal_year_id'))
+            : null;
+        $today = ($selectedFiscalYear?->end_date ?: now())->toDateString();
         $monthStart = now()->startOfMonth()->toDateString();
-        $yearStart = now()->startOfYear()->toDateString();
+        $yearStart = ($selectedFiscalYear?->start_date ?: now()->startOfYear())->toDateString();
         $start = $request->query('start_date', $monthStart);
         $end = $request->query('end_date', $today);
+        if ($selectedFiscalYear) {
+            $start = $request->query('start_date', $selectedFiscalYear->start_date->toDateString());
+            $end = $request->query('end_date', $selectedFiscalYear->end_date->toDateString());
+        }
         $bankAccountId = $request->integer('bank_account_id') ?: null;
         $projectId = $request->integer('project_id') ?: null;
 
@@ -48,13 +56,13 @@ class AccountingDashboardController extends Controller
             ->when($projectId, fn ($query) => $query->whereHas('projects', fn ($project) => $project->whereKey($projectId)))
             ->get();
         $cash = $bankAccounts->map(function (BankAccount $account) {
-            $transactions = BankTransaction::query()->where('bank_account_id', $account->id)->where('status', '!=', 'excluded')->get();
+            $transactions = BankTransaction::query()->where('bank_account_id', $account->id)->whereHas('bankAccount')->where('status', '!=', 'excluded')->get();
             return ['id' => $account->id, 'bank_name' => $account->bank_name, 'account_name' => $account->account_name, 'account_number' => $account->account_number, 'currency' => $account->currency?->code ?? 'IDR', 'opening_balance' => (float) $account->opening_balance, 'balance' => round((float) $account->opening_balance + (float) $transactions->sum('credit') - (float) $transactions->sum('debit'), 2), 'incoming' => round((float) $transactions->sum('credit'), 2), 'outgoing' => round((float) $transactions->sum('debit'), 2)];
         })->values();
 
         $ap = SupplierInvoice::query()->with('vendor:id,name')->whereNotIn('status', ['paid', 'cancelled'])->latest('due_date')->get()->map(fn ($invoice) => ['id' => $invoice->id, 'invoice_number' => $invoice->invoice_number, 'vendor' => $invoice->vendor?->name, 'due_date' => $invoice->due_date?->toDateString(), 'status' => $invoice->status, 'outstanding_amount' => round((float) $invoice->total_amount - (float) $invoice->paid_amount, 2)])->values();
         $ar = CustomerInvoice::query()->with('customer:id,name')->whereNotIn('status', ['received', 'cancelled'])->latest('due_date')->get()->map(fn ($invoice) => ['id' => $invoice->id, 'invoice_number' => $invoice->invoice_number, 'customer' => $invoice->customer?->name, 'due_date' => $invoice->due_date?->toDateString(), 'status' => $invoice->status, 'outstanding_amount' => round((float) $invoice->total_amount - (float) $invoice->received_amount, 2)])->values();
-        $unreconciled = BankTransaction::query()->with('bankAccount:id,bank_name,account_number')->whereNotIn('status', ['reconciled', 'excluded'])->latest('transaction_date')->limit(10)->get()->map(fn ($item) => ['id' => $item->id, 'date' => $item->transaction_date?->toDateString(), 'reference' => $item->reference, 'description' => $item->description, 'amount' => round((float) $item->debit + (float) $item->credit, 2), 'status' => $item->status, 'bank_account' => $item->bankAccount?->account_number])->values();
+        $unreconciled = BankTransaction::query()->with('bankAccount:id,bank_name,account_number')->whereHas('bankAccount')->whereNotIn('status', ['reconciled', 'excluded'])->latest('transaction_date')->limit(10)->get()->map(fn ($item) => ['id' => $item->id, 'date' => $item->transaction_date?->toDateString(), 'reference' => $item->reference, 'description' => $item->description, 'amount' => round((float) $item->debit + (float) $item->credit, 2), 'status' => $item->status, 'bank_account' => $item->bankAccount?->account_number])->values();
         $pending = Journal::query()->whereIn('status', ['submitted', 'reviewed'])->latest('journal_date')->limit(10)->get()->map(fn ($journal) => ['id' => $journal->id, 'journal_number' => $journal->journal_number, 'date' => $journal->journal_date?->toDateString(), 'status' => $journal->status, 'description' => $journal->description, 'total' => (float) $journal->lines()->sum('debit')])->values();
         $recent = Journal::query()->with('lines.project:id,code,name', 'lines.donor:id,code,name')->where('status', 'posted')->latest('journal_date')->latest('id')->limit(10)->get()->map(function ($journal) {
             $line = $journal->lines->first();

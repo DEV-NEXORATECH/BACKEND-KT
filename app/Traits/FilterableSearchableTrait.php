@@ -59,6 +59,15 @@ trait FilterableSearchableTrait
                 // migration yet. Do not generate an invalid SQL predicate while
                 // the schema is being upgraded.
                 if ($filterCol === 'fiscal_year_id' && ! \Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), $filterCol)) {
+                    // Projects are linked to fiscal years through a pivot table,
+                    // so they do not have a physical fiscal_year_id column.
+                    // Keep the normal list endpoint consistent with the options
+                    // endpoint by filtering that relation here as well.
+                    if (method_exists($this, 'fiscalYears')) {
+                        $query->whereHas('fiscalYears', function (Builder $fiscalYearQuery) use ($request) {
+                            $fiscalYearQuery->whereKey($request->query('fiscal_year_id'));
+                        });
+                    }
                     continue;
                 }
                 if ($filterCol === 'fiscal_year_id') {

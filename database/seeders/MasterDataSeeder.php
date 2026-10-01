@@ -127,7 +127,16 @@ class MasterDataSeeder extends Seeder
 
         foreach ($rates as $r) {
             ExchangeRate::updateOrCreate([
-                'date' => now()->toDateString(),
+                'date' => '2026-01-02',
+                'from_currency_id' => $r['from']->id,
+                'to_currency_id' => $idr->id,
+            ], [
+                'rate' => $r['rate'],
+                'source' => 'Bank Indonesia JISDOR',
+                'is_active' => true,
+            ]);
+            ExchangeRate::updateOrCreate([
+                'date' => '2027-01-04',
                 'from_currency_id' => $r['from']->id,
                 'to_currency_id' => $idr->id,
             ], [
@@ -249,6 +258,14 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
+        $fy2027 = FiscalYear::updateOrCreate(['year' => 2027], [
+            'name' => 'Tahun Fiskal 2027',
+            'start_date' => '2027-01-01',
+            'end_date' => '2027-12-31',
+            'status' => 'open',
+            'is_active' => true,
+        ]);
+
         for ($i = 1; $i <= 12; $i++) {
             $monthStr = str_pad($i, 2, '0', STR_PAD_LEFT);
             $monthName = date('F', mktime(0, 0, 0, $i, 10));
@@ -263,7 +280,25 @@ class MasterDataSeeder extends Seeder
                 'status' => $i <= 9 ? 'open' : 'open',
                 'is_active' => true,
             ]);
+
+            $lastDay2027 = date('t', mktime(0, 0, 0, $i, 1, 2027));
+            $fy2027->periods()->updateOrCreate([
+                'period_number' => $i,
+            ], [
+                'name' => "Periode {$monthName} 2027",
+                'start_date' => "2027-{$monthStr}-01",
+                'end_date' => "2027-{$monthStr}-{$lastDay2027}",
+                'status' => 'open',
+                'is_active' => true,
+            ]);
         }
+
+        // Existing approval rules and year-scoped seed records belong to 2026.
+        // Global masters (currency, donor, vendor, employee, and COA) remain
+        // reusable across fiscal years and are intentionally left unscoped.
+        ApprovalMatrix::whereNull('fiscal_year_id')->update(['fiscal_year_id' => $fy2026->id]);
+        ExchangeRate::whereDate('date', '2026-01-02')->update(['fiscal_year_id' => $fy2026->id]);
+        ExchangeRate::whereDate('date', '2027-01-04')->update(['fiscal_year_id' => $fy2027->id]);
 
         // 4. Chart of Accounts
         // Account categories are maintained separately so the COA setup can
@@ -609,6 +644,7 @@ class MasterDataSeeder extends Seeder
         $grantBankAccountId = $createdBankAccounts['800193159700']->id ?? (reset($createdBankAccounts)->id ?? null);
 
         $grantFord = GrantAgreement::updateOrCreate(['grant_no' => 'GRT-2026-FORD-01'], [
+            'fiscal_year_id' => $fy2026->id,
             'donor_id' => $donorFord->id,
             'funding_source_id' => $fundFoundation->id,
             'agreement_name' => 'Strengthening Indigenous Rights and Forest Governance in Borneo',
@@ -623,6 +659,7 @@ class MasterDataSeeder extends Seeder
         ]);
 
         $grantNicfi = GrantAgreement::updateOrCreate(['grant_no' => 'GRT-2026-NICFI-02'], [
+            'fiscal_year_id' => $fy2026->id,
             'donor_id' => $donorNicfi->id,
             'funding_source_id' => $fundBilateral->id,
             'agreement_name' => 'Independent Forest Monitoring and Supply Chain Transparency',
@@ -657,6 +694,35 @@ class MasterDataSeeder extends Seeder
             'total_budget' => 175000.00,
             'is_active' => true,
         ]);
+        $prjFordBorneo->fiscalYears()->syncWithoutDetaching([$fy2026->id]);
+
+        $grantFord2027 = GrantAgreement::updateOrCreate(['grant_no' => 'GRT-2027-FORD-01'], [
+            'fiscal_year_id' => $fy2027->id,
+            'donor_id' => $donorFord->id,
+            'funding_source_id' => $fundFoundation->id,
+            'agreement_name' => 'Strengthening Indigenous Rights and Forest Governance 2027',
+            'start_date' => '2027-01-01',
+            'end_date' => '2027-12-31',
+            'currency_id' => $usd->id,
+            'grant_value' => 350000.00,
+            'exchange_rate_contract' => 16000.000000,
+            'bank_account_id' => $grantBankAccountId,
+            'status' => 'active',
+            'is_active' => true,
+        ]);
+
+        $prjFord2027 = Project::updateOrCreate(['code' => 'PRJ-2027-FORD-01'], [
+            'program_id' => $progForest->id,
+            'grant_agreement_id' => $grantFord2027->id,
+            'name' => 'Community Forest Mapping & Legal Recognition 2027',
+            'manager_name' => 'Hendra Pratama',
+            'start_date' => '2027-01-01',
+            'end_date' => '2027-12-31',
+            'budget_currency_id' => $usd->id,
+            'total_budget' => 175000.00,
+            'is_active' => true,
+        ]);
+        $prjFord2027->fiscalYears()->syncWithoutDetaching([$fy2027->id]);
 
         Activity::updateOrCreate(['code' => 'ACT-2026-01-01'], [
             'project_id' => $prjFordBorneo->id,
@@ -755,6 +821,7 @@ class MasterDataSeeder extends Seeder
 
         // 13. Budget Lines (Mapping between Grant + Project + Category + COA)
         BudgetLine::updateOrCreate(['line_code' => 'BL-FORD-1.1'], [
+            'fiscal_year_id' => $fy2026->id,
             'grant_agreement_id' => $grantFord->id,
             'project_id' => $prjFordBorneo->id,
             'budget_category_id' => $bcatPersonnel->id,
@@ -768,6 +835,7 @@ class MasterDataSeeder extends Seeder
         ]);
 
         BudgetLine::updateOrCreate(['line_code' => 'BL-FORD-2.1'], [
+            'fiscal_year_id' => $fy2026->id,
             'grant_agreement_id' => $grantFord->id,
             'project_id' => $prjFordBorneo->id,
             'budget_category_id' => $bcatDirect->id,
@@ -781,6 +849,7 @@ class MasterDataSeeder extends Seeder
         ]);
 
         BudgetLine::updateOrCreate(['line_code' => 'BL-FORD-3.1'], [
+            'fiscal_year_id' => $fy2026->id,
             'grant_agreement_id' => $grantFord->id,
             'project_id' => $prjFordBorneo->id,
             'budget_category_id' => $bcatTravel->id,
@@ -790,6 +859,20 @@ class MasterDataSeeder extends Seeder
             'quantity' => 15.00,
             'total_amount' => 9000.00,
             'gl_account_id' => $createdCoa['5300']->id ?? null,
+            'is_active' => true,
+        ]);
+
+        BudgetLine::updateOrCreate(['line_code' => 'BL-FORD-2027-1.1'], [
+            'fiscal_year_id' => $fy2027->id,
+            'grant_agreement_id' => $grantFord2027->id,
+            'project_id' => $prjFord2027->id,
+            'budget_category_id' => $bcatPersonnel->id,
+            'description' => 'Project Coordinator Salary 2027',
+            'unit_of_measure_id' => $uomMo->id,
+            'unit_price' => 2000.00,
+            'quantity' => 12.00,
+            'total_amount' => 24000.00,
+            'gl_account_id' => $createdCoa['5100']->id ?? null,
             'is_active' => true,
         ]);
 
@@ -1150,6 +1233,17 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
+        // These are organization-wide masters. They remain reusable in 2026,
+        // 2027, and future years; only year-specific agreements, projects,
+        // budgets, rates, approvals, and transactions carry a fiscal year.
+        Currency::query()->update(['fiscal_year_id' => null]);
+        Donor::query()->update(['fiscal_year_id' => null]);
+        Employee::query()->update(['fiscal_year_id' => null]);
+        Vendor::query()->update(['fiscal_year_id' => null]);
+        ChartOfAccount::query()->update(['fiscal_year_id' => null]);
+        BankAccount::query()->update(['fiscal_year_id' => null]);
+        Tax::query()->update(['fiscal_year_id' => null]);
+
         // 15. Expense Categories & Document Types
         ExpenseCategory::updateOrCreate(['code' => 'EXP-PERDIEM'], [
             'name' => 'Per Diem & Uang Saku Lapangan',
@@ -1413,12 +1507,38 @@ class MasterDataSeeder extends Seeder
             ]);
         }
 
+        // Approval rules are year-scoped. Copy the reusable 2026 rules to 2027
+        // so switching the fiscal-year selector does not leave the new year
+        // without an approval workflow. Project-specific 2026 rules are kept
+        // on their original project and are not copied to another project.
+        ApprovalMatrix::query()
+            ->where('fiscal_year_id', $fy2026->id)
+            ->whereNull('project_id')
+            ->get()
+            ->each(function (ApprovalMatrix $matrix) use ($fy2027) {
+                $attributes = $matrix->getAttributes();
+                unset($attributes['id'], $attributes['created_at'], $attributes['updated_at']);
+                $attributes['fiscal_year_id'] = $fy2027->id;
+                ApprovalMatrix::updateOrCreate([
+                    'module' => $matrix->module,
+                    'level' => $matrix->level,
+                    'min_amount' => $matrix->min_amount,
+                    'max_amount' => $matrix->max_amount,
+                    'fiscal_year_id' => $fy2027->id,
+                    'donor_id' => $matrix->donor_id,
+                    'department_id' => $matrix->department_id,
+                    'user_id' => $matrix->user_id,
+                    'employee_id' => $matrix->employee_id,
+                ], $attributes);
+            });
+
         // 18. Real Database Transactions for Over-Budget & Warning Alerts
         $blFord1 = BudgetLine::where('line_code', 'BL-FORD-2.1')->first();
         $blFord2 = BudgetLine::where('line_code', 'BL-FORD-3.1')->first();
 
         if ($blFord1) {
             $j1 = Journal::updateOrCreate(['journal_number' => 'JV-2026-SEED-01'], [
+                'fiscal_year_id' => $fy2026->id,
                 'journal_date' => now()->subDays(5)->toDateString(),
                 'journal_type' => 'manual',
                 'reference' => 'EXP-WORKSHOP-001',

@@ -212,17 +212,40 @@ abstract class BaseMasterController extends Controller
     public function emailExport(Request $request, MasterExportService $exportService)
     {
         $validated = $request->validate([
-            'email' => ['required', 'email', 'max:180'],
-            'format' => ['required', 'in:csv,xlsx,pdf'],
+            'email' => ['required', 'string', 'max:2000'],
+            'cc' => ['nullable', 'string', 'max:2000'],
+            'format' => ['required', 'in:csv,xlsx,pdf,google_sheets'],
+            'subject' => ['nullable', 'string', 'max:255'],
+            'message' => ['nullable', 'string', 'max:10000'],
+            'filename' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._ -]+$/'],
         ]);
+        $parseRecipients = static function (?string $value): array {
+            $recipients = array_values(array_filter(array_map('trim', preg_split('/[,;\n]+/', (string) $value))));
+            foreach ($recipients as $recipient) {
+                if (! filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['email' => "Alamat email tidak valid: {$recipient}"]);
+                }
+            }
+            return $recipients;
+        };
+        $to = $parseRecipients($validated['email']);
+        $cc = $parseRecipients($validated['cc'] ?? '');
         $query = $this->modelClass::query()->with($this->defaultWith)->applyFilters($request, $this->searchableColumns);
         $data = $query->get();
         [$path, $filename, $mime] = $exportService->attachment(class_basename($this->modelClass), $data, $validated['format']);
+        if (! empty($validated['filename'])) {
+            $extension = $validated['format'] === 'xlsx' ? 'xlsx' : ($validated['format'] === 'google_sheets' ? 'csv' : $validated['format']);
+            $baseFilename = preg_replace('/\.(csv|xlsx|pdf)$/i', '', $validated['filename']);
+            $filename = rtrim($baseFilename, '. ').'.'.$extension;
+        }
 
         try {
-            \Illuminate\Support\Facades\Mail::raw('Berikut lampiran export data '.class_basename($this->modelClass).'.', function ($message) use ($validated, $path, $filename, $mime) {
-                $message->to($validated['email'])
-                    ->subject('Export Data '.class_basename($this->modelClass))
+            \Illuminate\Support\Facades\Mail::raw($validated['message'] ?: 'Berikut lampiran export data '.class_basename($this->modelClass).'.', function ($message) use ($validated, $to, $cc, $path, $filename, $mime) {
+                $message->to($to);
+                if (! empty($cc)) {
+                    $message->cc($cc);
+                }
+                $message->subject($validated['subject'] ?: 'Export Data '.class_basename($this->modelClass))
                     ->attach($path, ['as' => $filename, 'mime' => $mime]);
             });
         } finally {

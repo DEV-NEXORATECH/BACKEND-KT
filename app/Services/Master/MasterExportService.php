@@ -12,6 +12,7 @@ class MasterExportService
     public function attachment(string $entityName, $collection, string $format): array
     {
         $format = strtolower($format);
+        $format = $format === 'google_sheets' ? 'csv' : $format;
         $safeName = strtolower(preg_replace('/[^A-Za-z0-9_-]/', '-', $entityName));
         $base = tempnam(sys_get_temp_dir(), 'kt-mail-');
 
@@ -121,6 +122,7 @@ class MasterExportService
 
     public function export(string $entityName, $collection, string $format = 'csv')
     {
+        $format = strtolower($format) === 'google_sheets' ? 'csv' : $format;
         $filename = strtolower($entityName) . '_' . date('Ymd_His');
 
         if ($format === 'pdf') {

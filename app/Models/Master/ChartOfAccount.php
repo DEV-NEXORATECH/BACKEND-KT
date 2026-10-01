@@ -4,13 +4,14 @@ namespace App\Models\Master;
 
 use App\Traits\AuditTrailTrait;
 use App\Traits\FilterableSearchableTrait;
+use App\Traits\FiscalYearScopedTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ChartOfAccount extends Model
 {
-    use HasFactory, SoftDeletes, FilterableSearchableTrait, AuditTrailTrait;
+    use HasFactory, SoftDeletes, FilterableSearchableTrait, AuditTrailTrait, FiscalYearScopedTrait;
 
     protected $table = 'chart_of_accounts';
 
