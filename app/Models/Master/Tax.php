@@ -4,18 +4,20 @@ namespace App\Models\Master;
 
 use App\Traits\AuditTrailTrait;
 use App\Traits\FilterableSearchableTrait;
+use App\Traits\FiscalYearScopedTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Tax extends Model
 {
-    use HasFactory, SoftDeletes, FilterableSearchableTrait, AuditTrailTrait;
+    use HasFactory, SoftDeletes, FilterableSearchableTrait, AuditTrailTrait, FiscalYearScopedTrait;
 
     protected $table = 'taxes';
 
     protected $fillable = [
         'organization_id',
+        'fiscal_year_id',
         'code',
         'name',
         'tax_type',

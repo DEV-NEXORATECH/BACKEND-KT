@@ -55,6 +55,12 @@ trait FilterableSearchableTrait
 
         foreach ($filterRelations as $filterCol) {
             if ($request->filled($filterCol)) {
+                // Some older deployments may not have received the fiscal-year
+                // migration yet. Do not generate an invalid SQL predicate while
+                // the schema is being upgraded.
+                if ($filterCol === 'fiscal_year_id' && ! \Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), $filterCol)) {
+                    continue;
+                }
                 if ($filterCol === 'fiscal_year_id') {
                     // A global master (NULL) is valid for every fiscal year;
                     // a scoped master is valid only for the requested year.
