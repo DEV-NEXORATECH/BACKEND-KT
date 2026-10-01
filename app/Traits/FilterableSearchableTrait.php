@@ -49,13 +49,22 @@ trait FilterableSearchableTrait
         // Relational filter helpers
         $filterRelations = [
             'organization_id', 'department_id', 'donor_id', 'funding_source_id',
-            'grant_agreement_id', 'program_id', 'project_id', 'budget_category_id',
+            'grant_agreement_id', 'program_id', 'project_id', 'budget_category_id', 'fiscal_year_id',
             'currency_id', 'gl_account_id', 'office_location_id', 'role_id'
         ];
 
         foreach ($filterRelations as $filterCol) {
             if ($request->filled($filterCol)) {
-                $query->where($filterCol, $request->query($filterCol));
+                if ($filterCol === 'fiscal_year_id') {
+                    // A global master (NULL) is valid for every fiscal year;
+                    // a scoped master is valid only for the requested year.
+                    $query->where(function (Builder $scope) use ($filterCol, $request) {
+                        $scope->whereNull($filterCol)
+                            ->orWhere($filterCol, $request->query($filterCol));
+                    });
+                } else {
+                    $query->where($filterCol, $request->query($filterCol));
+                }
             }
         }
 

@@ -17,7 +17,7 @@ class EmployeeController extends BaseMasterController
     protected string $storeRequestClass = StoreEmployeeRequest::class;
     protected string $updateRequestClass = UpdateEmployeeRequest::class;
     protected array $searchableColumns = ['employee_id_number', 'name', 'email', 'position'];
-    protected array $defaultWith = ['department', 'officeLocation', 'positionMaster'];
+    protected array $defaultWith = ['department', 'officeLocation', 'positionMaster', 'fiscalYear'];
 
     public function quality(): JsonResponse
     {

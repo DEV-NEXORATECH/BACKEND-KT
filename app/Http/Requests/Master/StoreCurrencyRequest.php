@@ -16,6 +16,7 @@ class StoreCurrencyRequest extends FormRequest
         return [
             'code' => 'required|string|max:10|unique:currencies,code',
             'name' => 'required|string|max:100',
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'symbol' => 'nullable|string|max:10',
             'decimal_places' => 'integer|min:0|max:6',
             'is_base_currency' => 'boolean',

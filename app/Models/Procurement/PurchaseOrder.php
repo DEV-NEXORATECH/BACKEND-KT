@@ -4,6 +4,7 @@ namespace App\Models\Procurement;
 
 use App\Models\Master\Vendor;
 use App\Traits\AuditTrailTrait;
+use App\Traits\FiscalYearScopedTrait;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,9 +12,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PurchaseOrder extends Model
 {
-    use SoftDeletes, AuditTrailTrait;
+    use SoftDeletes, AuditTrailTrait, FiscalYearScopedTrait;
 
-    protected $fillable = ['purchase_request_id', 'rfq_id', 'cba_id', 'vendor_id', 'po_number', 'contract_number', 'po_date', 'contract_date', 'terms', 'status', 'attachments', 'approved_by', 'approved_at', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['fiscal_year_id', 'purchase_request_id', 'rfq_id', 'cba_id', 'vendor_id', 'po_number', 'contract_number', 'po_date', 'contract_date', 'terms', 'status', 'attachments', 'approved_by', 'approved_at', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = ['po_date' => 'date', 'contract_date' => 'date', 'attachments' => 'array', 'approved_at' => 'datetime'];
 

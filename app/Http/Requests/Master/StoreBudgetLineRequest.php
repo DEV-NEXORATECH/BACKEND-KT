@@ -14,6 +14,7 @@ class StoreBudgetLineRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'grant_agreement_id' => 'nullable|integer|exists:grant_agreements,id',
             'project_id' => 'nullable|integer|exists:projects,id',
             'budget_category_id' => 'required|integer|exists:budget_categories,id',

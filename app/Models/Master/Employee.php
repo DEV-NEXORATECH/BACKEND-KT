@@ -15,7 +15,7 @@ class Employee extends Model
     protected $table = 'employees';
 
     protected $fillable = [
-        'employee_id_number', 'name', 'email', 'join_date', 'end_date', 'department_id', 'office_location_id',
+        'employee_id_number', 'name', 'email', 'join_date', 'end_date', 'fiscal_year_id', 'department_id', 'office_location_id',
         'position_id', 'position', 'employment_type', 'contract_total_fee', 'contract_total_days',
         'daily_cost_rate', 'hourly_cost_rate', 'default_rate_scheme',
         'bank_name', 'bank_account_number', 'bank_account_holder',
@@ -54,6 +54,11 @@ class Employee extends Model
     public function department()
     {
         return $this->belongsTo(\App\Models\Master\Department::class, 'department_id');
+    }
+
+    public function fiscalYear()
+    {
+        return $this->belongsTo(\App\Models\Master\FiscalYear::class, 'fiscal_year_id');
     }
 
     public function officeLocation()

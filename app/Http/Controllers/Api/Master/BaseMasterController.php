@@ -36,6 +36,21 @@ abstract class BaseMasterController extends Controller
                     if (! $request->has('is_active') && \Illuminate\Support\Facades\Schema::hasColumn($table, 'is_active')) {
                         $query->where('is_active', true);
                     }
+                    // Dropdowns should show global masters plus the active
+                    // fiscal-year version by default. A caller can request a
+                    // different year explicitly with fiscal_year_id, while
+                    // regular list pages remain unscoped for administration.
+                    if (\Illuminate\Support\Facades\Schema::hasColumn($table, 'fiscal_year_id') && ! $request->filled('fiscal_year_id')) {
+                        $activeFiscalYearId = \App\Models\Master\FiscalYear::query()
+                            ->where('is_active', true)
+                            ->orderByDesc('year')
+                            ->value('id');
+                        if ($activeFiscalYearId) {
+                            $query->where(function ($scope) use ($activeFiscalYearId) {
+                                $scope->whereNull('fiscal_year_id')->orWhere('fiscal_year_id', $activeFiscalYearId);
+                            });
+                        }
+                    }
                 } catch (\Throwable $ignored) {
                     // Safe fallback if schema check is not accessible
                 }

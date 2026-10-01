@@ -4,6 +4,7 @@ namespace App\Models\Procurement;
 
 use App\Models\Master\Vendor;
 use App\Traits\AuditTrailTrait;
+use App\Traits\FiscalYearScopedTrait;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -13,11 +14,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Rfq extends Model
 {
-    use SoftDeletes, AuditTrailTrait;
+    use SoftDeletes, AuditTrailTrait, FiscalYearScopedTrait;
 
     protected $table = 'rfqs';
 
-    protected $fillable = ['purchase_request_id', 'rfq_number', 'rfq_date', 'submission_deadline', 'terms', 'status', 'attachments', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['fiscal_year_id', 'purchase_request_id', 'rfq_number', 'rfq_date', 'submission_deadline', 'terms', 'status', 'attachments', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = ['rfq_date' => 'date', 'submission_deadline' => 'date', 'attachments' => 'array'];
 

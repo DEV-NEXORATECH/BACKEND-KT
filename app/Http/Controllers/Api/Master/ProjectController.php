@@ -19,6 +19,24 @@ class ProjectController extends BaseMasterController
     protected array $searchableColumns = ['code', 'name', 'manager_name'];
     protected array $defaultWith = ['program', 'grantAgreement', 'budgetCurrency', 'bankAccount', 'fiscalYears'];
 
+    public function index(Request $request): JsonResponse
+    {
+        // Projects use a many-to-many fiscal-year pivot rather than a direct
+        // fiscal_year_id column, so handle the options dropdown explicitly.
+        if ($request->boolean('options') && $request->filled('fiscal_year_id')) {
+            $projects = Project::query()
+                ->with($this->defaultWith)
+                ->where('is_active', true)
+                ->whereHas('fiscalYears', fn ($query) => $query->whereKey($request->integer('fiscal_year_id')))
+                ->orderBy('name')
+                ->get();
+
+            return $this->successResponse(ProjectResource::collection($projects), 'Daftar opsi berhasil dimuat.');
+        }
+
+        return parent::index($request);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = app($this->storeRequestClass)->validated();

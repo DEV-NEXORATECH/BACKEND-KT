@@ -14,7 +14,7 @@ class Donor extends Model
 
     protected $table = 'donors';
 
-    protected $fillable = ['code', 'name', 'type', 'country', 'contact_person', 'email', 'phone', 'default_currency_id', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'name', 'type', 'country', 'contact_person', 'email', 'phone', 'default_currency_id', 'fiscal_year_id', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -34,6 +34,11 @@ class Donor extends Model
     public function defaultCurrency()
     {
         return $this->belongsTo(\App\Models\Master\Currency::class, 'default_currency_id');
+    }
+
+    public function fiscalYear()
+    {
+        return $this->belongsTo(\App\Models\Master\FiscalYear::class, 'fiscal_year_id');
     }
 
     public function grantAgreements()

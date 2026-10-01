@@ -106,7 +106,7 @@ class MasterExportService
             if ($collection->isNotEmpty()) {
                 $first = $collection->first()->toArray();
                 $flatKeys = array_keys($this->flattenArray($first));
-                fputcsv($handle, $flatKeys);
+                fputcsv($handle, array_map(fn (string $key): string => $this->displayHeader($key), $flatKeys));
 
                 foreach ($collection as $item) {
                     $row = $this->flattenArray($item->toArray());
@@ -139,7 +139,8 @@ class MasterExportService
         $rows = [];
         if ($collection->isNotEmpty()) {
             $first = $this->flattenArray($collection->first()->toArray());
-            $rows[] = array_keys($first);
+            $flatKeys = array_keys($first);
+            $rows[] = array_map(fn (string $key): string => $this->displayHeader($key), $flatKeys);
             foreach ($collection as $item) $rows[] = array_values($this->flattenArray($item->toArray()));
         } else {
             $rows[] = ['No data available'];

@@ -16,6 +16,7 @@ class UpdateVendorRequest extends FormRequest
         return [
             'code' => 'required|string|max:30|unique:vendors,code,' . $this->route('id') . ',id',
             'name' => 'required|string|max:150',
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'type' => 'required|string|max:50',
             'vendor_category_id' => 'nullable|integer|exists:vendor_categories,id',
             'npwp' => 'nullable|string|max:50',

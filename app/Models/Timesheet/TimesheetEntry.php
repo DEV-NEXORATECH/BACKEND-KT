@@ -10,16 +10,17 @@ use App\Models\Master\Program;
 use App\Models\Master\Project;
 use App\Models\User;
 use App\Traits\AuditTrailTrait;
+use App\Traits\FiscalYearScopedTrait;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class TimesheetEntry extends Model
 {
-    use SoftDeletes, AuditTrailTrait;
+    use SoftDeletes, AuditTrailTrait, FiscalYearScopedTrait;
 
     protected $fillable = [
-        'employee_id', 'user_id', 'worker_type', 'vendor_name', 'contract_reference', 'invoice_reference',
+        'fiscal_year_id', 'employee_id', 'user_id', 'worker_type', 'vendor_name', 'contract_reference', 'invoice_reference',
         'billing_mode', 'fee_total', 'work_days', 'rate_per_day', 'rate_per_hour', 'break_hours', 'normal_hours',
         'payable_amount', 'entry_date', 'hours', 'description', 'work_area', 'workstream',
         'donor_id', 'program_id', 'project_id', 'activity_id', 'task_type',

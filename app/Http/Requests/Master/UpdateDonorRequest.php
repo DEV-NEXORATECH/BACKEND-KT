@@ -22,6 +22,7 @@ class UpdateDonorRequest extends FormRequest
             'email' => 'nullable|email|max:100',
             'phone' => 'nullable|string|max:30',
             'default_currency_id' => 'nullable|integer|exists:currencies,id',
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'status' => 'nullable|in:active,terminated,completed,inactive',
             'is_active' => 'sometimes|boolean',
         ];

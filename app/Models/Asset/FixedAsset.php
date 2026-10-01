@@ -14,6 +14,7 @@ use App\Models\Procurement\GoodsReceipt;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\SupplierInvoice;
 use App\Traits\AuditTrailTrait;
+use App\Traits\FiscalYearScopedTrait;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -21,9 +22,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class FixedAsset extends Model
 {
-    use SoftDeletes, AuditTrailTrait;
+    use SoftDeletes, AuditTrailTrait, FiscalYearScopedTrait;
 
-    protected $fillable = ['asset_code', 'asset_name', 'asset_category_id', 'acquisition_date', 'in_service_date', 'acquisition_cost', 'residual_value', 'vendor_id', 'purchase_order_id', 'goods_receipt_id', 'supplier_invoice_id', 'donor_id', 'program_id', 'project_id', 'location', 'custodian_id', 'useful_life_months', 'depreciation_method', 'accumulated_depreciation', 'impairment_amount', 'net_book_value', 'status', 'notes', 'attachments', 'journal_id', 'capitalization_journal_id', 'disposal_journal_id', 'impairment_journal_id', 'capitalized_at', 'capitalized_by', 'disposed_date', 'disposal_type', 'disposal_proceeds', 'disposal_bank_account_id', 'disposal_reason', 'disposal_requested_date', 'disposal_requested_reason', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['fiscal_year_id', 'asset_code', 'asset_name', 'asset_category_id', 'acquisition_date', 'in_service_date', 'acquisition_cost', 'residual_value', 'vendor_id', 'purchase_order_id', 'goods_receipt_id', 'supplier_invoice_id', 'donor_id', 'program_id', 'project_id', 'location', 'custodian_id', 'useful_life_months', 'depreciation_method', 'accumulated_depreciation', 'impairment_amount', 'net_book_value', 'status', 'notes', 'attachments', 'journal_id', 'capitalization_journal_id', 'disposal_journal_id', 'impairment_journal_id', 'capitalized_at', 'capitalized_by', 'disposed_date', 'disposal_type', 'disposal_proceeds', 'disposal_bank_account_id', 'disposal_reason', 'disposal_requested_date', 'disposal_requested_reason', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = ['acquisition_date' => 'date', 'in_service_date' => 'date', 'acquisition_cost' => 'decimal:2', 'residual_value' => 'decimal:2', 'accumulated_depreciation' => 'decimal:2', 'impairment_amount' => 'decimal:2', 'net_book_value' => 'decimal:2', 'disposal_proceeds' => 'decimal:2', 'attachments' => 'array', 'capitalized_at' => 'datetime', 'disposed_date' => 'date', 'disposal_requested_date' => 'date'];
 

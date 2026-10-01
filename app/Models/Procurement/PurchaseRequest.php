@@ -7,6 +7,7 @@ use App\Models\Master\Project;
 use App\Models\Master\Vendor;
 use App\Models\User;
 use App\Traits\AuditTrailTrait;
+use App\Traits\FiscalYearScopedTrait;
 use App\Traits\FilterableSearchableTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -16,9 +17,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PurchaseRequest extends Model
 {
-    use HasFactory, SoftDeletes, FilterableSearchableTrait, AuditTrailTrait;
+    use HasFactory, SoftDeletes, FilterableSearchableTrait, AuditTrailTrait, FiscalYearScopedTrait;
 
     protected $fillable = [
+        'fiscal_year_id',
         'pr_number',
         'request_date',
         'requester_id',

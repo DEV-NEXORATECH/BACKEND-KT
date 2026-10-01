@@ -14,5 +14,5 @@ class ExchangeRateController extends BaseMasterController
     protected string $storeRequestClass = StoreExchangeRateRequest::class;
     protected string $updateRequestClass = UpdateExchangeRateRequest::class;
     protected array $searchableColumns = ['source'];
-    protected array $defaultWith = ['fromCurrency', 'toCurrency'];
+    protected array $defaultWith = ['fiscalYear', 'fromCurrency', 'toCurrency'];
 }

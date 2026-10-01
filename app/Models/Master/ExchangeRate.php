@@ -14,7 +14,7 @@ class ExchangeRate extends Model
 
     protected $table = 'exchange_rates';
 
-    protected $fillable = ['date', 'from_currency_id', 'to_currency_id', 'rate', 'rate_type', 'source', 'reference', 'notes', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['fiscal_year_id', 'date', 'from_currency_id', 'to_currency_id', 'rate', 'rate_type', 'source', 'reference', 'notes', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -23,6 +23,11 @@ class ExchangeRate extends Model
     public function fromCurrency()
     {
         return $this->belongsTo(\App\Models\Master\Currency::class, 'from_currency_id');
+    }
+
+    public function fiscalYear()
+    {
+        return $this->belongsTo(FiscalYear::class, 'fiscal_year_id');
     }
 
     public function toCurrency()

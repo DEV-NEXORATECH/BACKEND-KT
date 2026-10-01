@@ -19,6 +19,7 @@ class UpdateEmployeeRequest extends FormRequest
             'email' => 'nullable|email|max:100',
             'join_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:join_date',
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'department_id' => 'nullable|integer|exists:departments,id',
             'office_location_id' => 'nullable|integer|exists:office_locations,id',
             'position_id' => 'nullable|integer|exists:positions,id',

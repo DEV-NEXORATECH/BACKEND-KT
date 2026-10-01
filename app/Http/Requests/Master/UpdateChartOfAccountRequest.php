@@ -18,6 +18,7 @@ class UpdateChartOfAccountRequest extends FormRequest
             'account_category_id' => 'nullable|integer|exists:account_categories,id',
             'code' => 'required|string|max:50|unique:chart_of_accounts,code,' . $this->route('id') . ',id',
             'name' => 'required|string|max:150',
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'account_type' => 'required|in:asset,liability,equity,revenue,expense',
             'normal_balance' => 'required|in:debit,credit',
             'level' => 'integer|min:1',

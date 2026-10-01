@@ -18,12 +18,18 @@ class BudgetMonitoringService
                 'grantAgreement.donor:id,code,name',
                 'project:id,code,name,program_id',
                 'project.program:id,code,name',
+                'fiscalYear:id,year,name',
                 'budgetCategory:id,code,name',
                 'glAccount:id,code,name',
             ])
             ->when($filters['budget_line_id'] ?? null, fn (Builder $query, $budgetLineId) => $query->whereKey($budgetLineId))
             ->when($filters['project_id'] ?? null, fn (Builder $query, $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['fiscal_year_id'] ?? null, fn (Builder $query, $fiscalYearId) => $query->whereHas('project.fiscalYears', fn (Builder $fiscalQuery) => $fiscalQuery->whereKey($fiscalYearId)))
+            ->when($filters['fiscal_year_id'] ?? null, function (Builder $query, $fiscalYearId) {
+                $query->where(function (Builder $scope) use ($fiscalYearId) {
+                    $scope->where('fiscal_year_id', $fiscalYearId)
+                        ->orWhereHas('project.fiscalYears', fn (Builder $fiscalQuery) => $fiscalQuery->whereKey($fiscalYearId));
+                });
+            })
             ->when($filters['grant_agreement_id'] ?? null, fn (Builder $query, $grantId) => $query->where('grant_agreement_id', $grantId))
             ->when($filters['budget_category_id'] ?? null, fn (Builder $query, $categoryId) => $query->where('budget_category_id', $categoryId))
             ->when($filters['budget_line_ids'] ?? null, fn (Builder $query, array $ids) => $query->whereIn('id', $ids))

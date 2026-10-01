@@ -14,10 +14,15 @@ class Currency extends Model
 
     protected $table = 'currencies';
 
-    protected $fillable = ['code', 'name', 'symbol', 'decimal_places', 'is_base_currency', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'name', 'symbol', 'decimal_places', 'is_base_currency', 'fiscal_year_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
     ];
+
+    public function fiscalYear()
+    {
+        return $this->belongsTo(\App\Models\Master\FiscalYear::class, 'fiscal_year_id');
+    }
 
 }

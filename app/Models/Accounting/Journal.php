@@ -4,6 +4,7 @@ namespace App\Models\Accounting;
 
 use App\Models\Master\Currency;
 use App\Traits\AuditTrailTrait;
+use App\Traits\FiscalYearScopedTrait;
 use App\Traits\FilterableSearchableTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,9 +14,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Journal extends Model
 {
-    use HasFactory, SoftDeletes, FilterableSearchableTrait, AuditTrailTrait;
+    use HasFactory, SoftDeletes, FilterableSearchableTrait, AuditTrailTrait, FiscalYearScopedTrait;
 
     protected $fillable = [
+        'fiscal_year_id',
         'journal_number',
         'journal_date',
         'journal_type',

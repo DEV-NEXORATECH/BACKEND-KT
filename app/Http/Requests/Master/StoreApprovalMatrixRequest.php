@@ -14,6 +14,7 @@ class StoreApprovalMatrixRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'module' => 'required|string|max:50',
             'level' => 'required|integer|min:1',
             'min_amount' => 'required|numeric|min:0',

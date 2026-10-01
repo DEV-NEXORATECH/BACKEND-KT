@@ -96,8 +96,18 @@ class ApprovalWorkflowService
 
     private function matricesFor(string $module, Model $entity, float $amount)
     {
+        $fiscalYearId = $entity->getAttribute('fiscal_year_id');
+
         return ApprovalMatrix::query()->where('module', $module)->where('is_active', true)
             ->where('min_amount', '<=', $amount)->where(fn ($q) => $q->whereNull('max_amount')->orWhere('max_amount', '>=', $amount))
+            ->where(function ($scope) use ($fiscalYearId) {
+                // A transaction without a fiscal year may only use global matrices.
+                // This prevents a 2025/2026-specific rule from being applied ambiguously.
+                $scope->whereNull('fiscal_year_id');
+                if ($fiscalYearId) {
+                    $scope->orWhere('fiscal_year_id', $fiscalYearId);
+                }
+            })
             ->where(fn ($q) => $q->whereNull('project_id')->orWhere('project_id', $entity->getAttribute('project_id')))
             ->where(fn ($q) => $q->whereNull('donor_id')->orWhere('donor_id', $entity->getAttribute('donor_id')))
             ->where(fn ($q) => $q->whereNull('department_id')->orWhere('department_id', $entity->getAttribute('department_id')))

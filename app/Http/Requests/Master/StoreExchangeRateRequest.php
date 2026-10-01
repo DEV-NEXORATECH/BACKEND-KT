@@ -14,6 +14,7 @@ class StoreExchangeRateRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'date' => 'required|date',
             'from_currency_id' => 'required|integer|exists:currencies,id',
             'to_currency_id' => 'required|integer|exists:currencies,id',

@@ -15,6 +15,7 @@ class ApprovalMatrix extends Model
     protected $table = 'approval_matrices';
 
     protected $fillable = [
+        'fiscal_year_id',
         'module',
         'level',
         'min_amount',
@@ -45,6 +46,11 @@ class ApprovalMatrix extends Model
     public function role()
     {
         return $this->belongsTo(\App\Models\Role::class, 'role_id');
+    }
+
+    public function fiscalYear()
+    {
+        return $this->belongsTo(FiscalYear::class, 'fiscal_year_id');
     }
 
     public function user()

@@ -89,10 +89,8 @@
             <tr>
                 <th style="width: 30px;">No</th>
                 @if($collection->isNotEmpty())
-                    @foreach(array_slice(array_keys($collection->first()->getAttributes()), 1, 6) as $col)
-                        @if(!in_array($col, ['created_by', 'updated_by', 'deleted_by', 'deleted_at', 'created_at', 'updated_at']))
-                            <th>{{ strtoupper(str_replace('_', ' ', $col)) }}</th>
-                        @endif
+                    @foreach(array_values(array_filter(array_keys($collection->first()->getAttributes()), fn ($col) => !in_array($col, ['id', 'created_by', 'updated_by', 'deleted_by', 'deleted_at', 'created_at', 'updated_at', 'is_active']))) as $col)
+                        <th>{{ strtoupper(str_replace('_', ' ', $col)) }}</th>
                     @endforeach
                 @else
                     <th>Data</th>
@@ -104,10 +102,16 @@
             @forelse($collection as $index => $item)
                 <tr>
                     <td>{{ $index + 1 }}</td>
-                    @foreach(array_slice(array_keys($item->getAttributes()), 1, 6) as $col)
-                        @if(!in_array($col, ['created_by', 'updated_by', 'deleted_by', 'deleted_at', 'created_at', 'updated_at']))
-                            <td>{{ is_bool($item->{$col}) ? ($item->{$col} ? 'Yes' : 'No') : $item->{$col} }}</td>
-                        @endif
+                    @foreach(array_values(array_filter(array_keys($item->getAttributes()), fn ($col) => !in_array($col, ['id', 'created_by', 'updated_by', 'deleted_by', 'deleted_at', 'created_at', 'updated_at', 'is_active']))) as $col)
+                        <td>
+                            @if($col === 'fiscal_year_id' && $item->relationLoaded('fiscalYear'))
+                                {{ $item->fiscalYear?->year ?? $item->{$col} }}
+                            @elseif(is_bool($item->{$col}))
+                                {{ $item->{$col} ? 'Yes' : 'No' }}
+                            @else
+                                {{ $item->{$col} }}
+                            @endif
+                        </td>
                     @endforeach
                     <td>
                         <span class="{{ $item->is_active ? 'badge-active' : 'badge-inactive' }}">
