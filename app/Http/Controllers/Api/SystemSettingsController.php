@@ -28,6 +28,12 @@ class SystemSettingsController extends Controller
         'digest_frequency' => 'daily',
     ];
 
+    private const INTEGRATION_DEFAULTS = [
+        ['key' => 'bi_exchange_rate', 'name' => 'Bank Indonesia', 'purpose' => 'Sumber exchange rate resmi', 'status' => 'not_configured'],
+        ['key' => 'email', 'name' => 'Email Notifications', 'purpose' => 'Pengiriman notifikasi approval dan tax deadline', 'status' => 'not_configured'],
+        ['key' => 'storage', 'name' => 'Document Storage', 'purpose' => 'Penyimpanan attachment dan dokumen transaksi', 'status' => 'not_configured'],
+    ];
+
     public function show(): JsonResponse
     {
         $organization = Organization::query()->with('baseCurrency:id,code,name')->where('is_active', true)->orderBy('id')->first();
@@ -39,6 +45,7 @@ class SystemSettingsController extends Controller
                 'currencies' => Currency::query()->where('is_active', true)->orderBy('code')->get(['id', 'code', 'name']),
                 'policy' => $this->value('approval_budget_policy', self::POLICY_DEFAULTS),
                 'notifications' => $this->value('notification_preferences', self::NOTIFICATION_DEFAULTS),
+                'integrations' => $this->value('integrations', self::INTEGRATION_DEFAULTS),
             ],
         ]);
     }
@@ -64,6 +71,11 @@ class SystemSettingsController extends Controller
             'notifications.email_over_budget_alert' => ['required_with:notifications', 'boolean'],
             'notifications.email_tax_deadline' => ['required_with:notifications', 'boolean'],
             'notifications.digest_frequency' => ['required_with:notifications', 'in:immediate,daily,weekly'],
+            'integrations' => ['nullable', 'array'],
+            'integrations.*.key' => ['required', 'string', 'max:80'],
+            'integrations.*.name' => ['required', 'string', 'max:120'],
+            'integrations.*.purpose' => ['nullable', 'string', 'max:255'],
+            'integrations.*.status' => ['required', 'in:connected,not_configured,error'],
         ]);
 
         DB::transaction(function () use ($data, $request) {
@@ -74,7 +86,7 @@ class SystemSettingsController extends Controller
                 $this->audit($request, 'UPDATE_ORGANIZATION_SETTINGS', Organization::class, $organization->id, $before, $organization->fresh()->only(array_keys($before)));
             }
 
-            foreach (['policy' => 'approval_budget_policy', 'notifications' => 'notification_preferences'] as $input => $key) {
+            foreach (['policy' => 'approval_budget_policy', 'notifications' => 'notification_preferences', 'integrations' => 'integrations'] as $input => $key) {
                 if (! isset($data[$input])) continue;
                 $setting = ApplicationSetting::query()->firstOrNew(['key' => $key]);
                 $before = $setting->exists ? $setting->value : null;

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Models\Role;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -13,6 +14,44 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class UserSecurityController extends Controller
 {
+    public function roles(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->hasPermission('user.manage'), 403);
+        return response()->json(['success' => true, 'data' => Role::query()->orderBy('name')->get(['id', 'name', 'slug'])]);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->hasPermission('user.manage'), 403);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:180'],
+            'email' => ['required', 'email', 'max:180', 'unique:users,email'],
+            'role_id' => ['nullable', 'integer', 'exists:roles,id'],
+            'worker_type' => ['required', 'in:internal,external,consultant'],
+            'external_party_name' => ['nullable', 'required_if:worker_type,external', 'required_if:worker_type,consultant', 'string', 'max:180'],
+            'contract_reference' => ['nullable', 'required_if:worker_type,external', 'required_if:worker_type,consultant', 'string', 'max:120'],
+            'password' => ['nullable', 'string', 'min:8'],
+        ]);
+        $plainPassword = $data['password'] ?? 'Kt!'.Str::password(11, true, true, true, false);
+        unset($data['password']);
+        if ($data['worker_type'] === 'internal') {
+            $data['external_party_name'] = null;
+            $data['contract_reference'] = null;
+        }
+        $user = User::create([
+            ...$data,
+            'password' => Hash::make($plainPassword),
+            'is_active' => true,
+            'must_change_password' => true,
+        ]);
+        return response()->json([
+            'success' => true,
+            'message' => 'User berhasil dibuat. Sampaikan password sementara secara aman.',
+            'password' => $plainPassword,
+            'data' => $user->load('role:id,name')->only(['id', 'name', 'email', 'role_id', 'worker_type', 'external_party_name', 'contract_reference', 'is_active', 'must_change_password']),
+        ], 201);
+    }
+
     public function users(Request $request): JsonResponse
     {
         abort_unless($request->user()->hasPermission('user.manage'), 403);
