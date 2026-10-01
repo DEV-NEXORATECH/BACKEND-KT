@@ -71,9 +71,12 @@ class RbacPayloadBuilder
 
     private function formatMenus(User $user): array
     {
-        $allowed = array_flip($user->role?->menus->pluck('id')->all() ?? []);
-
         $allMenus = Menu::query()->where('is_active', true)->orderBy('sort_order')->get();
+        // Super Admin must retain full navigation even when the role-menu
+        // pivot has not been seeded on a fresh or migrated environment.
+        $allowed = $user->role?->slug === 'super-admin'
+            ? array_fill_keys($allMenus->pluck('id')->all(), true)
+            : array_flip($user->role?->menus->pluck('id')->all() ?? []);
         $byParent = $allMenus->groupBy('parent_id');
         return $byParent->get(null, collect())
             ->filter(fn (Menu $menu) => $this->menuVisible($menu, $allowed, $byParent))
