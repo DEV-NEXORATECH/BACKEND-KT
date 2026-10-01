@@ -31,9 +31,9 @@ class AccountingPeriodController extends BaseMasterController
 
     public function reopen(Request $request, $id)
     {
-        $data = $request->validate(['reason' => ['required', 'string', 'max:1000']]);
+        $data = $request->validate(['reason' => ['nullable', 'string', 'max:1000']]);
         $period = AccountingPeriod::findOrFail($id);
         $period->update(['status' => 'open', 'is_active' => true]);
-        return response()->json(['success' => true, 'message' => 'Accounting period dibuka kembali.', 'data' => [...$period->fresh()->toArray(), 'reopen_reason' => $data['reason']]]);
+        return response()->json(['success' => true, 'message' => 'Accounting period dibuka kembali.', 'data' => [...$period->fresh()->toArray(), 'reopen_reason' => $data['reason'] ?? null]]);
     }
 }

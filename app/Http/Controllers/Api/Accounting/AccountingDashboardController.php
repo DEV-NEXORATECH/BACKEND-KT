@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Carbon;
 
 class AccountingDashboardController extends Controller
 {
@@ -23,14 +24,16 @@ class AccountingDashboardController extends Controller
         $selectedFiscalYear = $request->filled('fiscal_year_id')
             ? FiscalYear::query()->find($request->integer('fiscal_year_id'))
             : null;
-        $today = ($selectedFiscalYear?->end_date ?: now())->toDateString();
+        $fiscalStart = $selectedFiscalYear?->start_date ? Carbon::parse($selectedFiscalYear->start_date) : now()->startOfYear();
+        $fiscalEnd = $selectedFiscalYear?->end_date ? Carbon::parse($selectedFiscalYear->end_date) : now();
+        $today = $fiscalEnd->toDateString();
         $monthStart = now()->startOfMonth()->toDateString();
-        $yearStart = ($selectedFiscalYear?->start_date ?: now()->startOfYear())->toDateString();
+        $yearStart = $fiscalStart->toDateString();
         $start = $request->query('start_date', $monthStart);
         $end = $request->query('end_date', $today);
         if ($selectedFiscalYear) {
-            $start = $request->query('start_date', $selectedFiscalYear->start_date->toDateString());
-            $end = $request->query('end_date', $selectedFiscalYear->end_date->toDateString());
+            $start = $request->query('start_date', $fiscalStart->toDateString());
+            $end = $request->query('end_date', $fiscalEnd->toDateString());
         }
         $bankAccountId = $request->integer('bank_account_id') ?: null;
         $projectId = $request->integer('project_id') ?: null;
