@@ -8,6 +8,8 @@ use App\Http\Requests\Master\StoreAccountingPeriodRequest;
 use App\Http\Requests\Master\UpdateAccountingPeriodRequest;
 use App\Http\Resources\Master\AccountingPeriodResource;
 use Illuminate\Http\Request;
+use App\Services\Approval\ApprovalWorkflowService;
+use Illuminate\Validation\ValidationException;
 
 class AccountingPeriodController extends BaseMasterController
 {
@@ -18,9 +20,17 @@ class AccountingPeriodController extends BaseMasterController
     protected array $searchableColumns = ['name'];
     protected array $defaultWith = ['fiscalYear'];
 
-    public function close(Request $request, $id)
+    public function close(Request $request, $id, ApprovalWorkflowService $workflow)
     {
         $period = AccountingPeriod::findOrFail($id);
+        $approval = $workflow->approve('period_closing', $period, $request->user(), $request->input('notes'));
+        if (! $approval['managed']) {
+            $workflow->start('period_closing', $period, 0, $request->user()->id);
+            $approval = $workflow->approve('period_closing', $period, $request->user(), $request->input('notes'));
+        }
+        if ($approval['managed'] && ! $approval['completed']) {
+            return response()->json(['success' => true, 'message' => "Penutupan periode menunggu approver level {$approval['next_level']}.", 'data' => $period]);
+        }
         $hasUnposted = Journal::query()->whereBetween('journal_date', [$period->start_date, $period->end_date])->whereIn('status', ['draft', 'submitted', 'reviewed'])->exists();
         if ($hasUnposted) {
             return response()->json(['success' => false, 'message' => 'Periode tidak dapat ditutup karena masih ada jurnal draft, submitted, atau reviewed.'], 422);

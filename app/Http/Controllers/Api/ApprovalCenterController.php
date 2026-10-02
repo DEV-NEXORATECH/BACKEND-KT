@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Accounting\JournalController;
 use App\Http\Controllers\Api\Asset\FixedAssetController;
+use App\Http\Controllers\Api\Budget\BudgetReallocationController;
+use App\Http\Controllers\Api\Master\AccountingPeriodController;
 use App\Http\Controllers\Api\Expense\ExpenseRequestController;
 use App\Http\Controllers\Api\Finance\AccountsPayableController;
 use App\Http\Controllers\Api\Finance\AccountsReceivableController;
@@ -19,6 +21,9 @@ use App\Models\ApprovalWorkflowRun;
 use App\Models\Asset\FixedAsset;
 use App\Models\Expense\ExpenseRequest;
 use App\Models\Finance\CustomerInvoice;
+use App\Models\Finance\BankTransaction;
+use App\Models\Master\AccountingPeriod;
+use App\Models\Budget\BudgetReallocation;
 use App\Models\Finance\TaxTransaction;
 use App\Models\Procurement\ComparativeBidAnalysis;
 use App\Models\Procurement\PurchaseOrder;
@@ -290,6 +295,86 @@ class ApprovalCenterController extends Controller
             }
         }
 
+        // 9b. Tax transactions awaiting tax filing/report approval
+        if (! $moduleFilter || $moduleFilter === 'tax_transaction') {
+            if ($user->hasAnyPermission(['tax.manage', 'tax.approve'])) {
+                $taxIds = ApprovalWorkflowRun::where('module', 'tax_transaction')->where('status', 'in_progress')->pluck('approvable_id');
+                $taxes = TaxTransaction::where('status', 'draft')->whereIn('id', $taxIds)->latest('id')->get()->map(fn (TaxTransaction $tax) => [
+                    'id' => $tax->id, 'module' => 'tax_transaction', 'module_label' => 'Transaksi Pajak',
+                    'reference_number' => $tax->reference ?? 'TAX-'.$tax->id, 'request_date' => $tax->transaction_date?->toDateString() ?? $tax->created_at?->toDateString(),
+                    'title_summary' => 'Pelaporan transaksi pajak', 'amount' => (float) $tax->tax_amount, 'currency' => 'IDR',
+                    'requester_name' => 'Tax Staff', 'department_name' => null, 'project_name' => null, 'status' => $tax->status, 'created_at' => $tax->created_at?->toISOString(),
+                ]);
+                $items = $items->concat($taxes);
+            }
+        }
+
+        // 9c. Bank reconciliation requests that already have an approval run
+        if (! $moduleFilter || $moduleFilter === 'bank_reconciliation') {
+            if ($user->hasAnyPermission(['banking.view', 'banking.reconcile'])) {
+                $ids = ApprovalWorkflowRun::where('module', 'bank_reconciliation')->where('status', 'in_progress')->pluck('approvable_id');
+                $bankRows = BankTransaction::with('bankAccount')->whereIn('id', $ids)->latest('id')->get()->map(fn (BankTransaction $bank) => [
+                    'id' => $bank->id, 'module' => 'bank_reconciliation', 'module_label' => 'Rekonsiliasi Bank',
+                    'reference_number' => $bank->reference ?? 'BANK-'.$bank->id, 'request_date' => $bank->transaction_date?->toDateString(),
+                    'title_summary' => $bank->description ?? 'Rekonsiliasi transaksi bank', 'amount' => (float) $bank->debit + (float) $bank->credit, 'currency' => 'IDR',
+                    'requester_name' => 'Banking Staff', 'department_name' => null, 'project_name' => null, 'status' => $bank->status, 'created_at' => $bank->created_at?->toISOString(),
+                ]);
+                $items = $items->concat($bankRows);
+            }
+        }
+
+        // 9d. Cash advance settlements
+        if (! $moduleFilter || $moduleFilter === 'settlement') {
+            if ($user->hasAnyPermission(['expense.submit', 'expense.approve'])) {
+                $settlements = ExpenseRequest::where('expense_type', 'cash_advance')->whereIn('status', ['posted', 'paid'])->whereIn('id', ApprovalWorkflowRun::where('module', 'settlement')->where('status', 'in_progress')->pluck('approvable_id'))->latest('id')->get()->map(fn (ExpenseRequest $exp) => [
+                    'id' => $exp->id, 'module' => 'settlement', 'module_label' => 'Settlement Cash Advance',
+                    'reference_number' => $exp->request_number ?? 'SET-'.$exp->id, 'request_date' => $exp->created_at?->toDateString(),
+                    'title_summary' => 'Settlement cash advance', 'amount' => (float) $exp->paid_amount, 'currency' => 'IDR',
+                    'requester_name' => 'Finance Staff', 'department_name' => null, 'project_name' => null, 'status' => $exp->settlement_status ?? $exp->status, 'created_at' => $exp->created_at?->toISOString(),
+                ]);
+                $items = $items->concat($settlements);
+            }
+        }
+
+        // 9e. Period closing and budget reallocations
+        if (! $moduleFilter || $moduleFilter === 'period_closing') {
+            if ($user->hasAnyPermission(['settings.manage', 'accounting.period.close'])) {
+                $ids = ApprovalWorkflowRun::where('module', 'period_closing')->where('status', 'in_progress')->pluck('approvable_id');
+                $periods = AccountingPeriod::whereIn('id', $ids)->latest('id')->get()->map(fn (AccountingPeriod $period) => [
+                    'id' => $period->id, 'module' => 'period_closing', 'module_label' => 'Penutupan Periode', 'reference_number' => $period->name ?? 'PERIOD-'.$period->id,
+                    'request_date' => $period->end_date?->toDateString(), 'title_summary' => 'Penutupan periode akuntansi', 'amount' => 0, 'currency' => 'IDR', 'requester_name' => 'Accounting Staff', 'department_name' => null, 'project_name' => null, 'status' => $period->status, 'created_at' => $period->created_at?->toISOString(),
+                ]);
+                $items = $items->concat($periods);
+            }
+        }
+
+        // 9f. Payments (AP and expense) use the same approval module.
+        if (! $moduleFilter || $moduleFilter === 'payment') {
+            if ($user->hasAnyPermission(['ap.pay', 'expense.pay', 'expense.approve'])) {
+                $paymentRunIds = ApprovalWorkflowRun::where('module', 'payment')->where('status', 'in_progress')->get(['approvable_type', 'approvable_id']);
+                $apIds = $paymentRunIds->where('approvable_type', SupplierInvoice::class)->pluck('approvable_id');
+                $expenseIds = $paymentRunIds->where('approvable_type', ExpenseRequest::class)->pluck('approvable_id');
+                $apPayments = SupplierInvoice::whereIn('id', $apIds)->latest('id')->get()->map(fn (SupplierInvoice $inv) => [
+                    'id' => $inv->id, 'module' => 'payment', 'entity_type' => SupplierInvoice::class, 'module_label' => 'Pembayaran AP', 'reference_number' => $inv->invoice_number,
+                    'request_date' => $inv->invoice_date?->toDateString(), 'title_summary' => 'Pembayaran invoice supplier', 'amount' => (float) $inv->total_amount, 'currency' => 'IDR', 'requester_name' => 'Finance Staff', 'department_name' => null, 'project_name' => null, 'status' => $inv->status, 'created_at' => $inv->created_at?->toISOString(),
+                ]);
+                $expensePayments = ExpenseRequest::whereIn('id', $expenseIds)->latest('id')->get()->map(fn (ExpenseRequest $exp) => [
+                    'id' => $exp->id, 'module' => 'payment', 'entity_type' => ExpenseRequest::class, 'module_label' => 'Pembayaran Expense', 'reference_number' => $exp->request_number ?? 'EXP-'.$exp->id,
+                    'request_date' => $exp->request_date?->toDateString(), 'title_summary' => 'Pembayaran pengeluaran', 'amount' => (float) $exp->total_amount, 'currency' => 'IDR', 'requester_name' => 'Finance Staff', 'department_name' => null, 'project_name' => null, 'status' => $exp->status, 'created_at' => $exp->created_at?->toISOString(),
+                ]);
+                $items = $items->concat($apPayments)->concat($expensePayments);
+            }
+        }
+        if (! $moduleFilter || $moduleFilter === 'budget_reallocation') {
+            if ($user->hasAnyPermission(['budget.approve'])) {
+                $rows = BudgetReallocation::where('status', 'submitted')->latest('id')->get()->map(fn (BudgetReallocation $row) => [
+                    'id' => $row->id, 'module' => 'budget_reallocation', 'module_label' => 'Realokasi Anggaran', 'reference_number' => $row->reference ?? 'BR-'.$row->id,
+                    'request_date' => $row->submitted_at?->toDateString() ?? $row->created_at?->toDateString(), 'title_summary' => $row->reason, 'amount' => (float) $row->amount, 'currency' => 'IDR', 'requester_name' => 'Budget Staff', 'department_name' => null, 'project_name' => null, 'status' => $row->status, 'created_at' => $row->created_at?->toISOString(),
+                ]);
+                $items = $items->concat($rows);
+            }
+        }
+
         // 10. Fixed Assets
         if (! $moduleFilter || $moduleFilter === 'asset') {
             if ($user->hasAnyPermission(['asset.capitalize'])) {
@@ -316,12 +401,41 @@ class ApprovalCenterController extends Controller
             }
         }
 
+        // 11. Fixed asset disposals
+        if (! $moduleFilter || $moduleFilter === 'asset_disposal') {
+            if ($user->hasAnyPermission(['asset.dispose'])) {
+                $disposalIds = ApprovalWorkflowRun::where('module', 'asset_disposal')->where('status', 'in_progress')->pluck('approvable_id');
+                $disposals = FixedAsset::with(['category', 'project'])
+                    ->whereIn('status', ['active', 'transferred'])
+                    ->whereNotNull('disposal_requested_date')
+                    ->whereIn('id', $disposalIds)
+                    ->latest('id')
+                    ->get()
+                    ->map(fn (FixedAsset $a) => [
+                        'id' => $a->id,
+                        'module' => 'asset_disposal',
+                        'module_label' => 'Fixed Asset Disposal',
+                        'reference_number' => $a->asset_code,
+                        'request_date' => $a->disposal_requested_date?->toDateString(),
+                        'title_summary' => 'Penghapusan Aset: '.$a->asset_name,
+                        'amount' => (float) $a->net_book_value,
+                        'currency' => 'IDR',
+                        'requester_name' => 'Asset Custodian',
+                        'department_name' => null,
+                        'project_name' => $a->project?->name,
+                        'status' => 'submitted',
+                        'created_at' => $a->created_at?->toISOString(),
+                    ]);
+                $items = $items->concat($disposals);
+            }
+        }
+
         // A document with a configured workflow is visible only to the
         // approver assigned to its current pending level. Legacy documents
         // without a workflow remain visible through the existing permission
         // rules so historical processes are not hidden.
-        $moduleMap = ['expense' => 'expense', 'pr' => 'procurement', 'po' => 'po', 'cba' => 'cba', 'scn' => 'scn', 'journal' => 'journal', 'ap' => 'ap', 'ar' => 'ar', 'timesheet' => 'timesheet', 'asset' => 'asset'];
-        $typeMap = ['expense' => ExpenseRequest::class, 'pr' => PurchaseRequest::class, 'po' => PurchaseOrder::class, 'cba' => ComparativeBidAnalysis::class, 'scn' => SupplierContractNotification::class, 'journal' => Journal::class, 'ap' => SupplierInvoice::class, 'ar' => CustomerInvoice::class, 'timesheet' => TimesheetEntry::class, 'asset' => FixedAsset::class];
+        $moduleMap = ['expense' => 'expense', 'pr' => 'procurement', 'po' => 'po', 'cba' => 'cba', 'scn' => 'scn', 'journal' => 'journal', 'ap' => 'ap', 'ar' => 'ar', 'timesheet' => 'timesheet', 'asset' => 'asset', 'asset_disposal' => 'asset_disposal', 'tax_transaction' => 'tax_transaction', 'bank_reconciliation' => 'bank_reconciliation', 'settlement' => 'settlement', 'period_closing' => 'period_closing', 'budget_reallocation' => 'budget_reallocation', 'payment' => 'payment'];
+        $typeMap = ['expense' => ExpenseRequest::class, 'pr' => PurchaseRequest::class, 'po' => PurchaseOrder::class, 'cba' => ComparativeBidAnalysis::class, 'scn' => SupplierContractNotification::class, 'journal' => Journal::class, 'ap' => SupplierInvoice::class, 'ar' => CustomerInvoice::class, 'timesheet' => TimesheetEntry::class, 'asset' => FixedAsset::class, 'asset_disposal' => FixedAsset::class, 'tax_transaction' => TaxTransaction::class, 'bank_reconciliation' => BankTransaction::class, 'settlement' => ExpenseRequest::class, 'period_closing' => AccountingPeriod::class, 'budget_reallocation' => BudgetReallocation::class, 'payment' => ExpenseRequest::class];
         $employeeId = $user->employee()->value('id');
         $activeRuns = ApprovalWorkflowRun::query()->where('status', 'in_progress')->get()->keyBy(fn ($run) => "{$run->module}:{$run->approvable_type}:{$run->approvable_id}");
         $approvalService = app(\App\Services\Approval\ApprovalWorkflowService::class);
@@ -337,7 +451,9 @@ class ApprovalCenterController extends Controller
             ->mapWithKeys(fn ($action) => ["{$action->run->module}:{$action->run->approvable_type}:{$action->run->approvable_id}" => true]);
 
         $sortedItems = $items->filter(function (array $item) use ($moduleMap, $typeMap, $activeRuns, $allowedRuns) {
-            $key = "{$moduleMap[$item['module']]}:{$typeMap[$item['module']]}:{$item['id']}";
+            if (! isset($moduleMap[$item['module']])) return true;
+            $type = $item['entity_type'] ?? $typeMap[$item['module']];
+            $key = "{$moduleMap[$item['module']]}:{$type}:{$item['id']}";
             return ! isset($activeRuns[$key]) || isset($allowedRuns[$key]);
         })->sortByDesc('created_at')->values();
 
@@ -357,7 +473,7 @@ class ApprovalCenterController extends Controller
             'action' => ['required', 'string', 'in:approve,reject'],
             'notes' => ['nullable', 'string', 'max:500'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.module' => ['required', 'string', 'in:expense,pr,po,cba,scn,journal,ap,ar,timesheet,asset'],
+            'items.*.module' => ['required', 'string', 'in:expense,pr,po,cba,scn,journal,ap,ar,timesheet,asset,asset_disposal,tax_transaction,bank_reconciliation,settlement,period_closing,budget_reallocation,payment'],
             'items.*.id' => ['required', 'integer'],
         ]);
 
@@ -366,6 +482,10 @@ class ApprovalCenterController extends Controller
         // middleware on the original endpoint is therefore not in the call
         // path, so enforce each action permission before processing anything.
         foreach ($validated['items'] as $item) {
+            if ($item['module'] === 'payment') {
+                if (! $request->user()->hasAnyPermission(['ap.pay', 'expense.pay'])) abort(403, 'Tidak memiliki permission pembayaran.');
+                continue;
+            }
             $permission = $this->approvalPermission($item['module']);
             if (! $request->user()->hasPermission($permission)) {
                 abort(403, "Tidak memiliki permission {$permission} untuk approval {$item['module']}.");
@@ -386,6 +506,8 @@ class ApprovalCenterController extends Controller
         $assetController = app(FixedAssetController::class);
         $apController = app(AccountsPayableController::class);
         $arController = app(AccountsReceivableController::class);
+        $budgetReallocationController = app(BudgetReallocationController::class);
+        $periodController = app(AccountingPeriodController::class);
 
         foreach ($validated['items'] as $item) {
             $module = $item['module'];
@@ -518,6 +640,82 @@ class ApprovalCenterController extends Controller
                         }
                         break;
 
+                    case 'asset_disposal':
+                        $asset = FixedAsset::find($id);
+                        if ($asset && $action === 'approve') {
+                            $request->merge(['disposed_date' => $asset->disposal_requested_date?->toDateString(), 'disposal_reason' => $asset->disposal_requested_reason]);
+                            $assetController->dispose($request, $asset);
+                            $processedCount++;
+                        }
+                        break;
+
+                    case 'tax_transaction':
+                        $tax = TaxTransaction::find($id);
+                        if ($tax && $action === 'approve') {
+                            app(\App\Services\Approval\ApprovalWorkflowService::class)->approve('tax_transaction', $tax, $request->user(), $validated['notes'] ?? null);
+                            $processedCount++;
+                        } elseif ($tax) {
+                            app(\App\Services\Approval\ApprovalWorkflowService::class)->reject('tax_transaction', $tax, $request->user(), $validated['notes'] ?? 'Ditolak melalui Approval Center');
+                            $processedCount++;
+                        }
+                        break;
+
+                    case 'bank_reconciliation':
+                        $bank = BankTransaction::find($id);
+                        if ($bank && $action === 'approve') {
+                            app(\App\Services\Approval\ApprovalWorkflowService::class)->approve('bank_reconciliation', $bank, $request->user(), $validated['notes'] ?? null);
+                            $processedCount++;
+                        } elseif ($bank) {
+                            app(\App\Services\Approval\ApprovalWorkflowService::class)->reject('bank_reconciliation', $bank, $request->user(), $validated['notes'] ?? 'Ditolak melalui Approval Center');
+                            $processedCount++;
+                        }
+                        break;
+
+                    case 'settlement':
+                        $settlement = ExpenseRequest::find($id);
+                        if ($settlement && $action === 'approve') {
+                            app(\App\Services\Approval\ApprovalWorkflowService::class)->approve('settlement', $settlement, $request->user(), $validated['notes'] ?? null);
+                            $processedCount++;
+                        } elseif ($settlement) {
+                            app(\App\Services\Approval\ApprovalWorkflowService::class)->reject('settlement', $settlement, $request->user(), $validated['notes'] ?? 'Ditolak melalui Approval Center');
+                            $processedCount++;
+                        }
+                        break;
+
+                    case 'period_closing':
+                        $period = AccountingPeriod::find($id);
+                        if ($period && $action === 'approve') {
+                            $periodController->close($request, $period->id, app(\App\Services\Approval\ApprovalWorkflowService::class));
+                            $processedCount++;
+                        } elseif ($period) {
+                            app(\App\Services\Approval\ApprovalWorkflowService::class)->reject('period_closing', $period, $request->user(), $validated['notes'] ?? 'Ditolak melalui Approval Center');
+                            $processedCount++;
+                        }
+                        break;
+
+                    case 'budget_reallocation':
+                        $reallocation = BudgetReallocation::find($id);
+                        if ($reallocation && $action === 'approve') {
+                            $budgetReallocationController->approve($request, $reallocation, app(\App\Services\Budget\BudgetMonitoringService::class), app(\App\Services\Approval\ApprovalWorkflowService::class));
+                            $processedCount++;
+                        } elseif ($reallocation) {
+                            app(\App\Services\Approval\ApprovalWorkflowService::class)->reject('budget_reallocation', $reallocation, $request->user(), $validated['notes'] ?? 'Ditolak melalui Approval Center');
+                            $reallocation->update(['status' => 'draft', 'decision_notes' => $validated['notes'] ?? 'Ditolak melalui Approval Center']);
+                            $processedCount++;
+                        }
+                        break;
+
+                    case 'payment':
+                        $entity = SupplierInvoice::find($id) ?? ExpenseRequest::find($id);
+                        if ($entity && $action === 'approve') {
+                            app(\App\Services\Approval\ApprovalWorkflowService::class)->approve('payment', $entity, $request->user(), $validated['notes'] ?? null);
+                            $processedCount++;
+                        } elseif ($entity) {
+                            app(\App\Services\Approval\ApprovalWorkflowService::class)->reject('payment', $entity, $request->user(), $validated['notes'] ?? 'Ditolak melalui Approval Center');
+                            $processedCount++;
+                        }
+                        break;
+
                     default:
                         break;
                 }
@@ -547,6 +745,13 @@ class ApprovalCenterController extends Controller
             'ar' => 'ar.post',
             'timesheet' => 'timesheet.approve',
             'asset' => 'asset.capitalize',
+            'asset_disposal' => 'asset.dispose',
+            'tax_transaction' => 'tax.manage',
+            'bank_reconciliation' => 'banking.reconcile',
+            'settlement' => 'expense.submit',
+            'period_closing' => 'settings.manage',
+            'budget_reallocation' => 'budget.approve',
+            'payment' => 'ap.pay',
         };
     }
 }

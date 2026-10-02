@@ -37,6 +37,7 @@ class ApprovalMatrixResource extends JsonResource
 
         return [
             'id' => $this->id,
+            'fiscal_year_id' => $this->fiscal_year_id,
             'module' => $this->module,
             'module_display' => ucfirst(str_replace('_', ' ', $this->module)),
             'level' => $this->level,

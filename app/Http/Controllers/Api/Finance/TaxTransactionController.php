@@ -9,6 +9,7 @@ use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Rbac\DataScopeService;
 use App\Services\Settings\SystemPolicyService;
 use App\Services\Tax\TaxCalculationService;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -131,11 +132,13 @@ class TaxTransactionController extends Controller
             'created_by' => $request->user()->id,
         ])->load('tax:id,code,name,tax_type,rate_percent');
 
+        app(ApprovalWorkflowService::class)->start('tax_transaction', $item, (float) $item->tax_amount, $request->user()->id);
+
         return response()->json(['success' => true, 'message' => 'Tax transaction berhasil dicatat.', 'data' => $this->format($item)], Response::HTTP_CREATED);
     }
 
     /** Record the external tax filing reference before a transaction is reported/exported. */
-    public function markReported(Request $request, TaxTransaction $taxTransaction): JsonResponse
+    public function markReported(Request $request, TaxTransaction $taxTransaction, ApprovalWorkflowService $workflow): JsonResponse
     {
         $query = TaxTransaction::whereKey($taxTransaction->id);
         app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, []);
@@ -155,6 +158,14 @@ class TaxTransactionController extends Controller
         ]);
         if (! array_filter([$data['e_faktur_reference'] ?? null, $data['e_bupot_reference'] ?? null, $data['e_faktur_number'] ?? null, $data['e_bupot_number'] ?? null])) {
             return response()->json(['success' => false, 'message' => 'Referensi e-Faktur atau e-Bupot wajib diisi sebelum pelaporan.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $approval = $workflow->approve('tax_transaction', $taxTransaction, $request->user(), $data['notes'] ?? null);
+        if ($approval['managed'] && ! $approval['completed']) {
+            return response()->json(['success' => true, 'message' => "Approval transaksi pajak selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($taxTransaction->fresh('tax:id,code,name,tax_type,rate_percent'))]);
+        }
+        if (! $approval['managed'] && $workflow->requiresApproval('tax_transaction', $taxTransaction, (float) $taxTransaction->tax_amount)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['approval' => 'Transaksi pajak harus disubmit ke Approval Matrix.']);
         }
 
         $previous = ['status' => $taxTransaction->status];

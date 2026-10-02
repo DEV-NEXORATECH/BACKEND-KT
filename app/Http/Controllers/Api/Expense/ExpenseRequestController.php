@@ -360,7 +360,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         return response()->json(['success' => true, 'message' => 'Expense berhasil diposting ke accounting.', 'data' => $this->format($expense)]);
     }
 
-    public function pay(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    public function pay(Request $request, ExpenseRequest $expenseRequest, ApprovalWorkflowService $workflow): JsonResponse
     {
         if (! in_array($expenseRequest->status, ['posted', 'paid'], true)) {
             throw ValidationException::withMessages(['status' => 'Expense harus posted sebelum payment.']);
@@ -374,6 +374,12 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
             'reference' => ['nullable', 'string', 'max:100'],
         ]);
+        $approval = $workflow->approve('payment', $expenseRequest, $request->user(), $request->input('notes'));
+        if (! $approval['managed']) {
+            $workflow->start('payment', $expenseRequest, (float) $data['amount'], $request->user()->id);
+            $approval = $workflow->approve('payment', $expenseRequest, $request->user(), $request->input('notes'));
+        }
+        if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Pembayaran menunggu approver level {$approval['next_level']}.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
         app(AccountingPeriodService::class)->ensureOpen($data['payment_date'], 'payment_date');
 
         $outstanding = round((float) $expenseRequest->total_amount - (float) $expenseRequest->paid_amount, 2);
@@ -451,7 +457,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         return response()->json(['success' => true, 'message' => 'Expense payment berhasil dicatat.', 'data' => $this->format($expense)], Response::HTTP_CREATED);
     }
 
-    public function settle(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    public function settle(Request $request, ExpenseRequest $expenseRequest, \App\Services\Approval\ApprovalWorkflowService $workflow): JsonResponse
     {
         $this->authorizeScope($request, $expenseRequest);
         if ($expenseRequest->expense_type !== 'cash_advance') {
@@ -462,6 +468,15 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         }
         $data = $request->validate(['actual_expense_amount' => ['nullable', 'numeric', 'min:0.01'], 'amount' => ['nullable', 'numeric', 'min:0.01'], 'exchange_rate' => ['nullable', 'numeric', 'min:0.000001']]);
         $actual = round((float) ($data['actual_expense_amount'] ?? $data['amount'] ?? 0), 2);
+        $approval = $workflow->approve('settlement', $expenseRequest, $request->user(), $request->input('notes'));
+        if ($approval['managed'] && ! $approval['completed']) {
+            return response()->json(['success' => true, 'message' => "Settlement menunggu approver level {$approval['next_level']}.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
+        }
+        if (! $approval['managed']) {
+            $workflow->start('settlement', $expenseRequest, $actual, $request->user()->id);
+            $approval = $workflow->approve('settlement', $expenseRequest, $request->user(), $request->input('notes'));
+            if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Settlement menunggu approver level {$approval['next_level']}.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
+        }
         $finalize = filter_var($request->input('finalize', true), FILTER_VALIDATE_BOOLEAN);
         $previousActual = round((float) ($expenseRequest->actual_expense_amount ?? 0), 2);
         if ($actual <= $previousActual) throw ValidationException::withMessages(['actual_expense_amount' => 'Nilai actual harus lebih besar dari settlement sebelumnya.']);

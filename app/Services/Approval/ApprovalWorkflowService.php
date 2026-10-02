@@ -60,6 +60,7 @@ class ApprovalWorkflowService
     {
         $run = $this->runFor($module, $entity);
         if (! $run) return ['managed' => false, 'completed' => true, 'next_level' => null];
+        if ($run->status === 'approved') return ['managed' => true, 'completed' => true, 'next_level' => null];
         if ($run->status !== 'in_progress') throw ValidationException::withMessages(['approval' => 'Workflow approval tidak aktif.']);
 
         return DB::transaction(function () use ($run, $user, $notes) {
@@ -108,19 +109,34 @@ class ApprovalWorkflowService
     {
         $fiscalYearId = $entity->getAttribute('fiscal_year_id');
 
-        return ApprovalMatrix::query()->where('module', $module)->where('is_active', true)
-            ->where('min_amount', '<=', $amount)->where(fn ($q) => $q->whereNull('max_amount')->orWhere('max_amount', '>=', $amount))
-            ->where(function ($scope) use ($fiscalYearId) {
+        // The nominal threshold determines the highest level reached. Every
+        // lower level must then be completed in sequence before that level.
+        // Example: a 120m transaction matches level 4 and therefore runs
+        // levels 1, 2, 3, and 4 instead of jumping directly to level 4.
+        $scopeMatrix = function ($query) use ($module, $fiscalYearId, $entity) {
+            $query->where('module', $module)->where('is_active', true)
+                ->where(function ($scope) use ($fiscalYearId) {
                 // A transaction without a fiscal year may only use global matrices.
                 // This prevents a 2025/2026-specific rule from being applied ambiguously.
                 $scope->whereNull('fiscal_year_id');
                 if ($fiscalYearId) {
                     $scope->orWhere('fiscal_year_id', $fiscalYearId);
                 }
-            })
-            ->where(fn ($q) => $q->whereNull('project_id')->orWhere('project_id', $entity->getAttribute('project_id')))
-            ->where(fn ($q) => $q->whereNull('donor_id')->orWhere('donor_id', $entity->getAttribute('donor_id')))
-            ->where(fn ($q) => $q->whereNull('department_id')->orWhere('department_id', $entity->getAttribute('department_id')))
+                })
+                ->where(fn ($q) => $q->whereNull('project_id')->orWhere('project_id', $entity->getAttribute('project_id')))
+                ->where(fn ($q) => $q->whereNull('donor_id')->orWhere('donor_id', $entity->getAttribute('donor_id')))
+                ->where(fn ($q) => $q->whereNull('department_id')->orWhere('department_id', $entity->getAttribute('department_id')));
+        };
+
+        $highestLevel = (clone $scopeMatrix(ApprovalMatrix::query()))
+            ->where('min_amount', '<=', $amount)
+            ->where(fn ($q) => $q->whereNull('max_amount')->orWhere('max_amount', '>=', $amount))
+            ->max('level');
+
+        if (! $highestLevel) return collect();
+
+        return $scopeMatrix(ApprovalMatrix::query())
+            ->where('level', '<=', $highestLevel)
             ->orderBy('level')->orderBy('id')->get();
     }
 

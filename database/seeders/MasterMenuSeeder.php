@@ -35,7 +35,6 @@ class MasterMenuSeeder extends Seeder
             ]],
             ['title' => 'Finance & Accounting', 'slug' => 'master-finance-accounting', 'sort_order' => 17, 'children' => [
                 ['title' => 'Chart of Accounts', 'slug' => 'master-chart-of-accounts', 'path' => '/master-data/chart-of-accounts', 'sort_order' => 175],
-                ['title' => 'Account Categories', 'slug' => 'master-account-categories', 'path' => '/master-data/account-categories', 'sort_order' => 176],
                 ['title' => 'Bank Accounts', 'slug' => 'master-bank-accounts', 'path' => '/master-data/bank-accounts', 'sort_order' => 177],
                 ['title' => 'Payment Methods', 'slug' => 'master-payment-methods', 'path' => '/master-data/payment-methods', 'sort_order' => 179],
                 ['title' => 'Fx Rates', 'slug' => 'master-fx-rates', 'path' => '/master-data/exchange-rates', 'sort_order' => 172],

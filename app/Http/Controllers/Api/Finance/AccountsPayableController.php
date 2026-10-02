@@ -180,7 +180,7 @@ class AccountsPayableController extends Controller
         return response()->json(['success' => true, 'message' => 'Supplier invoice berhasil diposting ke AP.', 'data' => $this->formatInvoice($invoice)]);
     }
 
-    public function payInvoice(Request $request, SupplierInvoice $supplierInvoice): JsonResponse
+    public function payInvoice(Request $request, SupplierInvoice $supplierInvoice, ApprovalWorkflowService $workflow): JsonResponse
     {
         if (! in_array($supplierInvoice->status, ['posted', 'paid'], true)) {
             throw ValidationException::withMessages(['status' => 'Invoice harus posted sebelum payment.']);
@@ -194,6 +194,14 @@ class AccountsPayableController extends Controller
             'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
             'reference' => ['nullable', 'string', 'max:100'],
         ]);
+        $approval = $workflow->approve('payment', $supplierInvoice, $request->user(), $request->input('notes'));
+        if (! $approval['managed']) {
+            $workflow->start('payment', $supplierInvoice, (float) $data['amount'], $request->user()->id);
+            $approval = $workflow->approve('payment', $supplierInvoice, $request->user(), $request->input('notes'));
+        }
+        if ($approval['managed'] && ! $approval['completed']) {
+            return response()->json(['success' => true, 'message' => "Pembayaran menunggu approver level {$approval['next_level']}.", 'data' => $this->formatInvoice($supplierInvoice->fresh())]);
+        }
         app(AccountingPeriodService::class)->ensureOpen($data['payment_date'], 'payment_date');
 
         $outstanding = round((float) $supplierInvoice->total_amount - (float) $supplierInvoice->paid_amount, 2);
@@ -622,11 +630,17 @@ class AccountsPayableController extends Controller
         return response()->json(['success' => true, 'message' => 'Transaksi bank berhasil dicocokkan ke payment.', 'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number', 'payment:id,payment_number,payment_date,amount,reference'])]);
     }
 
-    public function reconcileBankTransaction(Request $request, BankTransaction $bankTransaction): JsonResponse
+    public function reconcileBankTransaction(Request $request, BankTransaction $bankTransaction, ApprovalWorkflowService $workflow): JsonResponse
     {
         $this->ensureBankTransactionScope($request, $bankTransaction, 'merekonsiliasi');
 
         $data = $request->validate(['status' => ['required', 'in:matched,excluded,reconciled,unmatched']]);
+        $approval = $workflow->approve('bank_reconciliation', $bankTransaction, $request->user(), $request->input('notes'));
+        if (! $approval['managed']) {
+            $workflow->start('bank_reconciliation', $bankTransaction, (float) $bankTransaction->debit + (float) $bankTransaction->credit, $request->user()->id);
+            $approval = $workflow->approve('bank_reconciliation', $bankTransaction, $request->user(), $request->input('notes'));
+        }
+        if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Rekonsiliasi menunggu approver level {$approval['next_level']}.", 'data' => $bankTransaction]);
         $previous = ['status' => $bankTransaction->status];
         $bankTransaction->update(['status' => $data['status']]);
         \App\Models\AuditLog::create([
