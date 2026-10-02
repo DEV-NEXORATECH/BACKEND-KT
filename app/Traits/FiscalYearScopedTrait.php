@@ -34,7 +34,9 @@ trait FiscalYearScopedTrait
 
         static::creating(function ($model) {
             if (! $model->getAttribute('fiscal_year_id') && function_exists('request')) {
-                $fiscalYearId = request()->header('X-Fiscal-Year-Id') ?: request()->input('fiscal_year_id');
+                $fiscalYearId = request()->query('fiscal_year_id')
+                    ?: request()->header('X-Fiscal-Year-Id')
+                    ?: request()->input('fiscal_year_id');
                 if ($fiscalYearId && FiscalYear::query()->whereKey($fiscalYearId)->exists()) {
                     $model->setAttribute('fiscal_year_id', (int) $fiscalYearId);
                 }

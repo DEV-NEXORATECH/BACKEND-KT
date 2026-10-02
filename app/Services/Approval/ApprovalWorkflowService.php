@@ -47,6 +47,11 @@ class ApprovalWorkflowService
 
     public function requiresApproval(string $module, Model $entity, float $amount): bool
     {
+        $currentUser = function_exists('request') ? request()->user() : null;
+        if ($currentUser instanceof User && $this->isSuperAdmin($currentUser)) {
+            return false;
+        }
+
         return $this->matricesFor($module, $entity, $amount)->isNotEmpty();
     }
 
@@ -59,7 +64,7 @@ class ApprovalWorkflowService
 
         return DB::transaction(function () use ($run, $user, $notes) {
             $actions = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get();
-            $action = $actions->first(fn ($item) => $this->matchesApprover($item, $user));
+            $action = $actions->first(fn ($item) => $this->matchesApprover($item, $user, $run->approvable));
             if (! $action) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap approval saat ini.']);
             $action->update(['status' => 'approved', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
 
@@ -81,7 +86,7 @@ class ApprovalWorkflowService
     {
         $run = $this->runFor($module, $entity);
         if (! $run) return;
-        $action = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get()->first(fn ($item) => $this->matchesApprover($item, $user));
+        $action = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get()->first(fn ($item) => $this->matchesApprover($item, $user, $run->approvable));
         if (! $action) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap approval saat ini.']);
         DB::transaction(function () use ($run, $action, $user, $notes) {
             $action->update(['status' => 'rejected', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
@@ -89,9 +94,14 @@ class ApprovalWorkflowService
         });
     }
 
+    public function userCanApproveAction(\App\Models\ApprovalWorkflowAction $action, User $user, ?Model $entity = null): bool
+    {
+        return $this->matchesApprover($action, $user, $entity);
+    }
+
     private function runFor(string $module, Model $entity): ?ApprovalWorkflowRun
     {
-        return ApprovalWorkflowRun::query()->with('actions')->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])->first();
+        return ApprovalWorkflowRun::query()->with('actions.approvalMatrix')->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])->first();
     }
 
     private function matricesFor(string $module, Model $entity, float $amount)
@@ -114,11 +124,33 @@ class ApprovalWorkflowService
             ->orderBy('level')->orderBy('id')->get();
     }
 
-    private function matchesApprover($action, User $user): bool
+    private function matchesApprover($action, User $user, ?Model $entity = null): bool
     {
+        if ($this->isSuperAdmin($user)) {
+            return true;
+        }
+
+        $matrix = $action->approvalMatrix;
+        if ($matrix?->is_conditional_project_manager) {
+            $project = $entity && method_exists($entity, 'project') ? $entity->project : null;
+            $projectManagerName = $project?->manager_name;
+            if ($projectManagerName) {
+                $employee = $user->employee;
+                $names = array_filter([$user->name, $employee?->name]);
+                return collect($names)->contains(fn ($name) => strcasecmp(trim((string) $name), trim((string) $projectManagerName)) === 0);
+            }
+        }
+
         $employeeId = $user->employee()->value('id');
         return ($action->user_id && (int) $action->user_id === (int) $user->id)
             || ($action->role_id && (int) $action->role_id === (int) $user->role_id)
             || ($action->employee_id && (int) $action->employee_id === (int) $employeeId);
+    }
+
+    private function isSuperAdmin(User $user): bool
+    {
+        $slug = strtolower((string) ($user->role?->slug ?? ''));
+        return in_array($slug, ['super-admin', 'super_admin', 'superadmin'], true)
+            || (bool) ($user->is_super_admin ?? false);
     }
 }

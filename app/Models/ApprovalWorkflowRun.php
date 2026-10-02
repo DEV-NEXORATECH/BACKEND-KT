@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class ApprovalWorkflowRun extends Model
 {
@@ -13,5 +14,10 @@ class ApprovalWorkflowRun extends Model
     public function actions(): HasMany
     {
         return $this->hasMany(ApprovalWorkflowAction::class)->orderBy('level')->orderBy('id');
+    }
+
+    public function approvable(): MorphTo
+    {
+        return $this->morphTo();
     }
 }

@@ -394,6 +394,7 @@ class TimesheetEntryController extends Controller
     private function validatePayload(Request $request): array
     {
         return $request->validate([
+            'fiscal_year_id' => ['sometimes', 'nullable', 'integer', 'exists:fiscal_years,id'],
             'employee_id' => ['required', 'integer', 'exists:employees,id'],
             'worker_type' => ['sometimes', 'string', 'in:internal,external,consultant'],
             'vendor_name' => ['nullable', 'string', 'max:180'],
@@ -453,6 +454,7 @@ class TimesheetEntryController extends Controller
     {
         return [
             'id' => $entry->id,
+            'fiscal_year_id' => $entry->fiscal_year_id,
             'worker_type' => $entry->worker_type ?: 'internal',
             'vendor_name' => $entry->vendor_name,
             'contract_reference' => $entry->contract_reference,

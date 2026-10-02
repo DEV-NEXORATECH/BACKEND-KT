@@ -39,6 +39,10 @@ class ApprovalCenterController extends Controller
     public function pending(Request $request): JsonResponse
     {
         $user = $request->user();
+        $roleSlug = strtolower((string) ($user->role?->slug ?? ''));
+        if (in_array($roleSlug, ['super-admin', 'super_admin', 'superadmin'], true) || (bool) ($user->is_super_admin ?? false)) {
+            return response()->json(['success' => true, 'data' => [], 'message' => 'Super Admin tidak memerlukan approval.']);
+        }
         $moduleFilter = $request->query('module');
         $items = collect();
 
@@ -320,13 +324,16 @@ class ApprovalCenterController extends Controller
         $typeMap = ['expense' => ExpenseRequest::class, 'pr' => PurchaseRequest::class, 'po' => PurchaseOrder::class, 'cba' => ComparativeBidAnalysis::class, 'scn' => SupplierContractNotification::class, 'journal' => Journal::class, 'ap' => SupplierInvoice::class, 'ar' => CustomerInvoice::class, 'timesheet' => TimesheetEntry::class, 'asset' => FixedAsset::class];
         $employeeId = $user->employee()->value('id');
         $activeRuns = ApprovalWorkflowRun::query()->where('status', 'in_progress')->get()->keyBy(fn ($run) => "{$run->module}:{$run->approvable_type}:{$run->approvable_id}");
+        $approvalService = app(\App\Services\Approval\ApprovalWorkflowService::class);
         $allowedRuns = ApprovalWorkflowAction::query()->select('approval_workflow_actions.*')
             ->join('approval_workflow_runs', 'approval_workflow_runs.id', '=', 'approval_workflow_actions.approval_workflow_run_id')
             ->where('approval_workflow_runs.status', 'in_progress')
             ->where('approval_workflow_actions.status', 'pending')
             ->whereColumn('approval_workflow_actions.level', 'approval_workflow_runs.current_level')
             ->where(fn ($query) => $query->where('approval_workflow_actions.user_id', $user->id)->orWhere('approval_workflow_actions.role_id', $user->role_id)->orWhere('approval_workflow_actions.employee_id', $employeeId))
-            ->with('run:id,module,approvable_type,approvable_id')->get()
+            ->with(['approvalMatrix', 'run:id,module,approvable_type,approvable_id', 'run.approvable'])
+            ->get()
+            ->filter(fn ($action) => $approvalService->userCanApproveAction($action, $user, $action->run?->approvable))
             ->mapWithKeys(fn ($action) => ["{$action->run->module}:{$action->run->approvable_type}:{$action->run->approvable_id}" => true]);
 
         $sortedItems = $items->filter(function (array $item) use ($moduleMap, $typeMap, $activeRuns, $allowedRuns) {
