@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
             'permission' => \App\Http\Middleware\EnsurePermission::class,
+            'approval-center' => \App\Http\Middleware\EnsureApprovalCenterPermission::class,
         ]);
         $middleware->append(\Illuminate\Http\Middleware\HandleCors::class);
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);

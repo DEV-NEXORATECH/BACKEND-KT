@@ -16,4 +16,13 @@ class ExampleTest extends TestCase
 
         $response->assertStatus(200);
     }
+
+    public function test_health_response_does_not_expose_environment_or_database_exception_details(): void
+    {
+        $response = $this->getJson('/api/health')->assertOk();
+
+        $response->assertJsonStructure(['status', 'timestamp'])
+            ->assertJsonMissing(['environment' => config('app.env')])
+            ->assertJsonMissingPath('database');
+    }
 }

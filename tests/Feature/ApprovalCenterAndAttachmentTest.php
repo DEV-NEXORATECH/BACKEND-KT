@@ -117,4 +117,13 @@ class ApprovalCenterAndAttachmentTest extends TestCase
 
         $this->assertDatabaseHas('expense_requests', ['id' => $expense->id, 'status' => 'submitted']);
     }
+
+    public function test_approval_center_requires_an_approval_capability_at_route_boundary(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/approval-center/pending')
+            ->assertForbidden();
+    }
 }

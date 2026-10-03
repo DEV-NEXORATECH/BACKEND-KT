@@ -74,24 +74,23 @@ use App\Http\Controllers\Api\Master\ProcurementCategoryController;
 use App\Http\Controllers\Api\Master\ProcurementItemController;
 use App\Http\Controllers\Api\Master\PositionController;
 use App\Http\Controllers\Api\Master\ProjectLogframeController;
+use App\Http\Controllers\Api\Master\ProjectWorkplanController;
 use App\Http\Controllers\Api\Master\GrantReportingDeadlineController;
 use App\Http\Controllers\Api\Master\OrganizationStructureController;
 
 Route::get('/health', function () {
-    $dbStatus = 'ok';
+    $healthy = true;
     try {
         \Illuminate\Support\Facades\DB::connection()->getPdo();
     } catch (\Throwable $e) {
-        $dbStatus = 'unreachable: ' . $e->getMessage();
+        $healthy = false;
+        report($e);
     }
 
     return response()->json([
-        'status' => 'healthy',
-        'app' => config('app.name'),
-        'environment' => config('app.env'),
-        'database' => $dbStatus,
+        'status' => $healthy ? 'healthy' : 'unhealthy',
         'timestamp' => now()->toIso8601String(),
-    ]);
+    ], $healthy ? 200 : 503);
 });
 
 Route::post('/login', [AuthController::class, 'login'])->name('login');
@@ -165,8 +164,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/v1/project-assignments/{projectAssignment}', [ProjectAssignmentController::class, 'destroy'])->middleware('permission:master-data.manage');
 
     Route::prefix('v1/approval-center')->group(function () {
-        Route::get('/pending', [ApprovalCenterController::class, 'pending']);
-        Route::post('/batch-action', [ApprovalCenterController::class, 'batchAction']);
+        Route::get('/pending', [ApprovalCenterController::class, 'pending'])->middleware('approval-center');
+        Route::post('/batch-action', [ApprovalCenterController::class, 'batchAction'])->middleware('approval-center');
     });
 
     Route::prefix('v1/attachments')->group(function () {
@@ -356,6 +355,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1/master')->group(function () {
         Route::get('organization-structure', [OrganizationStructureController::class, 'index'])->middleware('permission:master-data.view');
         Route::apiResource('project-logframes', ProjectLogframeController::class)->middleware('permission:master-data');
+        Route::post('project-logframes/import', [ProjectLogframeController::class, 'import'])->middleware('permission:master-data.manage');
+        Route::post('project-workplans/import', [ProjectWorkplanController::class, 'import'])->middleware('permission:master-data.manage');
+        Route::apiResource('project-workplans', ProjectWorkplanController::class)->middleware('permission:master-data');
         Route::apiResource('grant-reporting-deadlines', GrantReportingDeadlineController::class)->middleware('permission:master-data');
         Route::get('roles', [RoleMenuController::class, 'options'])->middleware('permission:master-data.view');
         $masterResources = [

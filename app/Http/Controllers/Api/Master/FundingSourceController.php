@@ -14,5 +14,5 @@ class FundingSourceController extends BaseMasterController
     protected string $storeRequestClass = StoreFundingSourceRequest::class;
     protected string $updateRequestClass = UpdateFundingSourceRequest::class;
     protected array $searchableColumns = ['code', 'name', 'funding_type'];
-    protected array $defaultWith = ['grantAgreements'];
+    protected array $defaultWith = ['grantAgreements', 'donor', 'currency'];
 }

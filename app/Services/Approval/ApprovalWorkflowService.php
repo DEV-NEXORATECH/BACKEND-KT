@@ -58,12 +58,14 @@ class ApprovalWorkflowService
     /** @return array{managed: bool, completed: bool, next_level: int|null} */
     public function approve(string $module, Model $entity, User $user, ?string $notes = null): array
     {
-        $run = $this->runFor($module, $entity);
-        if (! $run) return ['managed' => false, 'completed' => true, 'next_level' => null];
-        if ($run->status === 'approved') return ['managed' => true, 'completed' => true, 'next_level' => null];
-        if ($run->status !== 'in_progress') throw ValidationException::withMessages(['approval' => 'Workflow approval tidak aktif.']);
-
-        return DB::transaction(function () use ($run, $user, $notes) {
+        return DB::transaction(function () use ($module, $entity, $user, $notes) {
+            $run = ApprovalWorkflowRun::query()
+                ->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])
+                ->lockForUpdate()->first();
+            if (! $run) return ['managed' => false, 'completed' => true, 'next_level' => null];
+            if ($run->status === 'approved') return ['managed' => true, 'completed' => true, 'next_level' => null];
+            if ($run->status !== 'in_progress') throw ValidationException::withMessages(['approval' => 'Workflow approval tidak aktif.']);
+            $run->load('actions.approvalMatrix');
             $actions = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get();
             $action = $actions->first(fn ($item) => $this->matchesApprover($item, $user, $run->approvable));
             if (! $action) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap approval saat ini.']);
@@ -85,11 +87,14 @@ class ApprovalWorkflowService
 
     public function reject(string $module, Model $entity, User $user, string $notes): void
     {
-        $run = $this->runFor($module, $entity);
-        if (! $run) return;
-        $action = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get()->first(fn ($item) => $this->matchesApprover($item, $user, $run->approvable));
-        if (! $action) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap approval saat ini.']);
-        DB::transaction(function () use ($run, $action, $user, $notes) {
+        DB::transaction(function () use ($module, $entity, $user, $notes) {
+            $run = ApprovalWorkflowRun::query()
+                ->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])
+                ->lockForUpdate()->first();
+            if (! $run) return;
+            $run->load('actions.approvalMatrix');
+            $action = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get()->first(fn ($item) => $this->matchesApprover($item, $user, $run->approvable));
+            if (! $action) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap approval saat ini.']);
             $action->update(['status' => 'rejected', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
             $run->update(['status' => 'rejected', 'completed_at' => now()]);
         });
@@ -126,6 +131,7 @@ class ApprovalWorkflowService
                 ->where(fn ($q) => $q->whereNull('project_id')->orWhere('project_id', $entity->getAttribute('project_id')))
                 ->where(fn ($q) => $q->whereNull('donor_id')->orWhere('donor_id', $entity->getAttribute('donor_id')))
                 ->where(fn ($q) => $q->whereNull('department_id')->orWhere('department_id', $entity->getAttribute('department_id')));
+            return $query;
         };
 
         $highestLevel = (clone $scopeMatrix(ApprovalMatrix::query()))

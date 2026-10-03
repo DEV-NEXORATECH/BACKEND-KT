@@ -640,6 +640,26 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
+        // Keep the ultimate funding institution and the implementation
+        // intermediary as separate donor records in the grant chain.
+        Donor::updateOrCreate(['code' => 'DONOR-FCDO'], [
+            'name' => 'Foreign, Commonwealth & Development Office',
+            'type' => 'Government',
+            'country' => 'United Kingdom',
+            'default_currency_id' => $gbp->id,
+            'status' => 'active',
+            'is_active' => true,
+        ]);
+
+        Donor::updateOrCreate(['code' => 'DONOR-EIA'], [
+            'name' => 'Environmental Investigation Agency',
+            'type' => 'NGO',
+            'country' => 'United Kingdom',
+            'default_currency_id' => $gbp->id,
+            'status' => 'active',
+            'is_active' => true,
+        ]);
+
         // 9. Grant Agreements
         $grantBankAccountId = $createdBankAccounts['800193159700']->id ?? (reset($createdBankAccounts)->id ?? null);
 
