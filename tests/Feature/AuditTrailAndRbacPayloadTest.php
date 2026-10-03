@@ -72,4 +72,30 @@ class AuditTrailAndRbacPayloadTest extends TestCase
         $this->assertSame('administration', $response['menus'][0]['slug']);
         $this->assertSame('role-access', $response['menus'][0]['children'][0]['slug']);
     }
+
+    public function test_super_admin_payload_exposes_canonical_project_planning_routes(): void
+    {
+        $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
+        Menu::create([
+            'title' => 'Project Frameworks',
+            'slug' => 'donor-grant-project-frameworks',
+            'path' => '/project-frameworks',
+            'sort_order' => 10,
+            'is_active' => true,
+        ]);
+        Menu::create([
+            'title' => 'Project Timeline / Workplan',
+            'slug' => 'donor-grant-project-workplan',
+            'path' => '/project-timeline-workplan',
+            'sort_order' => 11,
+            'is_active' => true,
+        ]);
+
+        $user = User::factory()->create(['role_id' => $role->id]);
+        $menus = $this->actingAs($user, 'sanctum')->getJson('/api/me')->assertOk()->json('menus');
+        $paths = collect($menus)->flatMap(fn ($menu) => [$menu, ...($menu['children'] ?? [])])->pluck('path')->all();
+
+        $this->assertContains('/project-frameworks', $paths);
+        $this->assertContains('/project-timeline-workplan', $paths);
+    }
 }

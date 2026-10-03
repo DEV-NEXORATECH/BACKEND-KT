@@ -135,8 +135,8 @@ class RoleSeeder extends Seeder
                 ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data', 'sort_order' => 18, 'children' => [
                     ['title' => 'Donors', 'slug' => 'master-donors', 'path' => '/master-data/donors', 'sort_order' => 182],
                     ['title' => 'Grant/Agreements', 'slug' => 'master-grant-agreements', 'path' => '/master-data/grant-agreements', 'sort_order' => 183],
-                    ['title' => 'Project Frameworks', 'slug' => 'donor-grant-project-frameworks', 'path' => '/donor-grant/project-frameworks', 'sort_order' => 184],
-                    ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/donor-grant/project-workplan', 'sort_order' => 185],
+                    ['title' => 'Project Frameworks', 'slug' => 'donor-grant-project-frameworks', 'path' => '/project-frameworks', 'sort_order' => 184],
+                    ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/project-timeline-workplan', 'sort_order' => 185],
                     ['title' => 'Budget Codes', 'slug' => 'master-budget-codes', 'path' => '/master-data/budget-lines', 'sort_order' => 187],
                     ['title' => 'Sources of Fund (SoF)', 'slug' => 'master-sof', 'path' => '/master-data/funding-sources', 'sort_order' => 188],
                 ]],
@@ -162,8 +162,8 @@ class RoleSeeder extends Seeder
             ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/donor-grant', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'donor-grant-dashboard', 'path' => '/donor-grant/dashboard', 'sort_order' => 21],
                 ['title' => 'Donors', 'slug' => 'donor-grant-donors', 'path' => '/donor-grant/donors', 'sort_order' => 22],
-                ['title' => 'Project Frameworks', 'slug' => 'donor-grant-programs-projects', 'path' => '/donor-grant/project-frameworks', 'sort_order' => 23],
-                ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/donor-grant/project-workplan', 'sort_order' => 23.2],
+                ['title' => 'Project Frameworks', 'slug' => 'donor-grant-programs-projects', 'path' => '/project-frameworks', 'sort_order' => 23],
+                ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/project-timeline-workplan', 'sort_order' => 23.2],
                 ['title' => 'Grants', 'slug' => 'donor-grant-grants', 'path' => '/donor-grant/grants', 'sort_order' => 24],
                 ['title' => 'Budget', 'slug' => 'donor-grant-budget', 'path' => '/donor-grant/budget', 'sort_order' => 25],
                 ['title' => 'Budget Monitoring', 'slug' => 'donor-grant-budget-monitoring', 'path' => '/donor-grant/budget-monitoring', 'sort_order' => 26],
@@ -280,7 +280,7 @@ class RoleSeeder extends Seeder
         }
 
         // Clean up legacy menu entries so they cannot reappear under Master Data.
-        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom'])
+        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types', 'master-programs', 'master-projects', 'master-activities', 'donor-grant-programs-projects', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom'])
             ->update(['is_active' => false]);
 
         // 3. Define Menu Groups mapping for ease of assignment
@@ -298,7 +298,7 @@ class RoleSeeder extends Seeder
                 'accounting', 'accounting-dashboard', 'accounting-chart-of-accounts', 'journal', 'general-ledger', 'accounts-payable', 'accounts-receivable', 'banking', 'bank-reconciliation', 'fixed-assets', 'period-closing',
             ],
             'Donor / Grant' => [
-                'donor-grant', 'donor-grant-dashboard', 'donor-grant-donors', 'donor-grant-programs-projects', 'donor-grant-grants', 'donor-grant-budget', 'donor-grant-budget-monitoring', 'donor-grant-reporting',
+                'donor-grant', 'donor-grant-dashboard', 'donor-grant-donors', 'donor-grant-project-frameworks', 'donor-grant-project-workplan', 'donor-grant-grants', 'donor-grant-budget', 'donor-grant-budget-monitoring', 'donor-grant-reporting',
             ],
             'Expenses / Approval' => [
                 'expenses-approvals', 'expenses-dashboard', 'expense-requests', 'reimbursements', 'cash-advances', 'settlement', 'approval-center', 'finance-verification', 'payment-processing', 'expense-monitoring',
