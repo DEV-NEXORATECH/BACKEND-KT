@@ -424,7 +424,7 @@ class TimesheetEntryController extends Controller
         ]);
     }
 
-    public function createExternalInvoice(Request $request): JsonResponse
+    public function createExternalInvoice(Request $request, TimesheetCalculationService $calculationService): JsonResponse
     {
         $data = $request->validate([
             'employee_id' => ['required', 'integer', 'exists:employees,id'],
@@ -432,10 +432,17 @@ class TimesheetEntryController extends Controller
             'period' => ['required', 'date_format:Y-m'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
+            'hourly_rate' => ['nullable', 'numeric', 'gt:0'],
         ]);
 
         $period = \Carbon\Carbon::createFromFormat('Y-m', $data['period']);
-        $result = DB::transaction(function () use ($data, $period, $request) {
+        $result = DB::transaction(function () use ($data, $period, $request, $calculationService) {
+            if (isset($data['hourly_rate'])) {
+                Employee::query()->whereKey($data['employee_id'])->update([
+                    'hourly_cost_rate' => $data['hourly_rate'],
+                    'updated_at' => now(),
+                ]);
+            }
             // Lock candidate rows to keep concurrent invoice requests from billing the same entry twice.
             $entries = TimesheetEntry::query()
                 ->where('employee_id', $data['employee_id'])
@@ -444,7 +451,11 @@ class TimesheetEntryController extends Controller
                 ->where('is_billable', true)
                 ->whereNull('supplier_invoice_id')
                 ->whereBetween('entry_date', [$period->copy()->startOfMonth(), $period->copy()->endOfMonth()])
-                ->with(['project:id,code,name', 'activity:id,code,name'])
+                ->with([
+                    'project:id,code,name',
+                    'activity:id,code,name',
+                    'employee:id,hourly_cost_rate,daily_cost_rate,contract_total_fee,contract_total_days,default_rate_scheme',
+                ])
                 ->orderBy('entry_date')
                 ->lockForUpdate()
                 ->get();
@@ -453,9 +464,33 @@ class TimesheetEntryController extends Controller
                 throw ValidationException::withMessages(['period' => 'Tidak ada timesheet External approved dan belum ditagihkan pada periode ini.']);
             }
 
+            // Recalculate older approved entries that were saved before the
+            // employee's contract rate was available on the timesheet record.
+            foreach ($entries as $entry) {
+                $manualRate = isset($data['hourly_rate']) ? (float) $data['hourly_rate'] : null;
+                if ($manualRate === null && (float) $entry->calculated_amount > 0 && (float) $entry->applied_rate > 0) {
+                    continue;
+                }
+                $calculation = $calculationService->calculate(
+                    $entry->employee,
+                    (float) $entry->hours,
+                    $entry->rate_scheme,
+                    $manualRate
+                );
+                if ($calculation['calculated_amount'] <= 0) {
+                    throw ValidationException::withMessages(['period' => 'Tarif External belum tersedia. Isi hourly cost rate, daily cost rate, atau nilai kontrak dan jumlah hari kontrak pada master employee.']);
+                }
+                $entry->update([
+                    'rate_scheme' => $calculation['rate_scheme'],
+                    'applied_rate' => $calculation['applied_rate'],
+                    'billable_hours' => $calculation['billable_hours'],
+                    'calculated_amount' => $calculation['calculated_amount'],
+                ]);
+            }
+
             $total = round((float) $entries->sum('calculated_amount'), 2);
             if ($total <= 0) {
-                throw ValidationException::withMessages(['period' => 'Tarif External belum tersedia sehingga invoice tidak dapat dibuat.']);
+                throw ValidationException::withMessages(['period' => 'Tarif External belum tersedia. Isi hourly cost rate, daily cost rate, atau nilai kontrak dan jumlah hari kontrak pada master employee.']);
             }
 
             do {

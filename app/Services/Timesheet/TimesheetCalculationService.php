@@ -30,6 +30,12 @@ class TimesheetCalculationService
             if ($hourlyRate <= 0 && (float) ($employee?->daily_cost_rate ?? 0) > 0) {
                 $hourlyRate = round((float) $employee->daily_cost_rate / 8, 2);
             }
+            // External contracts may be maintained as a total fee and number
+            // of contracted days. Use that master data when a separate hourly
+            // rate has not been entered.
+            if ($hourlyRate <= 0 && (float) ($employee?->contract_total_fee ?? 0) > 0 && (float) ($employee?->contract_total_days ?? 0) > 0) {
+                $hourlyRate = round((float) $employee->contract_total_fee / ((float) $employee->contract_total_days * 8), 2);
+            }
         }
 
         $hours = max(0, $hours);
