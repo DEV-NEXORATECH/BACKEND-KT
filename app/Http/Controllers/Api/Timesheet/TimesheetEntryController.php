@@ -129,6 +129,12 @@ class TimesheetEntryController extends Controller
         $isPrivileged = $this->userHasPermission($request->user(), 'timesheet.team.view') || $this->userHasPermission($request->user(), 'timesheet.view_all');
         if (! $isPrivileged) {
             $payload['worker_type'] = $request->user()->worker_type ?: 'internal';
+            $ownEmployeeId = $request->user()->employee?->id;
+            if (! $ownEmployeeId) {
+                throw ValidationException::withMessages(['employee_id' => 'Akun Anda belum terhubung ke data employee. Hubungi administrator.']);
+            }
+            // My Timesheet must always belong to the authenticated employee.
+            $payload['employee_id'] = $ownEmployeeId;
         }
         if (! $this->userHasPermission($request->user(), 'timesheet.approve')) {
             // Rates and the cap scheme are financial controls, never browser input.
@@ -175,7 +181,9 @@ class TimesheetEntryController extends Controller
             'billable_hours' => $calc['billable_hours'],
             'calculated_amount' => $calc['calculated_amount'],
             'prepared_signed_at' => ! empty($payload['prepared_signature']) ? now() : null,
-            'user_id' => $employee?->user?->id ?? $request->user()->id,
+            // Keep the record visible through scope=mine even when an employee
+            // profile was linked by email instead of users.employee_id.
+            'user_id' => $isPrivileged ? ($employee?->user?->id ?? $request->user()->id) : $request->user()->id,
             'department_id' => $payload['department_id'] ?? $employee?->department_id,
             'program_id' => $payload['program_id'] ?? $project?->program_id,
             'donor_id' => $payload['donor_id'] ?? $project?->grantAgreement?->donor_id,
