@@ -39,7 +39,6 @@ class TimesheetEntryController extends Controller
         $canViewAll = $this->userHasPermission($user, 'timesheet.view_all');
         $canViewTeam = $this->userHasPermission($user, 'timesheet.team.view');
         $workerType = $request->string('worker_type', 'internal')->toString();
-        $scopeMine = $request->string('scope')->toString() === 'mine';
         if (! in_array($workerType, ['internal', 'external', 'consultant'], true)) {
             $workerType = 'internal';
         }
@@ -47,11 +46,15 @@ class TimesheetEntryController extends Controller
         if ($workerType !== 'internal' && ! $canViewAll && ! $canViewTeam && $workerType !== $accountWorkerType) {
             abort(Response::HTTP_FORBIDDEN, 'Akses external/consultant timesheet hanya tersedia untuk manager atau administrator.');
         }
+        // The My Timesheet route uses scope=mine for normal employees. A user
+        // with team/all access must still see records for the employee selected
+        // in the UI, including entries they created on someone else's behalf.
+        $restrictToOwnEntries = ! $canViewAll && ! $canViewTeam;
 
         $entries = TimesheetEntry::query()
             ->with($this->with)
             ->where('worker_type', $workerType)
-            ->when($scopeMine || (! $canViewAll && ! $canViewTeam), fn (Builder $query) => $query->where('user_id', $user->id))
+            ->when($restrictToOwnEntries, fn (Builder $query) => $query->where('user_id', $user->id))
             ->when(! $canViewAll && $canViewTeam, function (Builder $query) use ($user) {
                 $projectIds = ProjectAssignment::query()
                     ->where('user_id', $user->id)
@@ -573,6 +576,7 @@ class TimesheetEntryController extends Controller
         return [
             'id' => $entry->id,
             'fiscal_year_id' => $entry->fiscal_year_id,
+            'employee_id' => $entry->employee_id,
             'worker_type' => $entry->worker_type ?: 'internal',
             'vendor_name' => $entry->vendor_name,
             'contract_reference' => $entry->contract_reference,
@@ -615,7 +619,9 @@ class TimesheetEntryController extends Controller
             'donor' => $entry->donor ? ['id' => $entry->donor->id, 'code' => $entry->donor->code, 'name' => $entry->donor->name] : null,
             'program' => $entry->program ? ['id' => $entry->program->id, 'code' => $entry->program->code, 'name' => $entry->program->name] : null,
             'project' => $entry->project ? ['id' => $entry->project->id, 'code' => $entry->project->code, 'name' => $entry->project->name] : null,
+            'project_id' => $entry->project_id,
             'activity' => $entry->activity ? ['id' => $entry->activity->id, 'code' => $entry->activity->code, 'name' => $entry->activity->name] : null,
+            'activity_id' => $entry->activity_id,
             'department' => $entry->department ? ['id' => $entry->department->id, 'code' => $entry->department->code, 'name' => $entry->department->name] : null,
             'is_billable' => $entry->is_billable,
             'supervisor' => $entry->supervisor ? ['id' => $entry->supervisor->id, 'name' => $entry->supervisor->name] : null,
