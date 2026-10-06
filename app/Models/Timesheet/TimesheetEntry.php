@@ -22,9 +22,9 @@ class TimesheetEntry extends Model
     protected $fillable = [
         'fiscal_year_id', 'employee_id', 'user_id', 'worker_type', 'vendor_name', 'contract_reference', 'invoice_reference',
         'billing_mode', 'fee_total', 'work_days', 'rate_per_day', 'rate_per_hour', 'break_hours', 'normal_hours',
-        'payable_amount', 'entry_date', 'hours', 'description', 'work_area', 'workstream',
+        'payable_amount', 'entry_date', 'hours', 'description', 'work_area', 'workstream', 'time_category',
         'donor_id', 'program_id', 'project_id', 'activity_id', 'task_type',
-        'department_id', 'is_billable', 'rate_scheme', 'applied_rate', 'billable_hours', 'calculated_amount',
+        'department_id', 'supplier_invoice_id', 'is_billable', 'rate_scheme', 'applied_rate', 'billable_hours', 'calculated_amount',
         'supervisor_id', 'status', 'journal_id', 'posted_by', 'posted_at',
         'submitted_by', 'submitted_at', 'approved_by', 'approved_at',
         'rejected_by', 'rejected_at', 'decision_notes',

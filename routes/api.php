@@ -303,6 +303,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1/timesheets')->group(function () {
         Route::get('entries', [TimesheetEntryController::class, 'index'])->middleware('permission:timesheet.view');
         Route::post('entries', [TimesheetEntryController::class, 'store'])->middleware('permission:timesheet.create');
+        Route::post('external-invoices', [TimesheetEntryController::class, 'createExternalInvoice'])->middleware('permission:timesheet.approve');
         Route::post('entries/post-labor-cost', [TimesheetEntryController::class, 'postLaborCost'])->middleware('permission:timesheet.approve');
         Route::put('entries/{timesheetEntry}', [TimesheetEntryController::class, 'update'])->middleware('permission:timesheet.update');
         Route::post('entries/{timesheetEntry}/submit', [TimesheetEntryController::class, 'submit'])->middleware('permission:timesheet.submit');

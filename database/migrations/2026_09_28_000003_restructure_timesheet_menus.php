@@ -42,20 +42,15 @@ return new class extends Migration {
                 ['slug' => 'timesheet-external-verification', 'title' => 'Verification', 'path' => '/timesheet/external/verification', 'sort_order' => 5232],
                 ['slug' => 'timesheet-external-reports', 'title' => 'Reports', 'path' => '/timesheet/external/reports', 'sort_order' => 5233],
             ]],
-            ['slug' => 'timesheet-consultant', 'title' => 'Consultant Timesheet', 'path' => '/timesheet/consultant', 'sort_order' => 524, 'children' => [
-                ['slug' => 'timesheet-consultant-register', 'title' => 'Consultant Timesheet', 'path' => '/timesheet/consultant/register', 'sort_order' => 5241],
-                ['slug' => 'timesheet-consultant-verification', 'title' => 'Verification', 'path' => '/timesheet/consultant/verification', 'sort_order' => 5242],
-                ['slug' => 'timesheet-consultant-reports', 'title' => 'Reports', 'path' => '/timesheet/consultant/reports', 'sort_order' => 5243],
-            ]],
         ] as $group) {
             $parent = $findOrCreate($group, $timesheet->id);
             foreach ($group['children'] as $child) $findOrCreate($child, $parent);
         }
 
         $newMenuIds = DB::table('menus')->whereIn('slug', [
-            'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external', 'timesheet-consultant',
+            'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external',
             'timesheet-my', 'timesheet-team', 'timesheet-approval', 'timesheet-external-register', 'timesheet-external-verification',
-            'timesheet-external-reports', 'timesheet-consultant-register', 'timesheet-consultant-verification', 'timesheet-consultant-reports',
+            'timesheet-external-reports',
             'timesheet-project', 'timesheet-reports',
         ])->pluck('id');
         $roleIds = DB::table('roles')->pluck('id');

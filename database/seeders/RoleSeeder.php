@@ -228,11 +228,6 @@ class RoleSeeder extends Seeder
                     ['title' => 'Verification', 'slug' => 'timesheet-external-verification', 'path' => '/timesheet/external/verification', 'sort_order' => 5232],
                     ['title' => 'Reports', 'slug' => 'timesheet-external-reports', 'path' => '/timesheet/external/reports', 'sort_order' => 5233],
                 ]],
-                ['title' => 'Consultant Timesheet', 'slug' => 'timesheet-consultant', 'path' => '/timesheet/consultant', 'sort_order' => 524, 'children' => [
-                    ['title' => 'Consultant Timesheet', 'slug' => 'timesheet-consultant-register', 'path' => '/timesheet/consultant/register', 'sort_order' => 5241],
-                    ['title' => 'Verification', 'slug' => 'timesheet-consultant-verification', 'path' => '/timesheet/consultant/verification', 'sort_order' => 5242],
-                    ['title' => 'Reports', 'slug' => 'timesheet-consultant-reports', 'path' => '/timesheet/consultant/reports', 'sort_order' => 5243],
-                ]],
                 ['title' => 'Project Timesheet', 'slug' => 'timesheet-project', 'path' => '/timesheet/project-timesheet', 'sort_order' => 525],
                 ['title' => 'Reports', 'slug' => 'timesheet-reports', 'path' => '/timesheet/reports', 'sort_order' => 526],
             ]],
@@ -304,7 +299,7 @@ class RoleSeeder extends Seeder
                 'expenses-approvals', 'expenses-dashboard', 'expense-requests', 'reimbursements', 'cash-advances', 'settlement', 'approval-center', 'finance-verification', 'payment-processing', 'expense-monitoring',
             ],
             'Timesheet' => [
-                'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external', 'timesheet-consultant', 'timesheet-my', 'timesheet-team', 'timesheet-approval', 'timesheet-external-register', 'timesheet-external-verification', 'timesheet-external-reports', 'timesheet-consultant-register', 'timesheet-consultant-verification', 'timesheet-consultant-reports', 'timesheet-project', 'timesheet-reports',
+                'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external', 'timesheet-my', 'timesheet-team', 'timesheet-approval', 'timesheet-external-register', 'timesheet-external-verification', 'timesheet-external-reports', 'timesheet-project', 'timesheet-reports',
             ],
             'Procurement' => [
                 'procurement', 'procurement-dashboard', 'procurement-purchase-request', 'procurement-rfq-cba', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-contracts', 'procurement-scn', 'procurement-goods-receipts', 'procurement-supplier-invoices', 'procurement-waivers',

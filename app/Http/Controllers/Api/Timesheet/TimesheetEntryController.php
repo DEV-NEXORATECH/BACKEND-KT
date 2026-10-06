@@ -7,6 +7,7 @@ use App\Models\Master\Activity;
 use App\Models\Master\Employee;
 use App\Models\Master\Project;
 use App\Models\ProjectAssignment;
+use App\Models\Procurement\SupplierInvoice;
 use App\Models\Timesheet\TimesheetEntry;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Approval\ApprovalWorkflowService;
@@ -129,6 +130,9 @@ class TimesheetEntryController extends Controller
         if (! $isPrivileged) {
             $payload['worker_type'] = $request->user()->worker_type ?: 'internal';
         }
+        if (($payload['worker_type'] ?? 'internal') === 'external') {
+            $payload['is_billable'] = ($payload['time_category'] ?? 'working_time') === 'working_time';
+        }
         $payload = $this->applyBillingCalculation($payload);
         $employee = Employee::query()->find($payload['employee_id']);
         $project = isset($payload['project_id']) ? Project::query()->with('program.grantAgreement.donor')->find($payload['project_id']) : null;
@@ -154,6 +158,10 @@ class TimesheetEntryController extends Controller
             $payload['rate_scheme'] ?? null,
             isset($payload['applied_rate']) ? (float) $payload['applied_rate'] : null
         );
+        if (empty($payload['is_billable'])) {
+            $calc['billable_hours'] = 0;
+            $calc['calculated_amount'] = 0;
+        }
 
         $entry = TimesheetEntry::create([
             ...$payload,
@@ -186,6 +194,9 @@ class TimesheetEntryController extends Controller
             $request->merge(['worker_type' => $timesheetEntry->worker_type ?: 'internal']);
         }
         $payload = $this->validatePayload($request);
+        if (($payload['worker_type'] ?? 'internal') === 'external') {
+            $payload['is_billable'] = ($payload['time_category'] ?? 'working_time') === 'working_time';
+        }
         $payload = $this->applyBillingCalculation($payload);
         $employee = Employee::query()->find($payload['employee_id']);
         $project = isset($payload['project_id']) ? Project::query()->with('grantAgreement')->find($payload['project_id']) : null;
@@ -207,6 +218,10 @@ class TimesheetEntryController extends Controller
             $payload['rate_scheme'] ?? $timesheetEntry->rate_scheme,
             isset($payload['applied_rate']) ? (float) $payload['applied_rate'] : (float) $timesheetEntry->applied_rate
         );
+        if (empty($payload['is_billable'])) {
+            $calc['billable_hours'] = 0;
+            $calc['calculated_amount'] = 0;
+        }
 
         $timesheetEntry->update([
             ...$payload,
@@ -391,6 +406,91 @@ class TimesheetEntryController extends Controller
         ]);
     }
 
+    public function createExternalInvoice(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'vendor_id' => ['required', 'integer', 'exists:vendors,id'],
+            'period' => ['required', 'date_format:Y-m'],
+            'invoice_date' => ['required', 'date'],
+            'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
+        ]);
+
+        $period = \Carbon\Carbon::createFromFormat('Y-m', $data['period']);
+        $entries = TimesheetEntry::query()
+            ->where('employee_id', $data['employee_id'])
+            ->where('worker_type', 'external')
+            ->where('status', 'approved')
+            ->where('is_billable', true)
+            ->whereNull('supplier_invoice_id')
+            ->whereBetween('entry_date', [$period->copy()->startOfMonth(), $period->copy()->endOfMonth()])
+            ->with(['project:id,code,name', 'activity:id,code,name'])
+            ->orderBy('entry_date')
+            ->get();
+
+        if ($entries->isEmpty()) {
+            throw ValidationException::withMessages(['period' => 'Tidak ada timesheet External approved dan belum ditagihkan pada periode ini.']);
+        }
+
+        $total = round((float) $entries->sum('calculated_amount'), 2);
+        if ($total <= 0) {
+            throw ValidationException::withMessages(['period' => 'Tarif External belum tersedia sehingga invoice tidak dapat dibuat.']);
+        }
+
+        $invoice = DB::transaction(function () use ($data, $entries, $total, $period, $request) {
+            do {
+                $number = 'TS-EXT-'.$period->format('Ym').'-'.random_int(10000, 99999);
+            } while (SupplierInvoice::withTrashed()->where('invoice_number', $number)->exists());
+
+            $invoice = SupplierInvoice::create([
+                'vendor_id' => $data['vendor_id'],
+                'invoice_number' => $number,
+                'invoice_date' => $data['invoice_date'],
+                'due_date' => $data['due_date'] ?? null,
+                'currency_code' => 'IDR',
+                'exchange_rate' => 1,
+                'status' => 'matched',
+                'match_status' => 'matched',
+                'total_amount' => $total,
+                'notes' => 'Generated from approved External Timesheet for '.$period->translatedFormat('F Y').'.',
+                'created_by' => $request->user()->id,
+            ]);
+
+            foreach ($entries as $entry) {
+                $invoice->lines()->create([
+                    'item_description' => trim(implode(' — ', array_filter([
+                        $entry->entry_date->format('d M Y'),
+                        $entry->project?->name,
+                        $entry->activity?->name ?: $entry->description,
+                    ]))),
+                    'quantity' => $entry->billable_hours ?? $entry->hours,
+                    'unit_price' => $entry->applied_rate,
+                    'total_amount' => $entry->calculated_amount,
+                ]);
+            }
+
+            TimesheetEntry::whereIn('id', $entries->pluck('id'))->update([
+                'supplier_invoice_id' => $invoice->id,
+                'invoice_reference' => $number,
+                'updated_at' => now(),
+            ]);
+
+            return $invoice;
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Draft AP invoice External Timesheet berhasil dibuat.',
+            'data' => [
+                'id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'total_amount' => (float) $invoice->total_amount,
+                'status' => $invoice->status,
+                'entry_count' => $entries->count(),
+            ],
+        ], Response::HTTP_CREATED);
+    }
+
     private function validatePayload(Request $request): array
     {
         return $request->validate([
@@ -410,6 +510,7 @@ class TimesheetEntryController extends Controller
             'description' => ['required', 'string'],
             'work_area' => ['nullable', 'string', 'max:120'],
             'workstream' => ['nullable', 'string', 'max:120'],
+            'time_category' => ['nullable', 'string', 'in:working_time,sick_leave,annual_leave,absence,public_holiday'],
             'donor_id' => ['nullable', 'integer', 'exists:donors,id'],
             'program_id' => ['nullable', 'integer', 'exists:programs,id'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
@@ -493,6 +594,7 @@ class TimesheetEntryController extends Controller
             'description' => $entry->description,
             'work_area' => $entry->work_area,
             'workstream' => $entry->workstream,
+            'time_category' => $entry->time_category ?: 'working_time',
             'donor' => $entry->donor ? ['id' => $entry->donor->id, 'code' => $entry->donor->code, 'name' => $entry->donor->name] : null,
             'program' => $entry->program ? ['id' => $entry->program->id, 'code' => $entry->program->code, 'name' => $entry->program->name] : null,
             'project' => $entry->project ? ['id' => $entry->project->id, 'code' => $entry->project->code, 'name' => $entry->project->name] : null,
@@ -502,6 +604,7 @@ class TimesheetEntryController extends Controller
             'supervisor' => $entry->supervisor ? ['id' => $entry->supervisor->id, 'name' => $entry->supervisor->name] : null,
             'status' => $entry->status,
             'journal_id' => $entry->journal_id,
+            'supplier_invoice_id' => $entry->supplier_invoice_id,
             'submitted_at' => $entry->submitted_at?->toIso8601String(),
             'approved_at' => $entry->approved_at?->toIso8601String(),
             'rejected_at' => $entry->rejected_at?->toIso8601String(),
