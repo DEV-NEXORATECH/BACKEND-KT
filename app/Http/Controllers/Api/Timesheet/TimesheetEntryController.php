@@ -130,9 +130,13 @@ class TimesheetEntryController extends Controller
         if (! $isPrivileged) {
             $payload['worker_type'] = $request->user()->worker_type ?: 'internal';
         }
-        if (($payload['worker_type'] ?? 'internal') === 'external') {
-            $payload['is_billable'] = ($payload['time_category'] ?? 'working_time') === 'working_time';
+        if (! $this->userHasPermission($request->user(), 'timesheet.approve')) {
+            // Rates and the cap scheme are financial controls, never browser input.
+            unset($payload['applied_rate'], $payload['rate_scheme']);
         }
+        $payload['time_category'] = $payload['time_category'] ?? 'working_time';
+        // Billability is derived on the server so a browser request cannot turn leave into chargeable time.
+        $payload['is_billable'] = $payload['time_category'] === 'working_time';
         $payload = $this->applyBillingCalculation($payload);
         $employee = Employee::query()->find($payload['employee_id']);
         $project = isset($payload['project_id']) ? Project::query()->with('program.grantAgreement.donor')->find($payload['project_id']) : null;
@@ -194,9 +198,12 @@ class TimesheetEntryController extends Controller
             $request->merge(['worker_type' => $timesheetEntry->worker_type ?: 'internal']);
         }
         $payload = $this->validatePayload($request);
-        if (($payload['worker_type'] ?? 'internal') === 'external') {
-            $payload['is_billable'] = ($payload['time_category'] ?? 'working_time') === 'working_time';
+        if (! $this->userHasPermission($request->user(), 'timesheet.approve')) {
+            // A draft owner may change their work record, not its approved financial rate.
+            unset($payload['applied_rate'], $payload['rate_scheme']);
         }
+        $payload['time_category'] = $payload['time_category'] ?? 'working_time';
+        $payload['is_billable'] = $payload['time_category'] === 'working_time';
         $payload = $this->applyBillingCalculation($payload);
         $employee = Employee::query()->find($payload['employee_id']);
         $project = isset($payload['project_id']) ? Project::query()->with('grantAgreement')->find($payload['project_id']) : null;
@@ -417,27 +424,29 @@ class TimesheetEntryController extends Controller
         ]);
 
         $period = \Carbon\Carbon::createFromFormat('Y-m', $data['period']);
-        $entries = TimesheetEntry::query()
-            ->where('employee_id', $data['employee_id'])
-            ->where('worker_type', 'external')
-            ->where('status', 'approved')
-            ->where('is_billable', true)
-            ->whereNull('supplier_invoice_id')
-            ->whereBetween('entry_date', [$period->copy()->startOfMonth(), $period->copy()->endOfMonth()])
-            ->with(['project:id,code,name', 'activity:id,code,name'])
-            ->orderBy('entry_date')
-            ->get();
+        $result = DB::transaction(function () use ($data, $period, $request) {
+            // Lock candidate rows to keep concurrent invoice requests from billing the same entry twice.
+            $entries = TimesheetEntry::query()
+                ->where('employee_id', $data['employee_id'])
+                ->where('worker_type', 'external')
+                ->where('status', 'approved')
+                ->where('is_billable', true)
+                ->whereNull('supplier_invoice_id')
+                ->whereBetween('entry_date', [$period->copy()->startOfMonth(), $period->copy()->endOfMonth()])
+                ->with(['project:id,code,name', 'activity:id,code,name'])
+                ->orderBy('entry_date')
+                ->lockForUpdate()
+                ->get();
 
-        if ($entries->isEmpty()) {
-            throw ValidationException::withMessages(['period' => 'Tidak ada timesheet External approved dan belum ditagihkan pada periode ini.']);
-        }
+            if ($entries->isEmpty()) {
+                throw ValidationException::withMessages(['period' => 'Tidak ada timesheet External approved dan belum ditagihkan pada periode ini.']);
+            }
 
-        $total = round((float) $entries->sum('calculated_amount'), 2);
-        if ($total <= 0) {
-            throw ValidationException::withMessages(['period' => 'Tarif External belum tersedia sehingga invoice tidak dapat dibuat.']);
-        }
+            $total = round((float) $entries->sum('calculated_amount'), 2);
+            if ($total <= 0) {
+                throw ValidationException::withMessages(['period' => 'Tarif External belum tersedia sehingga invoice tidak dapat dibuat.']);
+            }
 
-        $invoice = DB::transaction(function () use ($data, $entries, $total, $period, $request) {
             do {
                 $number = 'TS-EXT-'.$period->format('Ym').'-'.random_int(10000, 99999);
             } while (SupplierInvoice::withTrashed()->where('invoice_number', $number)->exists());
@@ -475,18 +484,18 @@ class TimesheetEntryController extends Controller
                 'updated_at' => now(),
             ]);
 
-            return $invoice;
+            return ['invoice' => $invoice, 'entry_count' => $entries->count()];
         });
 
         return response()->json([
             'success' => true,
             'message' => 'Draft AP invoice External Timesheet berhasil dibuat.',
             'data' => [
-                'id' => $invoice->id,
-                'invoice_number' => $invoice->invoice_number,
-                'total_amount' => (float) $invoice->total_amount,
-                'status' => $invoice->status,
-                'entry_count' => $entries->count(),
+                'id' => $result['invoice']->id,
+                'invoice_number' => $result['invoice']->invoice_number,
+                'total_amount' => (float) $result['invoice']->total_amount,
+                'status' => $result['invoice']->status,
+                'entry_count' => $result['entry_count'],
             ],
         ], Response::HTTP_CREATED);
     }
