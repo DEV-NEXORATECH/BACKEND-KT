@@ -138,5 +138,81 @@ class UiDemoDataSeeder extends Seeder
             $quotation = $put('vendor_quotations', ['rfq_id' => $rfq, 'vendor_id' => $vendor->id], ['quotation_number' => 'QTN-2026-001', 'quotation_date' => '2026-02-10', 'total_amount' => 8200000, 'currency_code' => 'IDR', 'terms' => '30 days payment term', 'delivery_terms' => 'Delivery within 14 days', 'technical_score' => 88, 'financial_score' => 92, 'total_score' => 90, 'status' => 'selected', 'notes' => 'Selected demo quotation.', 'created_by' => $user->id]);
             $put('comparative_bid_analyses', ['cba_number' => 'CBA-2026-001'], ['rfq_id' => $rfq, 'analysis_date' => '2026-02-12', 'selected_vendor_id' => $vendor->id, 'selected_quotation_id' => $quotation, 'selection_reason' => 'Best combined technical and financial score.', 'status' => 'approved', 'approved_by' => $user->id, 'approved_at' => $now, 'created_by' => $user->id]);
         }
+
+        // Tax screens: provide multiple tax types and realistic transaction states.
+        if (Schema::hasTable('tax_transactions')) {
+            $taxRows = [
+                ['code' => 'PPh 23', 'reference' => 'TAX-2026-001', 'direction' => 'withholding_out', 'taxable_amount' => 4200000, 'status' => 'reported', 'e_bupot_reference' => 'BUPOT-2026-001', 'e_bupot_number' => 'BPU-2603-0001'],
+                ['code' => 'PPh 4(2)', 'reference' => 'TAX-2026-002', 'direction' => 'withholding_out', 'taxable_amount' => 7500000, 'status' => 'draft', 'e_bupot_reference' => 'BUPOT-2026-002', 'e_bupot_number' => 'BPU-2603-0002'],
+                ['code' => 'PPH21-TER-STAFF', 'reference' => 'TAX-2026-003', 'direction' => 'withholding_out', 'taxable_amount' => 9800000, 'status' => 'reported', 'e_bupot_reference' => null, 'e_bupot_number' => null],
+                ['code' => 'PPh 23', 'reference' => 'TAX-2026-004', 'direction' => 'purchase', 'taxable_amount' => 2150000, 'status' => 'draft', 'e_bupot_reference' => null, 'e_bupot_number' => null],
+            ];
+            foreach ($taxRows as $row) {
+                $taxRecord = DB::table('taxes')->where('code', $row['code'])->first();
+                if (! $taxRecord) continue;
+                $taxAmount = round((float) $row['taxable_amount'] * ((float) $taxRecord->rate_percent / 100), 2);
+                $put('tax_transactions', ['reference' => $row['reference']], [
+                    'tax_id' => $taxRecord->id,
+                    'transaction_type' => 'manual',
+                    'source_type' => 'expense_request',
+                    'source_id' => null,
+                    'transaction_date' => '2026-03-'.str_pad((string) (15 + (int) substr($row['reference'], -3) - 1), 2, '0', STR_PAD_LEFT),
+                    'direction' => $row['direction'],
+                    'taxable_amount' => $row['taxable_amount'],
+                    'tax_rate' => $taxRecord->rate_percent,
+                    'tax_amount' => $taxAmount,
+                    'net_amount' => $row['taxable_amount'],
+                    'gross_amount' => $row['taxable_amount'] + $taxAmount,
+                    'e_bupot_reference' => $row['e_bupot_reference'],
+                    'e_bupot_number' => $row['e_bupot_number'],
+                    'npwp' => '01.234.567.8-403.000',
+                    'status' => $row['status'],
+                    'notes' => 'Seeded tax transaction for UI demonstration.',
+                    'created_by' => $user->id,
+                    'reported_by' => $row['status'] === 'reported' ? ($finance?->id ?? $user->id) : null,
+                    'reported_at' => $row['status'] === 'reported' ? $now : null,
+                ]);
+            }
+        }
+
+        // Procurement screens: add several records so list, dashboard and
+        // status filters show a real multi-stage purchasing pipeline.
+        if ($budgetLine && $vendor && Schema::hasTable('purchase_requests')) {
+            $department = DB::table('departments')->where('code', 'PRC')->first();
+            $paymentMethod = DB::table('payment_methods')->orderBy('id')->first();
+            $procurementRows = [
+                ['suffix' => '002', 'item' => 'Portable GPS and mapping accessories', 'amount' => 6800000, 'pr_status' => 'submitted', 'po_status' => 'draft', 'invoice_status' => 'draft'],
+                ['suffix' => '003', 'item' => 'Workshop venue and participant materials', 'amount' => 12500000, 'pr_status' => 'approved', 'po_status' => 'approved', 'invoice_status' => 'matched'],
+                ['suffix' => '004', 'item' => 'Communication and campaign production', 'amount' => 5400000, 'pr_status' => 'approved', 'po_status' => 'closed', 'invoice_status' => 'paid'],
+            ];
+            foreach ($procurementRows as $row) {
+                $pr = $put('purchase_requests', ['pr_number' => 'PR-2026-'.$row['suffix']], [
+                    'request_date' => '2026-03-'.(10 + (int) $row['suffix']),
+                    'requester_id' => $finance?->id ?? $user->id,
+                    'department_id' => $department?->id,
+                    'project_id' => $project->id,
+                    'vendor_id' => $vendor->id,
+                    'justification' => $row['item'].' for the 2026 programme.',
+                    'status' => $row['pr_status'],
+                    'submitted_by' => $finance?->id ?? $user->id,
+                    'submitted_at' => $now,
+                    'approved_by' => in_array($row['pr_status'], ['approved'], true) ? $user->id : null,
+                    'approved_at' => in_array($row['pr_status'], ['approved'], true) ? $now : null,
+                    'created_by' => $user->id,
+                ]);
+                $prLine = $put('purchase_request_lines', ['purchase_request_id' => $pr, 'item_description' => $row['item']], ['budget_line_id' => $budgetLine->id, 'quantity' => 1, 'unit_price' => $row['amount'], 'total_amount' => $row['amount'], 'line_order' => 1]);
+                $po = $put('purchase_orders', ['po_number' => 'PO-2026-'.$row['suffix']], ['purchase_request_id' => $pr, 'vendor_id' => $vendor->id, 'po_date' => '2026-03-'.(12 + (int) $row['suffix']), 'contract_number' => 'CTR-2026-'.$row['suffix'], 'contract_date' => '2026-03-'.(12 + (int) $row['suffix']), 'terms' => 'Payment within 30 days after receipt.', 'status' => $row['po_status'], 'approved_by' => $row['po_status'] !== 'draft' ? $user->id : null, 'approved_at' => $row['po_status'] !== 'draft' ? $now : null, 'created_by' => $user->id]);
+                $poLine = $put('purchase_order_lines', ['purchase_order_id' => $po, 'item_description' => $row['item']], ['purchase_request_line_id' => $prLine, 'budget_line_id' => $budgetLine->id, 'quantity' => 1, 'unit_price' => $row['amount'], 'total_amount' => $row['amount'], 'line_order' => 1]);
+                $grnStatus = $row['po_status'] === 'closed' ? 'received' : ($row['po_status'] === 'approved' ? 'received' : 'draft');
+                $grn = $put('goods_receipts', ['grn_number' => 'GRN-2026-'.$row['suffix']], ['purchase_order_id' => $po, 'receipt_date' => '2026-03-'.(18 + (int) $row['suffix']), 'notes' => 'Seeded goods receipt for procurement demo.', 'status' => $grnStatus, 'received_by' => $grnStatus === 'received' ? ($finance?->id ?? $user->id) : null, 'received_at' => $grnStatus === 'received' ? $now : null, 'created_by' => $user->id]);
+                $put('goods_receipt_lines', ['goods_receipt_id' => $grn, 'purchase_order_line_id' => $poLine], ['received_quantity' => $grnStatus === 'received' ? 1 : 0]);
+                $invoice = $put('supplier_invoices', ['invoice_number' => 'INV-VND-2026-'.$row['suffix']], ['purchase_order_id' => $po, 'goods_receipt_id' => $grn, 'vendor_id' => $vendor->id, 'invoice_date' => '2026-03-'.(20 + (int) $row['suffix']), 'due_date' => '2026-04-'.(20 + (int) $row['suffix']), 'status' => $row['invoice_status'], 'match_status' => $row['invoice_status'] === 'draft' ? 'unchecked' : 'matched', 'total_amount' => $row['amount'], 'paid_amount' => $row['invoice_status'] === 'paid' ? $row['amount'] : 0, 'notes' => 'Seeded supplier invoice for procurement demo.', 'created_by' => $user->id]);
+                $put('supplier_invoice_lines', ['supplier_invoice_id' => $invoice, 'item_description' => $row['item']], ['purchase_order_line_id' => $poLine, 'quantity' => 1, 'unit_price' => $row['amount'], 'total_amount' => $row['amount']]);
+                if ($row['invoice_status'] === 'paid' && $bank) {
+                    $payment = $put('payments', ['payment_number' => 'PAY-2026-'.$row['suffix']], ['supplier_invoice_id' => $invoice, 'vendor_id' => $vendor->id, 'bank_account_id' => $bank->id, 'payment_method_id' => $paymentMethod?->id, 'payment_date' => '2026-04-'.(1 + (int) $row['suffix']), 'amount' => $row['amount'], 'reference' => 'TRF-202604-'.$row['suffix'], 'status' => 'paid', 'created_by' => $user->id]);
+                    $put('bank_transactions', ['reference' => 'TRF-202604-'.$row['suffix']], ['bank_account_id' => $bank->id, 'payment_id' => $payment, 'transaction_date' => '2026-04-'.(1 + (int) $row['suffix']), 'description' => 'Payment supplier invoice INV-VND-2026-'.$row['suffix'], 'debit' => $row['amount'], 'credit' => 0, 'status' => 'reconciled', 'created_by' => $user->id]);
+                }
+            }
+        }
     }
 }
