@@ -18,7 +18,7 @@ class ProjectWorkplanController extends Controller
         $rows = ProjectWorkplan::with(['project:id,code,name', 'activity:id,code,name'])
             ->when($request->filled('project_id'), fn ($q) => $q->where('project_id', $request->integer('project_id')))
             ->when($request->filled('fiscal_year_id'), fn ($q) => $q->whereHas('project.fiscalYears', fn ($project) => $project->whereKey($request->integer('fiscal_year_id'))))
-            ->latest()->get();
+            ->orderByRaw('COALESCE(start_date, "9999-12-31") ASC')->orderBy('id', 'asc')->get();
         return response()->json(['success' => true, 'data' => $rows]);
     }
 
@@ -29,11 +29,18 @@ class ProjectWorkplanController extends Controller
             'output_code' => 'nullable|string|max:50', 'activity_code' => 'nullable|string|max:50',
             'activity' => 'required|string|max:500', 'responsible' => 'nullable|string|max:255',
             'start_date' => 'nullable|date', 'end_date' => 'nullable|date|after_or_equal:start_date',
+            'baseline_start_date' => 'nullable|date', 'baseline_end_date' => 'nullable|date|after_or_equal:baseline_start_date',
             'status' => 'nullable|in:planned,in_progress,completed,delayed,cancelled', 'progress' => 'nullable|numeric|min:0|max:100',
             'notes' => 'nullable|string', 'periods' => 'nullable|array',
         ]);
         $this->validateProjectFiscalYear($data['project_id'], $data['fiscal_year_id'] ?? null);
         $this->validateActivityProject($data['project_id'], $data['activity_id'] ?? null);
+        if (empty($data['baseline_start_date']) && !empty($data['start_date'])) {
+            $data['baseline_start_date'] = $data['start_date'];
+        }
+        if (empty($data['baseline_end_date']) && !empty($data['end_date'])) {
+            $data['baseline_end_date'] = $data['end_date'];
+        }
         return response()->json(['success' => true, 'data' => ProjectWorkplan::create($data)], 201);
     }
 
@@ -42,7 +49,8 @@ class ProjectWorkplanController extends Controller
         $data = $request->validate([
             'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'activity_id' => 'nullable|exists:activities,id', 'output_code' => 'nullable|string|max:50', 'activity_code' => 'nullable|string|max:50',
             'activity' => 'sometimes|string|max:500', 'responsible' => 'nullable|string|max:255', 'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date|after_or_equal:start_date', 'status' => 'nullable|in:planned,in_progress,completed,delayed,cancelled',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'baseline_start_date' => 'nullable|date', 'baseline_end_date' => 'nullable|date|after_or_equal:baseline_start_date', 'status' => 'nullable|in:planned,in_progress,completed,delayed,cancelled',
             'progress' => 'nullable|numeric|min:0|max:100', 'notes' => 'nullable|string', 'periods' => 'nullable|array',
         ]);
         $this->validateProjectFiscalYear($projectWorkplan->project_id, $data['fiscal_year_id'] ?? $request->query('fiscal_year_id'));

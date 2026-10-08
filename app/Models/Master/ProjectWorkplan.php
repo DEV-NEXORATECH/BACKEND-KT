@@ -8,10 +8,19 @@ class ProjectWorkplan extends Model
 {
     protected $fillable = [
         'project_id', 'activity_id', 'output_code', 'activity_code', 'activity',
-        'responsible', 'start_date', 'end_date', 'status', 'progress', 'notes', 'periods', 'is_active',
+        'responsible', 'start_date', 'end_date', 'baseline_start_date', 'baseline_end_date',
+        'status', 'progress', 'notes', 'periods', 'is_active',
     ];
 
-    protected $casts = ['start_date' => 'date', 'end_date' => 'date', 'progress' => 'decimal:2', 'periods' => 'array', 'is_active' => 'boolean'];
+    protected $casts = [
+        'start_date' => 'date',
+        'end_date' => 'date',
+        'baseline_start_date' => 'date',
+        'baseline_end_date' => 'date',
+        'progress' => 'decimal:2',
+        'periods' => 'array',
+        'is_active' => 'boolean',
+    ];
 
     public function project() { return $this->belongsTo(Project::class); }
     public function activity() { return $this->belongsTo(Activity::class); }
