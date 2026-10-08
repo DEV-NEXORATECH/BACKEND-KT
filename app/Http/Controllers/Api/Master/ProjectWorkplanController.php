@@ -17,7 +17,17 @@ class ProjectWorkplanController extends Controller
     {
         $rows = ProjectWorkplan::with(['project:id,code,name', 'activity:id,code,name'])
             ->when($request->filled('project_id'), fn ($q) => $q->where('project_id', $request->integer('project_id')))
-            ->when($request->filled('fiscal_year_id'), fn ($q) => $q->whereHas('project.fiscalYears', fn ($project) => $project->whereKey($request->integer('fiscal_year_id'))))
+            ->when($request->filled('fiscal_year_id'), function ($q) use ($request) {
+                $fiscalYearId = $request->integer('fiscal_year_id');
+                $q->where(function ($scope) use ($fiscalYearId) {
+                    // Keep legacy rows visible while new rows are explicitly scoped.
+                    $scope->where('fiscal_year_id', $fiscalYearId)
+                        ->orWhere(function ($legacy) use ($fiscalYearId) {
+                            $legacy->whereNull('fiscal_year_id')
+                                ->whereHas('project.fiscalYears', fn ($project) => $project->whereKey($fiscalYearId));
+                        });
+                });
+            })
             ->orderByRaw('COALESCE(start_date, "9999-12-31") ASC')->orderBy('id', 'asc')->get();
         return response()->json(['success' => true, 'data' => $rows]);
     }
@@ -41,7 +51,8 @@ class ProjectWorkplanController extends Controller
         if (empty($data['baseline_end_date']) && !empty($data['end_date'])) {
             $data['baseline_end_date'] = $data['end_date'];
         }
-        return response()->json(['success' => true, 'data' => ProjectWorkplan::create($data)], 201);
+        $workplan = ProjectWorkplan::create($data)->load(['project:id,code,name', 'activity:id,code,name']);
+        return response()->json(['success' => true, 'data' => $workplan], 201);
     }
 
     public function update(Request $request, ProjectWorkplan $projectWorkplan)
@@ -76,10 +87,11 @@ class ProjectWorkplanController extends Controller
             if ($activity === '') continue;
             if (mb_strlen($activity) < 3) { $errors[] = "Row {$index}: activity is too short."; continue; }
             $created[] = [
-                'project_id' => $request->integer('project_id'), 'output_code' => trim((string) ($row['A'] ?? '')),
+                'project_id' => $request->integer('project_id'), 'fiscal_year_id' => $request->input('fiscal_year_id'), 'output_code' => trim((string) ($row['A'] ?? '')),
                 'activity_code' => trim((string) ($row['B'] ?? '')), 'activity_id' => $this->activityIdFromRow($row), 'activity' => $activity,
                 'responsible' => trim((string) ($row['D'] ?? '')), 'start_date' => $this->dateValue($row['E'] ?? null),
-                'end_date' => $this->dateValue($row['F'] ?? null), 'status' => 'planned', 'progress' => 0,
+                'end_date' => $this->dateValue($row['F'] ?? null), 'baseline_start_date' => $this->dateValue($row['E'] ?? null),
+                'baseline_end_date' => $this->dateValue($row['F'] ?? null), 'status' => 'planned', 'progress' => 0,
             ];
         }
         if ($errors) throw ValidationException::withMessages(['file' => $errors]);
@@ -92,6 +104,7 @@ class ProjectWorkplanController extends Controller
         }
         if ($errors) throw ValidationException::withMessages(['file' => $errors]);
         $saved = DB::transaction(fn () => collect($created)->map(fn ($data) => ProjectWorkplan::create($data))->values());
+        $saved->load(['project:id,code,name', 'activity:id,code,name']);
         return response()->json(['success' => true, 'data' => $saved, 'imported' => $saved->count()]);
     }
 

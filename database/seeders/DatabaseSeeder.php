@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             MasterMenuSeeder::class,
             UserSeeder::class,
             FeatureDataSeeder::class,
+            UiDemoDataSeeder::class,
         ]);
     }
 }
