@@ -44,6 +44,7 @@ class MasterMenuSeeder extends Seeder
                 ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'sort_order' => 18, 'children' => [
+                ['title' => 'Integrated Donor & Grant', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 181],
                 ['title' => 'Donors', 'slug' => 'master-donors', 'path' => '/master-data/donors', 'sort_order' => 182],
                 ['title' => 'Grant/Agreements', 'slug' => 'master-grant-agreements', 'path' => '/master-data/grant-agreements', 'sort_order' => 183],
                 ['title' => 'Budget Codes', 'slug' => 'master-budget-codes', 'path' => '/master-data/budget-lines', 'sort_order' => 187],
@@ -86,13 +87,7 @@ class MasterMenuSeeder extends Seeder
         // standalone menu seeder is run without RoleSeeder first.
         $donorGrantMenu = Menu::where('slug', 'donor-grant')->first();
         if ($donorGrantMenu) {
-            Menu::updateOrCreate(['slug' => 'donor-grant-integrated-record'], [
-                'parent_id' => $donorGrantMenu->id,
-                'title' => 'Integrated Donor & Grant',
-                'path' => '/donor-grant/integrated-record',
-                'sort_order' => 22,
-                'is_active' => true,
-            ]);
+            Menu::where('slug', 'donor-grant-integrated-record')->update(['is_active' => false]);
             Menu::updateOrCreate(['slug' => 'donor-grant-project-frameworks'], [
                 'parent_id' => $donorGrantMenu->id,
                 'title' => 'Project Frameworks',
