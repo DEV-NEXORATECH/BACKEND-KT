@@ -133,11 +133,7 @@ class RoleSeeder extends Seeder
                     ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
                 ]],
                 ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data', 'sort_order' => 18, 'children' => [
-                    ['title' => 'Donors', 'slug' => 'master-donors', 'path' => '/master-data/donors', 'sort_order' => 182],
-                    ['title' => 'Grant/Agreements', 'slug' => 'master-grant-agreements', 'path' => '/master-data/grant-agreements', 'sort_order' => 183],
-                    ['title' => 'Project Frameworks', 'slug' => 'donor-grant-project-frameworks', 'path' => '/project-frameworks', 'sort_order' => 184],
-                    ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/project-timeline-workplan', 'sort_order' => 185],
-                    ['title' => 'Budget Codes', 'slug' => 'master-budget-codes', 'path' => '/master-data/budget-lines', 'sort_order' => 187],
+                    ['title' => 'Integrated Donor & Grant', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 181],
                     ['title' => 'Sources of Fund (SoF)', 'slug' => 'master-sof', 'path' => '/master-data/funding-sources', 'sort_order' => 188],
                 ]],
                 ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'path' => '/master-data', 'sort_order' => 19, 'children' => [
@@ -161,7 +157,6 @@ class RoleSeeder extends Seeder
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/donor-grant', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'donor-grant-dashboard', 'path' => '/donor-grant/dashboard', 'sort_order' => 21],
-                ['title' => 'Donors', 'slug' => 'donor-grant-donors', 'path' => '/donor-grant/donors', 'sort_order' => 22],
                 ['title' => 'Project Frameworks', 'slug' => 'donor-grant-programs-projects', 'path' => '/project-frameworks', 'sort_order' => 23],
                 ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/project-timeline-workplan', 'sort_order' => 23.2],
                 ['title' => 'Grants', 'slug' => 'donor-grant-grants', 'path' => '/donor-grant/grants', 'sort_order' => 24],

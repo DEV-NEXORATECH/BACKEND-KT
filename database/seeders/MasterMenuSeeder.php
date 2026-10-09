@@ -45,9 +45,6 @@ class MasterMenuSeeder extends Seeder
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'sort_order' => 18, 'children' => [
                 ['title' => 'Integrated Donor & Grant', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 181],
-                ['title' => 'Donors', 'slug' => 'master-donors', 'path' => '/master-data/donors', 'sort_order' => 182],
-                ['title' => 'Grant/Agreements', 'slug' => 'master-grant-agreements', 'path' => '/master-data/grant-agreements', 'sort_order' => 183],
-                ['title' => 'Budget Codes', 'slug' => 'master-budget-codes', 'path' => '/master-data/budget-lines', 'sort_order' => 187],
                 ['title' => 'Sources of Fund (SoF)', 'slug' => 'master-sof', 'path' => '/master-data/funding-sources', 'sort_order' => 188],
             ]],
             ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'sort_order' => 19, 'children' => [
@@ -83,11 +80,16 @@ class MasterMenuSeeder extends Seeder
             }
         }
 
+        // Donor and grant records are now created and viewed through the
+        // single integrated master page. Disable legacy duplicate entries.
+        Menu::whereIn('slug', ['master-donors', 'master-grant-agreements', 'master-budget-codes'])
+            ->update(['is_active' => false]);
+
         // Keep the functional Donor & Grant navigation in sync when this
         // standalone menu seeder is run without RoleSeeder first.
         $donorGrantMenu = Menu::where('slug', 'donor-grant')->first();
         if ($donorGrantMenu) {
-            Menu::where('slug', 'donor-grant-integrated-record')->update(['is_active' => false]);
+            Menu::whereIn('slug', ['donor-grant-integrated-record', 'donor-grant-donors'])->update(['is_active' => false]);
             Menu::updateOrCreate(['slug' => 'donor-grant-project-frameworks'], [
                 'parent_id' => $donorGrantMenu->id,
                 'title' => 'Project Frameworks',
