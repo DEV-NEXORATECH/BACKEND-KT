@@ -11,6 +11,8 @@ use App\Models\Master\ProjectLogframe;
 use App\Models\Master\ProjectWorkplan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class IntegratedDonorGrantController extends Controller
 {
@@ -86,7 +88,8 @@ class IntegratedDonorGrantController extends Controller
             'documents.amendment' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
         ]);
 
-        $result = DB::transaction(function () use ($data) {
+        try {
+            $result = DB::transaction(function () use ($data) {
             $documents = [];
             foreach (['proposal', 'signed_agreement', 'workplan', 'detailed_budget', 'amendment'] as $documentKey) {
                 $file = request()->file("documents.{$documentKey}");
@@ -141,13 +144,26 @@ class IntegratedDonorGrantController extends Controller
                 ]));
             }
 
-            return $donor->load([
-                'grantAgreements.currency',
-                'grantAgreements.projects.logframes',
-                'grantAgreements.projects.workplans',
-                'grantAgreements.projects.budgetLines',
+                return $donor->load([
+                    'grantAgreements.currency',
+                    'grantAgreements.projects.logframes',
+                    'grantAgreements.projects.workplans',
+                    'grantAgreements.projects.budgetLines',
+                ]);
+            });
+        } catch (Throwable $exception) {
+            Log::error('Integrated Donor & Grant failed', [
+                'message' => $exception->getMessage(),
+                'exception' => get_class($exception),
             ]);
-        });
+
+            return response()->json([
+                'success' => false,
+                'message' => app()->hasDebugModeEnabled()
+                    ? 'Record Donor & Grant gagal disimpan: '.$exception->getMessage()
+                    : 'Record Donor & Grant gagal disimpan. Pastikan migrasi database terbaru sudah dijalankan.',
+            ], 422);
+        }
 
         return response()->json(['success' => true, 'message' => 'Integrated Donor & Grant record created.', 'data' => $result], 201);
     }
