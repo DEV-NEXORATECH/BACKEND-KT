@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\Procurement;
 
 use App\Http\Controllers\Controller;
+use App\Models\Procurement\Contract;
 use App\Models\Procurement\GoodsReceipt;
+use App\Models\Procurement\ProcurementWaiver;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierContractNotification;
@@ -113,6 +115,42 @@ class ProcurementDocumentController extends Controller
             'Project' => $supplierContractNotification->purchaseRequest?->project?->name ?: $supplierContractNotification->purchaseOrder?->purchaseRequest?->project?->name,
             'Notes' => $supplierContractNotification->notes,
         ], [], null, null, true);
+    }
+
+    public function contract(Contract $contract): Response
+    {
+        $contract->load(['vendor', 'project', 'donor']);
+
+        return $this->download('Procurement Contract', $contract->contract_number, $contract->status, [
+            'Contract Type' => Str::headline((string) $contract->contract_type),
+            'Contract Title' => $contract->title,
+            'Vendor / Party' => $contract->vendor?->name ?: $contract->vendor_name,
+            'Vendor Contact' => $contract->vendor_contact,
+            'Project' => $contract->project?->name ?: $contract->project_name,
+            'Donor' => $contract->donor?->name ?: $contract->donor_name,
+            'Start Date' => $contract->start_date?->format('d M Y'),
+            'End Date' => $contract->end_date?->format('d M Y'),
+            'Payment Terms' => $contract->payment_terms,
+            'Scope of Work' => $contract->scope_of_work,
+            'Notes' => $contract->notes,
+        ], [], (float) $contract->total_value, null, true);
+    }
+
+    public function waiver(ProcurementWaiver $waiver): Response
+    {
+        $waiver->load(['purchaseRequest', 'project', 'vendor', 'approver']);
+
+        return $this->download('Procurement Waiver & Justification', $waiver->waiver_number, $waiver->status, [
+            'Waiver Date' => $waiver->date?->format('d M Y'),
+            'Description' => $waiver->description,
+            'Justification' => $waiver->justification,
+            'Purchase Request' => $waiver->purchaseRequest?->pr_number,
+            'Project' => $waiver->project?->name ?: $waiver->project_name,
+            'Vendor' => $waiver->vendor?->name ?: $waiver->vendor_name,
+            'Approved By' => $waiver->approver?->name,
+            'Approved At' => $waiver->approved_at?->format('d M Y H:i'),
+            'Notes' => $waiver->notes,
+        ], [], (float) $waiver->total_amount, null, true);
     }
 
     private function download(string $title, string $documentNumber, string $status, array $details, array $lines, ?float $total = null, ?string $quantityLabel = null, bool $letter = false): Response

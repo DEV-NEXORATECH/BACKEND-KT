@@ -18,6 +18,8 @@ use App\Http\Controllers\Api\Procurement\ProcurementFulfillmentController;
 use App\Http\Controllers\Api\Procurement\AdvancedProcurementController;
 use App\Http\Controllers\Api\Procurement\ProcurementDocumentController;
 use App\Http\Controllers\Api\Procurement\SupplierContractNotificationController;
+use App\Http\Controllers\Api\Procurement\ContractController;
+use App\Http\Controllers\Api\Procurement\ProcurementWaiverController;
 use App\Http\Controllers\Api\Finance\AccountsPayableController;
 use App\Http\Controllers\Api\Finance\AccountsReceivableController;
 use App\Http\Controllers\Api\Finance\TaxTransactionController;
@@ -263,6 +265,26 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('scns/{supplierContractNotification}/submit', [SupplierContractNotificationController::class, 'submit'])->middleware('permission:procurement.pr.approve');
         Route::post('scns/{supplierContractNotification}/issue', [SupplierContractNotificationController::class, 'issue'])->middleware('permission:procurement.pr.approve');
         Route::post('scns/{supplierContractNotification}/cancel', [SupplierContractNotificationController::class, 'cancel'])->middleware('permission:procurement.pr.approve');
+
+        // Contracts
+        Route::get('contracts/{contract}/pdf', [ProcurementDocumentController::class, 'contract'])->middleware('permission:procurement.po.view');
+        Route::get('contracts', [ContractController::class, 'index'])->middleware('permission:procurement.po.view');
+        Route::post('contracts', [ContractController::class, 'store'])->middleware('permission:procurement.po.create');
+        Route::get('contracts/{contract}', [ContractController::class, 'show'])->middleware('permission:procurement.po.view');
+        Route::put('contracts/{contract}', [ContractController::class, 'update'])->middleware('permission:procurement.po.create');
+        Route::delete('contracts/{contract}', [ContractController::class, 'destroy'])->middleware('permission:procurement.po.create');
+        Route::post('contracts/{contract}/activate', [ContractController::class, 'activate'])->middleware('permission:procurement.po.approve');
+        Route::post('contracts/{contract}/terminate', [ContractController::class, 'terminate'])->middleware('permission:procurement.po.approve');
+
+        // Waivers
+        Route::get('waivers/{waiver}/pdf', [ProcurementDocumentController::class, 'waiver'])->middleware('permission:procurement.pr.view');
+        Route::get('waivers', [ProcurementWaiverController::class, 'index'])->middleware('permission:procurement.pr.view');
+        Route::post('waivers', [ProcurementWaiverController::class, 'store'])->middleware('permission:procurement.pr.create');
+        Route::get('waivers/{waiver}', [ProcurementWaiverController::class, 'show'])->middleware('permission:procurement.pr.view');
+        Route::put('waivers/{waiver}', [ProcurementWaiverController::class, 'update'])->middleware('permission:procurement.pr.create');
+        Route::delete('waivers/{waiver}', [ProcurementWaiverController::class, 'destroy'])->middleware('permission:procurement.pr.delete');
+        Route::post('waivers/{waiver}/approve', [ProcurementWaiverController::class, 'approve'])->middleware('permission:procurement.pr.approve');
+        Route::post('waivers/{waiver}/reject', [ProcurementWaiverController::class, 'reject'])->middleware('permission:procurement.pr.approve');
     });
 
     Route::prefix('v1/finance')->group(function () {
@@ -417,3 +439,4 @@ Route::middleware('auth:sanctum')->group(function () {
         }
     });
 });
+
