@@ -7,8 +7,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 class ProjectLogframeController extends Controller {
- public function index(Request $r){return response()->json(['success'=>true,'data'=>ProjectLogframe::with('project:id,code,name')->when($r->filled('project_id'),fn($q)=>$q->where('project_id',$r->integer('project_id')))->latest()->get()]);}
- public function store(Request $r){$d=$r->validate(['project_id'=>'required|exists:projects,id','level'=>'required|in:impact,outcome,output,activity','code'=>'required|string|max:50','description'=>'required|string','indicator'=>'nullable|string|max:255','baseline'=>'nullable|numeric','target'=>'nullable|numeric','actual'=>'nullable|numeric','unit'=>'nullable|string|max:50','period_start'=>'nullable|date','period_end'=>'nullable|date']);return response()->json(['success'=>true,'data'=>ProjectLogframe::create($d)],201);}
+ public function index(Request $r){
+  $query=ProjectLogframe::with('project:id,code,name')
+   ->when($r->filled('project_id'),fn($q)=>$q->where('project_id',$r->integer('project_id')))
+   ->when($r->filled('fiscal_year_id'),fn($q)=>$q->whereHas('project.fiscalYears',fn($yearQuery)=>$yearQuery->whereKey($r->integer('fiscal_year_id'))));
+  return response()->json(['success'=>true,'data'=>$query->latest()->get()]);
+ }
+ public function store(Request $r){$d=$r->validate(['project_id'=>'required|exists:projects,id','fiscal_year_id'=>'nullable|integer|exists:fiscal_years,id','level'=>'required|in:impact,outcome,output,activity','code'=>'required|string|max:50','description'=>'required|string','indicator'=>'nullable|string|max:255','baseline'=>'nullable|numeric','target'=>'nullable|numeric','actual'=>'nullable|numeric','unit'=>'nullable|string|max:50','period_start'=>'nullable|date','period_end'=>'nullable|date']);unset($d['fiscal_year_id']);return response()->json(['success'=>true,'data'=>ProjectLogframe::create($d)],201);}
  public function update(Request $r,ProjectLogframe $projectLogframe){$projectLogframe->update($r->validate(['level'=>'sometimes|in:impact,outcome,output,activity','description'=>'sometimes|string','indicator'=>'nullable|string','baseline'=>'nullable|numeric','target'=>'nullable|numeric','actual'=>'nullable|numeric','unit'=>'nullable|string|max:50','period_start'=>'nullable|date','period_end'=>'nullable|date']));return response()->json(['success'=>true,'data'=>$projectLogframe]);}
  public function destroy(ProjectLogframe $projectLogframe){$projectLogframe->delete();return response()->json(['success'=>true]);}
  public function import(Request $r){
