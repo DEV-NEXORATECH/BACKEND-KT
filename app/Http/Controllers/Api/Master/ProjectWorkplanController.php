@@ -155,7 +155,12 @@ class ProjectWorkplanController extends Controller
     private function validateProjectFiscalYear(int $projectId, $fiscalYearId): void
     {
         if ($fiscalYearId === null || $fiscalYearId === '') return;
-        if (!Project::query()->whereKey($projectId)->whereHas('fiscalYears', fn ($query) => $query->whereKey((int) $fiscalYearId))->exists()) {
+        $project = Project::query()
+            ->with(['fiscalYears:id', 'grantAgreement:id,fiscal_year_id'])
+            ->findOrFail($projectId);
+        $hasPivotYear = $project->fiscalYears->contains(fn ($year) => (int) $year->id === (int) $fiscalYearId);
+        $hasGrantYear = (int) ($project->grantAgreement?->fiscal_year_id ?? 0) === (int) $fiscalYearId;
+        if (!$hasPivotYear && !$hasGrantYear) {
             throw ValidationException::withMessages([
                 'fiscal_year_id' => 'The selected project is not available in the selected fiscal year.',
             ]);
