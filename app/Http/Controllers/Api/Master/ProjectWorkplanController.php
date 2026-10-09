@@ -165,6 +165,16 @@ class ProjectWorkplanController extends Controller
             if ($logframe) return (int) $logframe->id;
         }
 
+        // Keep older clients working: when they do not send logframe_id yet,
+        // attach the first Output/Activity defined for this project.
+        $fallback = \App\Models\Master\ProjectLogframe::query()
+            ->where('project_id', $projectId)
+            ->whereIn('level', ['output', 'activity'])
+            ->orderByRaw("CASE WHEN level = 'output' THEN 0 ELSE 1 END")
+            ->orderBy('id')
+            ->first();
+        if ($fallback) return (int) $fallback->id;
+
         throw ValidationException::withMessages([
             'logframe_id' => 'Pilih Framework Output/Activity sebelum menyimpan Workplan.',
         ]);
@@ -201,7 +211,8 @@ class ProjectWorkplanController extends Controller
             ->findOrFail($projectId);
         $hasPivotYear = $project->fiscalYears->contains(fn ($year) => (int) $year->id === (int) $fiscalYearId);
         $hasGrantYear = (int) ($project->grantAgreement?->fiscal_year_id ?? 0) === (int) $fiscalYearId;
-        if (!$hasPivotYear && !$hasGrantYear) {
+        $hasAnyExplicitYear = $project->fiscalYears->isNotEmpty() || !empty($project->grantAgreement?->fiscal_year_id);
+        if (!$hasPivotYear && !$hasGrantYear && $hasAnyExplicitYear) {
             throw ValidationException::withMessages([
                 'fiscal_year_id' => 'The selected project is not available in the selected fiscal year.',
             ]);
