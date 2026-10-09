@@ -83,6 +83,19 @@ class MasterMenuSeeder extends Seeder
             }
         }
 
+        // Keep the functional Donor & Grant navigation in sync when this
+        // standalone menu seeder is run without RoleSeeder first.
+        $donorGrantMenu = Menu::where('slug', 'donor-grant')->first();
+        if ($donorGrantMenu) {
+            Menu::updateOrCreate(['slug' => 'donor-grant-project-frameworks'], [
+                'parent_id' => $donorGrantMenu->id,
+                'title' => 'Project Frameworks',
+                'path' => '/project-frameworks',
+                'sort_order' => 23,
+                'is_active' => true,
+            ]);
+        }
+
         Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-programs', 'master-projects', 'master-activities'])
             ->update(['is_active' => false]);
 
