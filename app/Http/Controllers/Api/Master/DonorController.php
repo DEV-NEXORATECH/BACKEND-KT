@@ -16,6 +16,7 @@ class DonorController extends BaseMasterController
     protected array $searchableColumns = ['code', 'name', 'contact_person', 'email', 'country'];
     protected array $defaultWith = [
         'defaultCurrency',
+        'donorType',
         'fiscalYear',
         'grantAgreements.currency',
         'grantAgreements.fundingSource',

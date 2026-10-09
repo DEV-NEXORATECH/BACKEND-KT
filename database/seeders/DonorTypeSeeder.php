@@ -23,5 +23,9 @@ class DonorTypeSeeder extends Seeder
                 [...$type, 'is_active' => true, 'updated_at' => now(), 'created_at' => now()]
             );
         }
+
+        foreach (DB::table('donor_types')->get(['id', 'name']) as $type) {
+            DB::table('donors')->where('type', $type->name)->update(['donor_type_id' => $type->id]);
+        }
     }
 }

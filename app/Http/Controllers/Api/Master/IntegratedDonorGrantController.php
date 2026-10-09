@@ -77,8 +77,13 @@ class IntegratedDonorGrantController extends Controller
             'budgets.*.document_path' => 'nullable|string|max:255',
             'budgets.*.budget_category_id' => 'required|exists:budget_categories,id',
             'budgets.*.total_amount' => 'required|numeric|min:0',
-            'documents' => 'array',
-            'documents.*' => 'nullable|file|max:10240|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents' => 'nullable|array',
+            'documents.agreement_document' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents.proposal' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents.signed_agreement' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents.workplan' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents.detailed_budget' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents.amendment' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
         ]);
 
         $result = DB::transaction(function () use ($data) {
@@ -86,10 +91,16 @@ class IntegratedDonorGrantController extends Controller
             foreach (['proposal', 'signed_agreement', 'workplan', 'detailed_budget', 'amendment'] as $documentKey) {
                 $file = request()->file("documents.{$documentKey}");
                 if ($file) {
+                    if (! $file->isValid()) {
+                        throw new \RuntimeException("Upload dokumen {$documentKey} gagal: ".$file->getErrorMessage());
+                    }
                     $documents[$documentKey] = $file->store('donor-grant-documents', 'public');
                 }
             }
             $agreementFile = request()->file('documents.agreement_document');
+            if ($agreementFile && ! $agreementFile->isValid()) {
+                throw new \RuntimeException('Upload Dokumen Agreement gagal: '.$agreementFile->getErrorMessage());
+            }
             $donor = Donor::create(array_merge($data['donor'], [
                 'status' => $data['donor']['status'] ?? 'active',
                 'is_active' => $data['donor']['is_active'] ?? true,
