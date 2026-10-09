@@ -15,7 +15,7 @@ class ProjectWorkplanController extends Controller
 {
     public function index(Request $request)
     {
-        $rows = ProjectWorkplan::with(['project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name'])
+        $rows = ProjectWorkplan::with(['project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name', 'logframe:id,project_id,level,code,description'])
             ->when($request->filled('project_id'), fn ($q) => $q->where('project_id', $request->integer('project_id')))
             ->when($request->filled('fiscal_year_id'), function ($q) use ($request) {
                 $fiscalYearId = $request->integer('fiscal_year_id');
@@ -35,7 +35,7 @@ class ProjectWorkplanController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'project_id' => 'required|exists:projects,id', 'donor_id' => 'nullable|exists:donors,id', 'grant_agreement_id' => 'nullable|exists:grant_agreements,id', 'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'activity_id' => 'nullable|exists:activities,id',
+            'project_id' => 'required|exists:projects,id', 'logframe_id' => 'required|exists:project_logframes,id', 'donor_id' => 'nullable|exists:donors,id', 'grant_agreement_id' => 'nullable|exists:grant_agreements,id', 'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'activity_id' => 'nullable|exists:activities,id',
             'output_code' => 'nullable|string|max:50', 'activity_code' => 'nullable|string|max:50',
             'activity' => 'required|string|max:500', 'responsible' => 'nullable|string|max:255',
             'start_date' => 'nullable|date', 'end_date' => 'nullable|date|after_or_equal:start_date',
@@ -44,6 +44,7 @@ class ProjectWorkplanController extends Controller
             'notes' => 'nullable|string', 'periods' => 'nullable|array',
         ]);
         [$data['grant_agreement_id'], $data['donor_id']] = $this->resolveProjectFunding($data['project_id'], $data['grant_agreement_id'] ?? null, $data['donor_id'] ?? null);
+        $data['output_code'] = $this->resolveLogframe($data['project_id'], (int) $data['logframe_id'])->code;
         $this->validateProjectFiscalYear($data['project_id'], $data['fiscal_year_id'] ?? null);
         $this->validateActivityProject($data['project_id'], $data['activity_id'] ?? null);
         if (empty($data['baseline_start_date']) && !empty($data['start_date'])) {
@@ -52,14 +53,14 @@ class ProjectWorkplanController extends Controller
         if (empty($data['baseline_end_date']) && !empty($data['end_date'])) {
             $data['baseline_end_date'] = $data['end_date'];
         }
-        $workplan = ProjectWorkplan::create($data)->load(['project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name']);
+        $workplan = ProjectWorkplan::create($data)->load(['project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name', 'logframe:id,project_id,level,code,description']);
         return response()->json(['success' => true, 'data' => $workplan], 201);
     }
 
     public function update(Request $request, ProjectWorkplan $projectWorkplan)
     {
         $data = $request->validate([
-            'donor_id' => 'nullable|exists:donors,id', 'grant_agreement_id' => 'nullable|exists:grant_agreements,id', 'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'activity_id' => 'nullable|exists:activities,id', 'output_code' => 'nullable|string|max:50', 'activity_code' => 'nullable|string|max:50',
+            'logframe_id' => 'required|exists:project_logframes,id', 'donor_id' => 'nullable|exists:donors,id', 'grant_agreement_id' => 'nullable|exists:grant_agreements,id', 'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'activity_id' => 'nullable|exists:activities,id', 'output_code' => 'nullable|string|max:50', 'activity_code' => 'nullable|string|max:50',
             'activity' => 'sometimes|string|max:500', 'responsible' => 'nullable|string|max:255', 'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'baseline_start_date' => 'nullable|date', 'baseline_end_date' => 'nullable|date|after_or_equal:baseline_start_date', 'status' => 'nullable|in:planned,in_progress,completed,delayed,cancelled',
@@ -68,10 +69,11 @@ class ProjectWorkplanController extends Controller
         if (array_key_exists('donor_id', $data) || array_key_exists('grant_agreement_id', $data)) {
             [$data['grant_agreement_id'], $data['donor_id']] = $this->resolveProjectFunding($projectWorkplan->project_id, $data['grant_agreement_id'] ?? $projectWorkplan->grant_agreement_id, $data['donor_id'] ?? $projectWorkplan->donor_id);
         }
+        $data['output_code'] = $this->resolveLogframe($projectWorkplan->project_id, (int) $data['logframe_id'])->code;
         $this->validateProjectFiscalYear($projectWorkplan->project_id, $data['fiscal_year_id'] ?? $request->query('fiscal_year_id'));
         $this->validateActivityProject($projectWorkplan->project_id, $data['activity_id'] ?? $projectWorkplan->activity_id);
         $projectWorkplan->update($data);
-        return response()->json(['success' => true, 'data' => $projectWorkplan->fresh()->load(['project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name'])]);
+        return response()->json(['success' => true, 'data' => $projectWorkplan->fresh()->load(['project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name', 'logframe:id,project_id,level,code,description'])]);
     }
 
     public function destroy(ProjectWorkplan $projectWorkplan) { $projectWorkplan->delete(); return response()->json(['success' => true]); }
@@ -127,6 +129,23 @@ class ProjectWorkplanController extends Controller
                 'activity_id' => 'The selected activity must belong to the selected project.',
             ]);
         }
+    }
+
+    private function resolveLogframe(int $projectId, int $logframeId): \App\Models\Master\ProjectLogframe
+    {
+        $logframe = \App\Models\Master\ProjectLogframe::query()
+            ->whereKey($logframeId)
+            ->where('project_id', $projectId)
+            ->whereIn('level', ['output', 'activity'])
+            ->first();
+
+        if (!$logframe) {
+            throw ValidationException::withMessages([
+                'logframe_id' => 'Framework Output/Activity harus berasal dari project yang dipilih.',
+            ]);
+        }
+
+        return $logframe;
     }
 
     private function resolveProjectFunding(int $projectId, $grantId, $donorId): array
