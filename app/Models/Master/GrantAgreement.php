@@ -56,4 +56,9 @@ class GrantAgreement extends Model
         return $this->hasMany(\App\Models\Master\BudgetLine::class);
     }
 
+    public function reportingDeadlines()
+    {
+        return $this->hasMany(\App\Models\Master\GrantReportingDeadline::class);
+    }
+
 }

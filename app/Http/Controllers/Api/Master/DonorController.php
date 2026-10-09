@@ -14,5 +14,15 @@ class DonorController extends BaseMasterController
     protected string $storeRequestClass = StoreDonorRequest::class;
     protected string $updateRequestClass = UpdateDonorRequest::class;
     protected array $searchableColumns = ['code', 'name', 'contact_person', 'email', 'country'];
-    protected array $defaultWith = ['defaultCurrency', 'grantAgreements', 'fiscalYear'];
+    protected array $defaultWith = [
+        'defaultCurrency',
+        'fiscalYear',
+        'grantAgreements.currency',
+        'grantAgreements.fundingSource',
+        'grantAgreements.reportingDeadlines',
+        'grantAgreements.projects.grantAgreement',
+        'grantAgreements.projects.logframes',
+        'grantAgreements.projects.workplans',
+        'grantAgreements.projects.budgetLines.budgetCategory',
+    ];
 }

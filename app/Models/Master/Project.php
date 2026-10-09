@@ -45,6 +45,16 @@ class Project extends Model
         return $this->hasMany(\App\Models\Master\Activity::class);
     }
 
+    public function logframes()
+    {
+        return $this->hasMany(\App\Models\Master\ProjectLogframe::class);
+    }
+
+    public function workplans()
+    {
+        return $this->hasMany(\App\Models\Master\ProjectWorkplan::class);
+    }
+
     public function budgetLines()
     {
         return $this->hasMany(\App\Models\Master\BudgetLine::class);
