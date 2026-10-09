@@ -21,6 +21,8 @@ class UpdateChartOfAccountRequest extends FormRequest
             'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'account_type' => 'required|in:asset,liability,equity,revenue,expense',
             'normal_balance' => 'required|in:debit,credit',
+            'opening_balance' => 'nullable|numeric|min:0',
+            'opening_balance_date' => 'nullable|date',
             'level' => 'integer|min:1',
             'is_header' => 'boolean',
             'is_active' => 'boolean',

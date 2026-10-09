@@ -77,6 +77,7 @@ use App\Http\Controllers\Api\Master\ProcurementItemController;
 use App\Http\Controllers\Api\Master\PositionController;
 use App\Http\Controllers\Api\Master\ProjectLogframeController;
 use App\Http\Controllers\Api\Master\ProjectWorkplanController;
+use App\Http\Controllers\Api\Master\IntegratedDonorGrantController;
 use App\Http\Controllers\Api\Master\GrantReportingDeadlineController;
 use App\Http\Controllers\Api\Master\OrganizationStructureController;
 
@@ -377,6 +378,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // V1 MASTER DATA ROUTES (30 Entities + Export + Toggle Status)
     // -------------------------------------------------------------
     Route::prefix('v1/master')->group(function () {
+        Route::post('donor-grant-integrated', [IntegratedDonorGrantController::class, 'store'])->middleware('permission:master-data.manage');
         Route::get('organization-structure', [OrganizationStructureController::class, 'index'])->middleware('permission:master-data.view');
         Route::apiResource('project-logframes', ProjectLogframeController::class)->middleware('permission:master-data');
         Route::post('project-logframes/import', [ProjectLogframeController::class, 'import'])->middleware('permission:master-data.manage');

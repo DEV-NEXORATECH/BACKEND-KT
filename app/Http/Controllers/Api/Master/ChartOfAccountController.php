@@ -69,7 +69,7 @@ class ChartOfAccountController extends BaseMasterController
             })
             ->orderBy('journal_id')->orderBy('line_order')->get();
 
-        $running = 0;
+        $running = (float) ($account->opening_balance ?? 0);
         $transactions = $rows->map(function ($line) use (&$running, $account) {
             $debit = (float) $line->debit;
             $credit = (float) $line->credit;
@@ -90,7 +90,7 @@ class ChartOfAccountController extends BaseMasterController
         return response()->json([
             'success' => true,
             'data' => [
-                'account' => ['id' => $account->id, 'code' => $account->code, 'name' => $account->name, 'normal_balance' => $account->normal_balance],
+                'account' => ['id' => $account->id, 'code' => $account->code, 'name' => $account->name, 'normal_balance' => $account->normal_balance, 'opening_balance' => (float) ($account->opening_balance ?? 0), 'opening_balance_date' => $account->opening_balance_date?->toDateString()],
                 'totals' => [
                     'debit' => round((float) $rows->sum('debit'), 2),
                     'credit' => round((float) $rows->sum('credit'), 2),

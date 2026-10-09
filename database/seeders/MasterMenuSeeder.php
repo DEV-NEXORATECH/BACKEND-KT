@@ -86,6 +86,13 @@ class MasterMenuSeeder extends Seeder
         // standalone menu seeder is run without RoleSeeder first.
         $donorGrantMenu = Menu::where('slug', 'donor-grant')->first();
         if ($donorGrantMenu) {
+            Menu::updateOrCreate(['slug' => 'donor-grant-integrated-record'], [
+                'parent_id' => $donorGrantMenu->id,
+                'title' => 'Integrated Donor & Grant',
+                'path' => '/donor-grant/integrated-record',
+                'sort_order' => 22,
+                'is_active' => true,
+            ]);
             Menu::updateOrCreate(['slug' => 'donor-grant-project-frameworks'], [
                 'parent_id' => $donorGrantMenu->id,
                 'title' => 'Project Frameworks',

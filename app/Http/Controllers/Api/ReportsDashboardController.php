@@ -1119,7 +1119,8 @@ class ReportsDashboardController extends Controller
             $debit = (float) $postedLines->where('account_id', $account->id)->sum('debit');
             $credit = (float) $postedLines->where('account_id', $account->id)->sum('credit');
             $normalCredit = in_array($account->normal_balance, ['credit'], true);
-            $balance = $normalCredit ? $credit - $debit : $debit - $credit;
+            $opening = (float) ($account->opening_balance ?? 0);
+            $balance = $opening + ($normalCredit ? $credit - $debit : $debit - $credit);
 
             return [
                 'account_id' => $account->id,
@@ -1128,6 +1129,7 @@ class ReportsDashboardController extends Controller
                 'account_type' => $account->account_type,
                 'debit' => round($debit, 2),
                 'credit' => round($credit, 2),
+                'opening_balance' => round($opening, 2),
                 'balance' => round($balance, 2),
             ];
         })->filter(fn (array $row) => $row['debit'] != 0.0 || $row['credit'] != 0.0)->values();
@@ -1178,18 +1180,22 @@ class ReportsDashboardController extends Controller
     {
         $date = $asOf ? CarbonImmutable::parse($asOf)->endOfDay() : CarbonImmutable::now()->endOfDay();
         $lines = JournalLine::query()
-            ->with('account:id,code,name,account_type,normal_balance')
             ->whereHas('journal', fn (Builder $query) => $query->where('status', 'posted')->whereDate('journal_date', '<=', $date))
             ->get();
 
-        $accounts = $lines->groupBy('account_id')->map(function ($items) {
-            $account = $items->first()->account;
+        $accounts = ChartOfAccount::query()
+            ->whereIn('account_type', ['asset', 'liability', 'equity', 'revenue', 'expense'])
+            ->orderBy('code')
+            ->get()
+            ->map(function (ChartOfAccount $account) use ($lines) {
+            $items = $lines->where('account_id', $account->id);
             if (! $account || ! in_array($account->account_type, ['asset', 'liability', 'equity', 'revenue', 'expense'], true)) {
                 return null;
             }
             $debit = (float) $items->sum('debit');
             $credit = (float) $items->sum('credit');
-            $balance = $account->normal_balance === 'credit' ? $credit - $debit : $debit - $credit;
+            $opening = (float) ($account->opening_balance ?? 0);
+            $balance = $opening + ($account->normal_balance === 'credit' ? $credit - $debit : $debit - $credit);
             return [
                 'account_id' => $account->id,
                 'code' => $account->code,
@@ -1197,9 +1203,10 @@ class ReportsDashboardController extends Controller
                 'account_type' => $account->account_type,
                 'debit' => round($debit, 2),
                 'credit' => round($credit, 2),
+                'opening_balance' => round($opening, 2),
                 'balance' => round($balance, 2),
             ];
-        })->filter()->filter(fn (array $row) => abs($row['balance']) > 0.00001)->sortBy('code')->values();
+        })->filter()->filter(fn (array $row) => abs($row['balance']) > 0.00001)->values();
 
         $byType = $accounts->groupBy('account_type')->map(fn ($rows) => round((float) $rows->sum('balance'), 2));
         $assets = (float) ($byType['asset'] ?? 0);
