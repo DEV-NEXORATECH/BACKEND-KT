@@ -253,6 +253,20 @@ class TimesheetEntryController extends Controller
         return response()->json(['success' => true, 'message' => 'Timesheet entry berhasil diperbarui.', 'data' => $this->format($timesheetEntry->fresh($this->with))]);
     }
 
+    public function destroy(Request $request, TimesheetEntry $timesheetEntry): JsonResponse
+    {
+        if ($timesheetEntry->status !== 'draft') {
+            throw ValidationException::withMessages(['status' => 'Timesheet hanya dapat dihapus saat draft.']);
+        }
+        if (! $this->userHasPermission($request->user(), 'timesheet.approve') && (int) $timesheetEntry->user_id !== (int) $request->user()->id) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh menghapus timesheet user lain.');
+        }
+
+        $timesheetEntry->delete();
+
+        return response()->json(['success' => true, 'message' => 'Timesheet draft berhasil dihapus.']);
+    }
+
     public function submit(Request $request, TimesheetEntry $timesheetEntry, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($timesheetEntry->status !== 'draft') {

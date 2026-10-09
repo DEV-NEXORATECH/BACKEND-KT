@@ -306,6 +306,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('external-invoices', [TimesheetEntryController::class, 'createExternalInvoice'])->middleware('permission:timesheet.approve');
         Route::post('entries/post-labor-cost', [TimesheetEntryController::class, 'postLaborCost'])->middleware('permission:timesheet.approve');
         Route::put('entries/{timesheetEntry}', [TimesheetEntryController::class, 'update'])->middleware('permission:timesheet.update');
+        Route::delete('entries/{timesheetEntry}', [TimesheetEntryController::class, 'destroy'])->middleware('permission:timesheet.update');
         Route::post('entries/{timesheetEntry}/submit', [TimesheetEntryController::class, 'submit'])->middleware('permission:timesheet.submit');
         Route::post('entries/{timesheetEntry}/approve', [TimesheetEntryController::class, 'approve'])->middleware('permission:timesheet.approve');
         Route::post('entries/{timesheetEntry}/reject', [TimesheetEntryController::class, 'reject'])->middleware('permission:timesheet.approve');
