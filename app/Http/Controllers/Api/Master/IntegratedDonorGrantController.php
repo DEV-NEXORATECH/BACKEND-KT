@@ -88,6 +88,32 @@ class IntegratedDonorGrantController extends Controller
             'documents.amendment' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
         ]);
 
+        // MySQL rejects an empty string in nullable DATE/DECIMAL/foreign-key
+        // columns. Browsers commonly submit empty optional controls as ''.
+        $emptyToNull = static function (array $section, array $fields): array {
+            foreach ($fields as $field) {
+                if (array_key_exists($field, $section) && $section[$field] === '') {
+                    $section[$field] = null;
+                }
+            }
+            return $section;
+        };
+        $data['grant'] = $emptyToNull($data['grant'], [
+            'agreement_no', 'agreement_date', 'funding_source_id', 'bank_account_id', 'reporting_period',
+        ]);
+        $data['project'] = $emptyToNull($data['project'], [
+            'program_id', 'theme', 'manager_name', 'start_date', 'end_date', 'total_budget',
+        ]);
+        $data['workplans'] = array_map(static function (array $workplan) use ($emptyToNull): array {
+            return $emptyToNull($workplan, ['output_code', 'start_date', 'end_date', 'status', 'baseline']);
+        }, $data['workplans'] ?? []);
+        $data['frameworks'] = array_map(static function (array $framework) use ($emptyToNull): array {
+            return $emptyToNull($framework, ['indicator', 'baseline', 'target']);
+        }, $data['frameworks'] ?? []);
+        $data['budgets'] = array_map(static function (array $budget) use ($emptyToNull): array {
+            return $emptyToNull($budget, ['document_path', 'currency_id', 'unit_price', 'quantity', 'exchange_rate']);
+        }, $data['budgets'] ?? []);
+
         try {
             $result = DB::transaction(function () use ($data) {
             $documents = [];
