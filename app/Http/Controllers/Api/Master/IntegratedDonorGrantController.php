@@ -12,10 +12,30 @@ use App\Models\Master\ProjectWorkplan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 class IntegratedDonorGrantController extends Controller
 {
+    public function downloadDocument(Request $request)
+    {
+        $path = (string) $request->query('path', '');
+        if ($path === '' || str_contains($path, '..') || str_contains($path, '\\')) {
+            return response()->json(['message' => 'Dokumen tidak valid.'], 404);
+        }
+
+        $disk = Storage::disk('public');
+        if (! $disk->exists($path)) {
+            return response()->json(['message' => 'Dokumen tidak ditemukan di penyimpanan server.'], 404);
+        }
+
+        $absolutePath = $disk->path($path);
+        $filename = basename($path);
+        return $request->boolean('download')
+            ? response()->download($absolutePath, $filename)
+            : response()->file($absolutePath);
+    }
+
     public function store(Request $request)
     {
         if ($request->filled('payload')) {
