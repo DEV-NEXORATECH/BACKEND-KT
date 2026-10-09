@@ -14,7 +14,7 @@ class Project extends Model
 
     protected $table = 'projects';
 
-    protected $fillable = ['code', 'program_id', 'grant_agreement_id', 'bank_account_id', 'name', 'manager_name', 'start_date', 'end_date', 'budget_currency_id', 'total_budget', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'program_id', 'grant_agreement_id', 'bank_account_id', 'name', 'theme', 'manager_name', 'start_date', 'end_date', 'budget_currency_id', 'total_budget', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',

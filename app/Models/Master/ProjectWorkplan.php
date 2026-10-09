@@ -9,7 +9,7 @@ class ProjectWorkplan extends Model
     protected $fillable = [
         'project_id', 'donor_id', 'grant_agreement_id', 'fiscal_year_id', 'activity_id', 'output_code', 'activity_code', 'activity',
         'responsible', 'start_date', 'end_date', 'baseline_start_date', 'baseline_end_date',
-        'status', 'progress', 'notes', 'periods', 'is_active',
+        'status', 'progress', 'baseline', 'notes', 'periods', 'is_active',
     ];
 
     protected $casts = [
@@ -18,6 +18,7 @@ class ProjectWorkplan extends Model
         'baseline_start_date' => 'date',
         'baseline_end_date' => 'date',
         'progress' => 'decimal:2',
+        'baseline' => 'decimal:2',
         'periods' => 'array',
         'is_active' => 'boolean',
     ];

@@ -15,7 +15,7 @@ class GrantAgreement extends Model
 
     protected $table = 'grant_agreements';
 
-    protected $fillable = ['fiscal_year_id', 'grant_no', 'agreement_no', 'agreement_date', 'donor_id', 'funding_source_id', 'agreement_name', 'start_date', 'end_date', 'reporting_period', 'agreement_document_path', 'currency_id', 'grant_value', 'exchange_rate_contract', 'bank_account_id', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['fiscal_year_id', 'grant_no', 'agreement_no', 'agreement_date', 'donor_id', 'funding_source_id', 'agreement_name', 'terms_conditions', 'start_date', 'end_date', 'reporting_period', 'agreement_document_path', 'supporting_documents', 'currency_id', 'grant_value', 'exchange_rate_contract', 'bank_account_id', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -24,6 +24,7 @@ class GrantAgreement extends Model
         'agreement_date' => 'date',
         'grant_value' => 'decimal:2',
         'exchange_rate_contract' => 'decimal:6',
+        'supporting_documents' => 'array',
     ];
 
     public function donor()
