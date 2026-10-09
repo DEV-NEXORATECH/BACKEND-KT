@@ -43,9 +43,11 @@ class MasterMenuSeeder extends Seeder
                 ['title' => 'Accounting Periods', 'slug' => 'master-accounting-periods', 'path' => '/master-data/accounting-periods', 'sort_order' => 174],
                 ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
             ]],
+            ['title' => 'Programs & Projects', 'slug' => 'master-programs-projects', 'sort_order' => 18, 'children' => [
+                ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 180],
+            ]],
             ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'sort_order' => 18, 'children' => [
                 ['title' => 'Integrated Donor & Grant', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 181],
-                ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 182],
                 ['title' => 'Sources of Fund (SoF)', 'slug' => 'master-sof', 'path' => '/master-data/funding-sources', 'sort_order' => 188],
             ]],
             ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'sort_order' => 19, 'children' => [
@@ -104,7 +106,7 @@ class MasterMenuSeeder extends Seeder
         // menu, not under the Master Data group.
         Menu::where('slug', 'master-project-frameworks')->update(['is_active' => false]);
 
-        Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-programs', 'master-projects', 'master-activities'])
+        Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-projects', 'master-activities'])
             ->update(['is_active' => false]);
 
         $roles = Role::all();
