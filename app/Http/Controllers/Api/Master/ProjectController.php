@@ -41,7 +41,10 @@ class ProjectController extends BaseMasterController
     {
         $validated = app($this->storeRequestClass)->validated();
         $fiscalYearIds = $validated['fiscal_year_ids'] ?? [];
-        unset($validated['fiscal_year_ids']);
+        if (empty($fiscalYearIds) && !empty($validated['fiscal_year_id'])) {
+            $fiscalYearIds = [(int) $validated['fiscal_year_id']];
+        }
+        unset($validated['fiscal_year_ids'], $validated['fiscal_year_id']);
         $record = Project::create($validated);
         $record->fiscalYears()->sync($fiscalYearIds);
         $record->load($this->defaultWith);
@@ -51,9 +54,12 @@ class ProjectController extends BaseMasterController
     public function update(Request $request, $id): JsonResponse
     {
         $validated = app($this->updateRequestClass)->validated();
-        $hasFiscalYears = array_key_exists('fiscal_year_ids', $validated);
+        $hasFiscalYears = array_key_exists('fiscal_year_ids', $validated) || array_key_exists('fiscal_year_id', $validated);
         $fiscalYearIds = $validated['fiscal_year_ids'] ?? [];
-        unset($validated['fiscal_year_ids']);
+        if (empty($fiscalYearIds) && !empty($validated['fiscal_year_id'])) {
+            $fiscalYearIds = [(int) $validated['fiscal_year_id']];
+        }
+        unset($validated['fiscal_year_ids'], $validated['fiscal_year_id']);
         $record = Project::findOrFail($id);
         $record->update($validated);
         if ($hasFiscalYears) {

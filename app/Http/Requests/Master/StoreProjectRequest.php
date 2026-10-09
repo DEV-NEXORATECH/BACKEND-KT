@@ -26,6 +26,7 @@ class StoreProjectRequest extends FormRequest
             'total_budget' => 'nullable|numeric|min:0',
             'fiscal_year_ids' => 'nullable|array',
             'fiscal_year_ids.*' => 'integer|exists:fiscal_years,id',
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'is_active' => 'boolean',
         ];
     }
