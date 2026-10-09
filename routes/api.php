@@ -383,6 +383,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('donor-grant-documents/download', [IntegratedDonorGrantController::class, 'downloadDocument'])->middleware('permission:master-data.view');
         Route::get('organization-structure', [OrganizationStructureController::class, 'index'])->middleware('permission:master-data.view');
         Route::apiResource('project-logframes', ProjectLogframeController::class)->middleware('permission:master-data');
+        Route::post('project-logframes/generate-activities', [ProjectLogframeController::class, 'generateActivities'])->middleware('permission:master-data.manage');
         Route::post('project-logframes/import', [ProjectLogframeController::class, 'import'])->middleware('permission:master-data.manage');
         Route::post('project-workplans/import', [ProjectWorkplanController::class, 'import'])->middleware('permission:master-data.manage');
         Route::apiResource('project-workplans', ProjectWorkplanController::class)->middleware('permission:master-data');

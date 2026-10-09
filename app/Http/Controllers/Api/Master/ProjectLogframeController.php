@@ -13,7 +13,32 @@ class ProjectLogframeController extends Controller {
    ->when($r->filled('fiscal_year_id'),fn($q)=>$q->whereHas('project.fiscalYears',fn($yearQuery)=>$yearQuery->whereKey($r->integer('fiscal_year_id'))));
   return response()->json(['success'=>true,'data'=>$query->latest()->get()]);
  }
- public function store(Request $r){$d=$r->validate(['project_id'=>'required|exists:projects,id','fiscal_year_id'=>'nullable|integer|exists:fiscal_years,id','level'=>'required|in:impact,outcome,output,activity','code'=>'required|string|max:50','description'=>'required|string','indicator'=>'nullable|string|max:255','baseline'=>'nullable|numeric','target'=>'nullable|numeric','actual'=>'nullable|numeric','unit'=>'nullable|string|max:50','period_start'=>'nullable|date','period_end'=>'nullable|date']);unset($d['fiscal_year_id']);return response()->json(['success'=>true,'data'=>ProjectLogframe::create($d)],201);}
+ public function store(Request $r){$d=$r->validate(['project_id'=>'required|exists:projects,id','fiscal_year_id'=>'nullable|integer|exists:fiscal_years,id','level'=>'required|in:impact,outcome,output,activity','code'=>'nullable|string|max:50','description'=>'required|string','indicator'=>'nullable|string|max:255','baseline'=>'nullable|numeric','target'=>'nullable|numeric','actual'=>'nullable|numeric','unit'=>'nullable|string|max:50','period_start'=>'nullable|date','period_end'=>'nullable|date']);unset($d['fiscal_year_id']);$d['code']=$d['code']??$this->nextCode($d['project_id'],$d['level']);return response()->json(['success'=>true,'data'=>ProjectLogframe::create($d)],201);}
+ private function nextCode(int $projectId,string $level): string { $prefix=['impact'=>'IMP','outcome'=>'OUT','output'=>'OUTP','activity'=>'ACT'][$level]??'FW'; $used=ProjectLogframe::query()->where('project_id',$projectId)->where('level',$level)->pluck('code'); $max=0; foreach($used as $code){if(preg_match('/^'.preg_quote($prefix,'/').'-(\d+)$/i',(string)$code,$match)){$max=max($max,(int)$match[1]);}} return $prefix.'-'.str_pad((string)($max+1),2,'0',STR_PAD_LEFT); }
+ public function generateActivities(Request $r){
+  $d=$r->validate(['project_id'=>'required|exists:projects,id']);
+  $created=DB::transaction(function() use($d){
+   $outputs=ProjectLogframe::query()->where('project_id',$d['project_id'])->where('level','output')->orderBy('id')->get();
+   $saved=[];
+   foreach($outputs as $output){
+    $prefix=strtoupper($output->code).'-ACT-';
+    if(ProjectLogframe::query()->where('project_id',$d['project_id'])->where('level','activity')->where('code','like',$prefix.'%')->exists()) continue;
+    $saved[]=ProjectLogframe::create([
+     'project_id'=>$d['project_id'],
+     'level'=>'activity',
+     'code'=>$prefix.'01',
+     'description'=>'Aktivitas pelaksanaan: '.$output->description,
+     'indicator'=>$output->indicator,
+     'baseline'=>$output->baseline,
+     'target'=>$output->target,
+     'period_start'=>$output->period_start,
+     'period_end'=>$output->period_end,
+    ]);
+   }
+   return collect($saved);
+  });
+  return response()->json(['success'=>true,'data'=>$created,'created'=>$created->count(),'message'=>$created->count().' activity generated.']);
+ }
  public function update(Request $r,ProjectLogframe $projectLogframe){$projectLogframe->update($r->validate(['level'=>'sometimes|in:impact,outcome,output,activity','description'=>'sometimes|string','indicator'=>'nullable|string','baseline'=>'nullable|numeric','target'=>'nullable|numeric','actual'=>'nullable|numeric','unit'=>'nullable|string|max:50','period_start'=>'nullable|date','period_end'=>'nullable|date']));return response()->json(['success'=>true,'data'=>$projectLogframe]);}
  public function destroy(ProjectLogframe $projectLogframe){$projectLogframe->delete();return response()->json(['success'=>true]);}
  public function import(Request $r){

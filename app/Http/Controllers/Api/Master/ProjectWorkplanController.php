@@ -45,7 +45,9 @@ class ProjectWorkplanController extends Controller
         ]);
         [$data['grant_agreement_id'], $data['donor_id']] = $this->resolveProjectFunding($data['project_id'], $data['grant_agreement_id'] ?? null, $data['donor_id'] ?? null);
         $data['logframe_id'] = $this->resolveLogframeId($data['project_id'], $data['logframe_id'] ?? null, $data['output_code'] ?? null);
-        $data['output_code'] = $this->resolveLogframe($data['project_id'], (int) $data['logframe_id'])->code;
+        $framework = $this->resolveLogframe($data['project_id'], (int) $data['logframe_id']);
+        $data['output_code'] = $framework->level === 'output' ? $framework->code : null;
+        $data['activity_code'] = $framework->level === 'activity' ? $framework->code : null;
         $this->validateProjectFiscalYear($data['project_id'], $data['fiscal_year_id'] ?? null);
         $this->validateActivityProject($data['project_id'], $data['activity_id'] ?? null);
         if (empty($data['baseline_start_date']) && !empty($data['start_date'])) {
@@ -71,7 +73,9 @@ class ProjectWorkplanController extends Controller
             [$data['grant_agreement_id'], $data['donor_id']] = $this->resolveProjectFunding($projectWorkplan->project_id, $data['grant_agreement_id'] ?? $projectWorkplan->grant_agreement_id, $data['donor_id'] ?? $projectWorkplan->donor_id);
         }
         $data['logframe_id'] = $this->resolveLogframeId($projectWorkplan->project_id, $data['logframe_id'] ?? null, $data['output_code'] ?? null);
-        $data['output_code'] = $this->resolveLogframe($projectWorkplan->project_id, (int) $data['logframe_id'])->code;
+        $framework = $this->resolveLogframe($projectWorkplan->project_id, (int) $data['logframe_id']);
+        $data['output_code'] = $framework->level === 'output' ? $framework->code : null;
+        $data['activity_code'] = $framework->level === 'activity' ? $framework->code : null;
         $this->validateProjectFiscalYear($projectWorkplan->project_id, $data['fiscal_year_id'] ?? $request->query('fiscal_year_id'));
         $this->validateActivityProject($projectWorkplan->project_id, $data['activity_id'] ?? $projectWorkplan->activity_id);
         $projectWorkplan->update($data);
