@@ -55,6 +55,7 @@ use App\Http\Controllers\Api\Master\PettyCashController;
 use App\Http\Controllers\Api\Master\PaymentMethodController;
 use App\Http\Controllers\Api\Master\FundingSourceController;
 use App\Http\Controllers\Api\Master\DonorController;
+use App\Http\Controllers\Api\Master\DonorTypeController;
 use App\Http\Controllers\Api\Master\GrantAgreementController;
 use App\Http\Controllers\Api\Master\ProgramController;
 use App\Http\Controllers\Api\Master\ProjectController;
@@ -403,6 +404,7 @@ Route::middleware('auth:sanctum')->group(function () {
             'payment-methods' => PaymentMethodController::class,
             'funding-sources' => FundingSourceController::class,
             'donors' => DonorController::class,
+            'donor-types' => DonorTypeController::class,
             'grant-agreements' => GrantAgreementController::class,
             'programs' => ProgramController::class,
             'projects' => ProjectController::class,
