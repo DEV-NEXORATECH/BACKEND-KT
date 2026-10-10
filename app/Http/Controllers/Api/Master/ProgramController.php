@@ -14,5 +14,5 @@ class ProgramController extends BaseMasterController
     protected string $storeRequestClass = StoreProgramRequest::class;
     protected string $updateRequestClass = UpdateProgramRequest::class;
     protected array $searchableColumns = ['code', 'name', 'manager_name'];
-    protected array $defaultWith = [];
+    protected array $defaultWith = ['fiscalYear'];
 }

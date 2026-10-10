@@ -222,10 +222,11 @@ class RoleSeeder extends Seeder
             ]],
             ['title' => 'Administration', 'slug' => 'administration', 'path' => '/administration', 'icon' => 'admin', 'sort_order' => 60, 'children' => [
                 ['title' => 'Staff', 'slug' => 'admin-staff', 'path' => '/administration/staff', 'sort_order' => 601],
-                ['title' => 'Organization', 'slug' => 'admin-organization', 'path' => '/administration/organization', 'sort_order' => 602],
-                ['title' => 'Department', 'slug' => 'admin-department', 'path' => '/administration/department', 'sort_order' => 603],
-                ['title' => 'Office Locations', 'slug' => 'admin-office-locations', 'path' => '/administration/office-locations', 'sort_order' => 604],
-                ['title' => 'Positions', 'slug' => 'admin-positions', 'path' => '/administration/positions', 'sort_order' => 605],
+                ['title' => 'Organization Structure', 'slug' => 'admin-organization-structure', 'path' => '/master-data/structure', 'sort_order' => 602],
+                ['title' => 'Organization', 'slug' => 'admin-organization', 'path' => '/administration/organization', 'sort_order' => 603],
+                ['title' => 'Department', 'slug' => 'admin-department', 'path' => '/administration/department', 'sort_order' => 604],
+                ['title' => 'Office Locations', 'slug' => 'admin-office-locations', 'path' => '/administration/office-locations', 'sort_order' => 605],
+                ['title' => 'Positions', 'slug' => 'admin-positions', 'path' => '/administration/positions', 'sort_order' => 606],
                 ['title' => 'Document Repository', 'slug' => 'admin-documents', 'path' => '/administration/documents', 'sort_order' => 604],
                 ['title' => 'Internal / Legal Contracts', 'slug' => 'admin-contracts', 'path' => '/administration/contracts', 'sort_order' => 605],
                 ['title' => 'Audit Log', 'slug' => 'admin-audit-logs', 'path' => '/administration/audit-logs', 'sort_order' => 606],
@@ -290,7 +291,7 @@ class RoleSeeder extends Seeder
                 'taxes', 'taxes-dashboard', 'taxes-setup', 'taxes-transactions', 'taxes-pph', 'taxes-vat', 'taxes-ebupot', 'taxes-efaktur', 'taxes-calendar', 'taxes-reports', 'tax-calculator',
             ],
             'Administration' => [
-                'administration', 'admin-staff', 'admin-organization', 'admin-department', 'admin-documents', 'admin-contracts', 'admin-audit-logs',
+                'administration', 'admin-staff', 'admin-organization-structure', 'admin-organization', 'admin-department', 'admin-office-locations', 'admin-positions', 'admin-documents', 'admin-contracts', 'admin-audit-logs',
             ],
             'Reports' => [
                 'reports', 'reports-financial', 'reports-budget', 'reports-donor-grant', 'reports-project', 'reports-procurement', 'reports-tax', 'reports-management',

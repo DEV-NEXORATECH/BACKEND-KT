@@ -31,6 +31,7 @@ class TimesheetEntryController extends Controller
         'program:id,code,name',
         'department:id,code,name',
         'supervisor:id,name,email',
+        'fiscalYear:id,year,name',
     ];
 
     public function index(Request $request): JsonResponse
@@ -625,6 +626,11 @@ class TimesheetEntryController extends Controller
         return [
             'id' => $entry->id,
             'fiscal_year_id' => $entry->fiscal_year_id,
+            'fiscal_year' => $entry->fiscalYear ? [
+                'id' => $entry->fiscalYear->id,
+                'year' => $entry->fiscalYear->year,
+                'name' => $entry->fiscalYear->name,
+            ] : null,
             'employee_id' => $entry->employee_id,
             'worker_type' => $entry->worker_type ?: 'internal',
             'vendor_name' => $entry->vendor_name,

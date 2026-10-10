@@ -12,6 +12,7 @@ class UpdateDonorTypeRequest extends FormRequest
     {
         $id = $this->route('id');
         return [
+            'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
             'code' => ['required', 'string', 'max:30', 'unique:donor_types,code,'.$id],
             'name' => ['required', 'string', 'max:100', 'unique:donor_types,name,'.$id],
             'description' => ['nullable', 'string'],

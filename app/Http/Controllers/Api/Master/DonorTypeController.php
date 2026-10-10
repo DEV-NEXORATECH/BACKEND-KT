@@ -14,4 +14,5 @@ class DonorTypeController extends BaseMasterController
     protected string $storeRequestClass = StoreDonorTypeRequest::class;
     protected string $updateRequestClass = UpdateDonorTypeRequest::class;
     protected array $searchableColumns = ['code', 'name', 'description'];
+    protected array $defaultWith = ['fiscalYear'];
 }

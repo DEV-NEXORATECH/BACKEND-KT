@@ -11,6 +11,7 @@ class StoreDonorTypeRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
             'code' => ['required', 'string', 'max:30', 'unique:donor_types,code'],
             'name' => ['required', 'string', 'max:100', 'unique:donor_types,name'],
             'description' => ['nullable', 'string'],

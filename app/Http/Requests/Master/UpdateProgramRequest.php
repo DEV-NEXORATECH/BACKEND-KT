@@ -14,6 +14,7 @@ class UpdateProgramRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'code' => 'required|string|max:30|unique:programs,code,' . $this->route('id') . ',id',
             'name' => 'required|string|max:150',
             'objective' => 'nullable|string',

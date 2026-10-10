@@ -2,10 +2,13 @@
 
 namespace App\Models\Master;
 
+use App\Traits\FiscalYearScopedTrait;
 use Illuminate\Database\Eloquent\Model;
 
 class ProjectWorkplan extends Model
 {
+    use FiscalYearScopedTrait;
+
     protected $fillable = [
         'project_id', 'logframe_id', 'donor_id', 'grant_agreement_id', 'fiscal_year_id', 'activity_id', 'output_code', 'activity_code', 'activity',
         'responsible', 'start_date', 'end_date', 'baseline_start_date', 'baseline_end_date',
