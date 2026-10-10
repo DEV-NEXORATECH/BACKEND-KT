@@ -29,6 +29,15 @@ abstract class BaseMasterController extends Controller
             $isOptions = $request->boolean('options') || $request->query('paginate') === 'false';
             $query = $this->modelClass::query();
 
+            // An explicitly selected fiscal year must isolate period-specific
+            // master records instead of falling back to the global NULL rows.
+            if ($request->filled('fiscal_year_id')) {
+                $table = (new $this->modelClass)->getTable();
+                if (\Illuminate\Support\Facades\Schema::hasColumn($table, 'fiscal_year_id')) {
+                    $query->where('fiscal_year_id', $request->integer('fiscal_year_id'));
+                }
+            }
+
             // Lightweight dropdown/options mode for Frontend Select components
             if ($isOptions) {
                 try {

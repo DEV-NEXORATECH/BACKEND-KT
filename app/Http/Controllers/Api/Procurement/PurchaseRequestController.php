@@ -398,6 +398,8 @@ class PurchaseRequestController extends Controller
 
         return [
             'id' => $purchaseRequest->id,
+            'fiscal_year_id' => $purchaseRequest->fiscal_year_id,
+            'fiscal_year' => $purchaseRequest->fiscalYear?->only(['id', 'year', 'name']),
             'pr_number' => $purchaseRequest->pr_number,
             'request_date' => $purchaseRequest->request_date?->toDateString(),
             'requester_id' => $purchaseRequest->requester_id,

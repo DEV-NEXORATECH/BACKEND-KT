@@ -28,7 +28,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ExpenseRequestController extends Controller
 {
-    private array $with = ['requester:id,name,email', 'donor:id,code,name', 'grantAgreement', 'program:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
+    private array $with = ['requester:id,name,email', 'fiscalYear:id,year,name', 'donor:id,code,name', 'grantAgreement', 'program:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
 
     public function index(Request $request): JsonResponse
     {
@@ -670,6 +670,8 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             : (float) $expense->cashAdvanceReturns()->where('status', 'received')->sum('return_amount');
         return [
             'id' => $expense->id,
+            'fiscal_year_id' => $expense->fiscal_year_id,
+            'fiscal_year' => $expense->fiscalYear ? ['id' => $expense->fiscalYear->id, 'year' => $expense->fiscalYear->year, 'name' => $expense->fiscalYear->name] : null,
             'request_number' => $expense->request_number,
             'external_request_id' => $expense->external_request_id,
             'requester_name' => $expense->requester?->name,

@@ -12,6 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 class ContractController extends Controller
 {
     private array $with = [
+        'fiscalYear:id,year,name',
         'vendor:id,code,name',
         'project:id,code,name',
         'donor:id,code,name',

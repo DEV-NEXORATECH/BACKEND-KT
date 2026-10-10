@@ -400,6 +400,8 @@ class ProcurementFulfillmentController extends Controller
     {
         return [
             'id' => $po->id,
+            'fiscal_year_id' => $po->fiscal_year_id,
+            'fiscal_year' => $po->fiscalYear?->only(['id', 'year', 'name']),
             'po_number' => $po->po_number,
             'purchase_request_id' => $po->purchase_request_id,
             'pr_number' => $po->purchaseRequest?->pr_number,
@@ -416,6 +418,8 @@ class ProcurementFulfillmentController extends Controller
     {
         return [
             'id' => $grn->id,
+            'fiscal_year_id' => $grn->fiscal_year_id,
+            'fiscal_year' => $grn->fiscalYear?->only(['id', 'year', 'name']),
             'grn_number' => $grn->grn_number,
             'po_number' => $grn->purchaseOrder?->po_number,
             'receipt_date' => $grn->receipt_date?->toDateString(),
@@ -428,6 +432,8 @@ class ProcurementFulfillmentController extends Controller
     {
         return [
             'id' => $invoice->id,
+            'fiscal_year_id' => $invoice->fiscal_year_id,
+            'fiscal_year' => $invoice->fiscalYear?->only(['id', 'year', 'name']),
             'invoice_number' => $invoice->invoice_number,
             'po_number' => $invoice->purchaseOrder?->po_number,
             'grn_number' => $invoice->goodsReceipt?->grn_number,

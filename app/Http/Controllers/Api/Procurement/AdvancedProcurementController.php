@@ -224,6 +224,8 @@ class AdvancedProcurementController extends Controller
     {
         return [
             'id' => $rfq->id,
+            'fiscal_year_id' => $rfq->fiscal_year_id,
+            'fiscal_year' => $rfq->fiscalYear?->only(['id', 'year', 'name']),
             'rfq_number' => $rfq->rfq_number,
             'pr_number' => $rfq->purchaseRequest?->pr_number,
             'purchase_request_id' => $rfq->purchase_request_id,
@@ -259,6 +261,8 @@ class AdvancedProcurementController extends Controller
     {
         return [
             'id' => $cba->id,
+            'fiscal_year_id' => $cba->rfq?->fiscal_year_id,
+            'fiscal_year' => $cba->rfq?->fiscalYear?->only(['id', 'year', 'name']),
             'cba_number' => $cba->cba_number,
             'rfq_id' => $cba->rfq_id,
             'rfq_number' => $cba->rfq?->rfq_number,

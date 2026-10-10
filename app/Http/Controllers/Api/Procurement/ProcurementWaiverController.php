@@ -12,6 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 class ProcurementWaiverController extends Controller
 {
     private array $with = [
+        'fiscalYear:id,year,name',
         'purchaseRequest:id,pr_number',
         'project:id,code,name',
         'vendor:id,code,name',

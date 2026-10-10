@@ -12,7 +12,7 @@ class SupplierContractNotificationController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = SupplierContractNotification::with(['vendor:id,code,name','purchaseRequest:id,pr_number','purchaseOrder:id,po_number']);
+        $query = SupplierContractNotification::with(['fiscalYear:id,year,name','vendor:id,code,name','purchaseRequest:id,pr_number','purchaseOrder:id,po_number']);
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
         return response()->json(['success' => true, 'data' => $query->latest('id')->get()]);
     }

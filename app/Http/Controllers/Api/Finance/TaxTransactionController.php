@@ -18,12 +18,13 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TaxTransactionController extends Controller
 {
-    public function taxes(): JsonResponse
+    public function taxes(Request $request): JsonResponse
     {
         $today = now()->toDateString();
         return response()->json([
             'success' => true,
             'data' => Tax::query()
+                ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
                 ->where('is_active', true)
                 ->when(! app(SystemPolicyService::class)->vatEnabled(), fn (Builder $query) => $query->whereRaw("upper(tax_type) not in ('PPN','VAT')"))
                 ->where(fn (Builder $query) => $query->whereNull('effective_start_date')->orWhereDate('effective_start_date', '<=', $today))
@@ -60,7 +61,8 @@ class TaxTransactionController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = TaxTransaction::query()
-            ->with('tax:id,code,name,tax_type,rate_percent')
+            ->with(['tax:id,code,name,tax_type,rate_percent', 'fiscalYear:id,year,name'])
+            ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
             ->when($request->filled('tax_id'), fn (Builder $query) => $query->where('tax_id', $request->integer('tax_id')))
@@ -181,7 +183,8 @@ class TaxTransactionController extends Controller
     public function exportDjp(Request $request): StreamedResponse
     {
         $query = TaxTransaction::query()
-            ->with('tax:id,code,name,tax_type,rate_percent')
+            ->with(['tax:id,code,name,tax_type,rate_percent', 'fiscalYear:id,year,name'])
+            ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
             ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
@@ -396,6 +399,8 @@ class TaxTransactionController extends Controller
     {
         return [
             'id' => $item->id,
+            'fiscal_year_id' => $item->fiscal_year_id,
+            'fiscal_year' => $item->fiscalYear ? ['id' => $item->fiscalYear->id, 'year' => $item->fiscalYear->year, 'name' => $item->fiscalYear->name] : null,
             'tax' => $item->tax ? ['id' => $item->tax->id, 'code' => $item->tax->code, 'name' => $item->tax->name, 'tax_type' => $item->tax->tax_type, 'rate_percent' => $item->tax->rate_percent] : null,
             'transaction_type' => $item->transaction_type,
             'source_type' => $item->source_type,

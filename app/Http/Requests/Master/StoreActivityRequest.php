@@ -14,6 +14,7 @@ class StoreActivityRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'project_id' => 'required|integer|exists:projects,id',
             'code' => 'required|string|max:30|unique:activities,code',
             'name' => 'required|string|max:200',
