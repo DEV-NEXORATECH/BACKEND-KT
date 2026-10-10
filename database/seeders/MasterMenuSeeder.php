@@ -25,16 +25,7 @@ class MasterMenuSeeder extends Seeder
         ]);
 
         $groups = [
-            ['title' => 'Organization & Structure', 'slug' => 'master-organization-structure', 'sort_order' => 16, 'children' => [
-                ['title' => 'Organization Chart', 'slug' => 'master-organization-chart', 'path' => '/master-data/structure', 'sort_order' => 160],
-                ['title' => 'Organizations', 'slug' => 'master-organizations', 'path' => '/master-data/organizations', 'sort_order' => 161],
-                ['title' => 'Office Locations', 'slug' => 'master-office-locations', 'path' => '/master-data/office-locations', 'sort_order' => 162],
-                ['title' => 'Departments', 'slug' => 'master-departments', 'path' => '/master-data/departments', 'sort_order' => 163],
-                ['title' => 'Positions', 'slug' => 'master-positions', 'path' => '/master-data/positions', 'sort_order' => 165],
-                ['title' => 'Staff / Employees', 'slug' => 'master-employees', 'path' => '/master-data/employees', 'sort_order' => 166],
-            ]],
             ['title' => 'Finance & Accounting', 'slug' => 'master-finance-accounting', 'sort_order' => 17, 'children' => [
-                ['title' => 'Chart of Accounts', 'slug' => 'master-chart-of-accounts', 'path' => '/master-data/chart-of-accounts', 'sort_order' => 175],
                 ['title' => 'Bank Accounts', 'slug' => 'master-bank-accounts', 'path' => '/master-data/bank-accounts', 'sort_order' => 177],
                 ['title' => 'Payment Methods', 'slug' => 'master-payment-methods', 'path' => '/master-data/payment-methods', 'sort_order' => 179],
                 ['title' => 'Fx Rates', 'slug' => 'master-fx-rates', 'path' => '/master-data/exchange-rates', 'sort_order' => 172],
@@ -48,26 +39,17 @@ class MasterMenuSeeder extends Seeder
                 ['title' => 'Funding Sources', 'slug' => 'master-funding-sources', 'path' => '/master-data/funding-sources', 'sort_order' => 182],
                 ['title' => 'Donor Types', 'slug' => 'master-donor-types', 'path' => '/master-data/donor-types', 'sort_order' => 183],
             ]],
-            ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'sort_order' => 18, 'children' => [
-                ['title' => 'Integrated Donor & Grant', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 181],
-            ]],
+            ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 18, 'children' => []],
             ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'sort_order' => 19, 'children' => [
                 ['title' => 'Budget Categories', 'slug' => 'master-budget-categories', 'path' => '/master-data/budget-categories', 'sort_order' => 193],
-                ['title' => 'Budget Templates / Lines', 'slug' => 'master-budget-templates', 'path' => '/master-data/budget-lines', 'sort_order' => 194],
+                ['title' => 'Budget Categories & Templates', 'slug' => 'master-budget-templates', 'path' => '/master-data/budget-lines', 'sort_order' => 194],
                 ['title' => 'Reporting Categories', 'slug' => 'master-reporting-categories', 'path' => '/master-data/reporting-categories', 'sort_order' => 195],
                 ['title' => 'Reporting Dimensions', 'slug' => 'master-reporting-dimensions', 'path' => '/master-data/reporting-dimensions', 'sort_order' => 191],
             ]],
             ['title' => 'Expenses & Assets', 'slug' => 'master-expenses-assets', 'sort_order' => 20, 'children' => [
                 ['title' => 'Expense Categories', 'slug' => 'master-expense-categories', 'path' => '/master-data/expense-categories', 'sort_order' => 201],
-                ['title' => 'Document / Expense Types', 'slug' => 'master-expense-types', 'path' => '/master-data/document-types', 'sort_order' => 202],
+                ['title' => 'Document Types', 'slug' => 'master-expense-types', 'path' => '/master-data/document-types', 'sort_order' => 202],
                 ['title' => 'Asset Categories', 'slug' => 'master-asset-categories', 'path' => '/master-data/asset-categories', 'sort_order' => 203],
-            ]],
-            ['title' => 'Procurement', 'slug' => 'master-procurement', 'sort_order' => 21, 'children' => [
-                ['title' => 'Vendors/Suppliers/Consultants', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 211],
-                ['title' => 'Vendor Categories', 'slug' => 'master-vendor-categories', 'path' => '/master-data/vendor-categories', 'sort_order' => 212],
-                ['title' => 'Items/Services', 'slug' => 'master-items-services', 'path' => '/master-data/procurement-items', 'sort_order' => 213],
-                ['title' => 'Unit of Measures', 'slug' => 'master-unit-of-measures', 'path' => '/master-data/unit-of-measures', 'sort_order' => 214],
-                ['title' => 'Procurement Categories', 'slug' => 'master-procurement-categories', 'path' => '/master-data/procurement-categories', 'sort_order' => 215],
             ]],
         ];
 
@@ -75,7 +57,7 @@ class MasterMenuSeeder extends Seeder
             $groupMenu = Menu::updateOrCreate(['slug' => $group['slug']], [
                 'parent_id' => $masterMenu->id,
                 'title' => $group['title'],
-                'path' => '/master-data',
+                'path' => $group['path'] ?? '/master-data',
                 'sort_order' => $group['sort_order'],
                 'is_active' => true,
             ]);
