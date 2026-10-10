@@ -122,7 +122,7 @@ class RoleSeeder extends Seeder
                     ['title' => 'Accounting Periods', 'slug' => 'master-accounting-periods', 'path' => '/master-data/accounting-periods', 'sort_order' => 174],
                     ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
                 ]],
-                ['title' => 'Programs & Projects', 'slug' => 'master-programs-projects', 'path' => '/master-data', 'sort_order' => 18, 'children' => [
+                ['title' => 'Programs & Projects', 'slug' => 'master-programs-projects', 'path' => '/master-data/programs', 'sort_order' => 18, 'children' => [
                     ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 180],
                     ['title' => 'Funding Sources', 'slug' => 'master-funding-sources', 'path' => '/master-data/funding-sources', 'sort_order' => 182],
                     ['title' => 'Donor Types', 'slug' => 'master-donor-types', 'path' => '/master-data/donor-types', 'sort_order' => 183],

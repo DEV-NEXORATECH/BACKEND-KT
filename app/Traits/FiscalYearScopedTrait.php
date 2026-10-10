@@ -20,6 +20,14 @@ trait FiscalYearScopedTrait
                 ?: $request->input('fiscal_year_id')
                 ?: $request->header('X-Fiscal-Year-Id');
 
+            // The active fiscal year is the default context when a client
+            // does not explicitly send one. Global records with NULL remain
+            // available in every year.
+            $fiscalYearId = $fiscalYearId ?: FiscalYear::query()
+                ->where('is_active', true)
+                ->orderByDesc('year')
+                ->value('id');
+
             if (! $fiscalYearId || ! Schema::hasColumn($query->getModel()->getTable(), 'fiscal_year_id')) {
                 return;
             }
@@ -37,6 +45,10 @@ trait FiscalYearScopedTrait
                 $fiscalYearId = request()->query('fiscal_year_id')
                     ?: request()->header('X-Fiscal-Year-Id')
                     ?: request()->input('fiscal_year_id');
+                $fiscalYearId = $fiscalYearId ?: FiscalYear::query()
+                    ->where('is_active', true)
+                    ->orderByDesc('year')
+                    ->value('id');
                 if ($fiscalYearId && FiscalYear::query()->whereKey($fiscalYearId)->exists()) {
                     $model->setAttribute('fiscal_year_id', (int) $fiscalYearId);
                 }
