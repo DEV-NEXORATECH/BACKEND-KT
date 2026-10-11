@@ -140,6 +140,7 @@ class AccountsReceivableController extends Controller
 
         $invoice = DB::transaction(function () use ($customerInvoice, $arAccount) {
             $journal = Journal::create([
+                'fiscal_year_id' => $customerInvoice->fiscal_year_id,
                 'journal_number' => 'AR-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $customerInvoice->invoice_date,
                 'journal_type' => 'accrual',
@@ -149,14 +150,15 @@ class AccountsReceivableController extends Controller
                 'posted_by' => request()->user()->id,
                 'posted_at' => now(),
             ]);
-            $journal->lines()->create(['account_id' => $arAccount->id, 'line_description' => 'Accounts receivable '.$customerInvoice->invoice_number, 'debit' => $customerInvoice->total_amount, 'credit' => 0, 'line_order' => 1]);
+            $lineContext = ['project_id' => $customerInvoice->project_id, 'donor_id' => $customerInvoice->donor_id, 'program_id' => $customerInvoice->program_id];
+            $journal->lines()->create(array_merge(['account_id' => $arAccount->id, 'line_description' => 'Accounts receivable '.$customerInvoice->invoice_number, 'debit' => $customerInvoice->total_amount, 'credit' => 0, 'line_order' => 1], $lineContext));
 
             foreach ($customerInvoice->lines as $index => $line) {
                 $revenue = $line->revenueAccount ?: ChartOfAccount::query()->where('account_type', 'revenue')->where('is_header', false)->first();
                 if (! $revenue) {
                     throw ValidationException::withMessages(['account' => 'COA revenue belum tersedia.']);
                 }
-                $journal->lines()->create([
+                $journal->lines()->create(array_merge([
                     'account_id' => $revenue->id,
                     // Revenue represents income, not budget consumption; do not
                     // attach budget_line_id so it never inflates/deflates budget actuals.
@@ -164,7 +166,7 @@ class AccountsReceivableController extends Controller
                     'debit' => 0,
                     'credit' => $line->total_amount,
                     'line_order' => $index + 2,
-                ]);
+                ], ['project_id' => $line->project_id ?? $customerInvoice->project_id, 'donor_id' => $customerInvoice->donor_id, 'program_id' => $customerInvoice->program_id]));
             }
 
             $customerInvoice->update([
@@ -183,6 +185,7 @@ class AccountsReceivableController extends Controller
                     ['source_type' => CustomerInvoice::class, 'source_id' => $customerInvoice->id],
                     [
                         'tax_id' => $tax->id,
+                        'fiscal_year_id' => $customerInvoice->fiscal_year_id,
                         'transaction_type' => 'ar_invoice',
                         'reference' => $customerInvoice->invoice_number,
                         'transaction_date' => $customerInvoice->invoice_date,
@@ -244,6 +247,7 @@ class AccountsReceivableController extends Controller
             $fxGainLoss = round($functionalAmount - $invoiceFunctionalAmount, 2);
             $fxAccount = $fxGainLoss >= 0 ? ChartOfAccount::where('code', 'FX-GAIN')->first() : ChartOfAccount::where('code', 'FX-LOSS')->first();
             $journal = Journal::create([
+                'fiscal_year_id' => $customerInvoice->fiscal_year_id,
                 'journal_number' => 'RCV-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $data['payment_date'],
                 'journal_type' => 'manual',
@@ -256,12 +260,14 @@ class AccountsReceivableController extends Controller
                 'original_amount' => $data['amount'], 'converted_amount' => $functionalAmount,
                 'exchange_rate' => $receiptRate, 'rate_date' => $data['payment_date'], 'rate_source' => 'receipt_snapshot', 'fx_gain_loss' => $fxGainLoss,
             ]);
-            $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank receipt', 'debit' => $functionalAmount, 'credit' => 0, 'line_order' => 1]);
-            $journal->lines()->create(['account_id' => $arAccount->id, 'line_description' => 'AR receipt at invoice rate', 'debit' => 0, 'credit' => $invoiceFunctionalAmount, 'line_order' => 2]);
+            $lineContext = ['project_id' => $customerInvoice->project_id, 'donor_id' => $customerInvoice->donor_id, 'program_id' => $customerInvoice->program_id];
+            $journal->lines()->create(array_merge(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank receipt', 'debit' => $functionalAmount, 'credit' => 0, 'line_order' => 1], $lineContext));
+            $journal->lines()->create(array_merge(['account_id' => $arAccount->id, 'line_description' => 'AR receipt at invoice rate', 'debit' => 0, 'credit' => $invoiceFunctionalAmount, 'line_order' => 2], $lineContext));
             if (abs($fxGainLoss) >= 0.01 && $fxAccount) $journal->lines()->create(['account_id' => $fxAccount->id, 'line_description' => $fxGainLoss > 0 ? 'FX gain on receipt' : 'FX loss on receipt', 'debit' => $fxGainLoss < 0 ? abs($fxGainLoss) : 0, 'credit' => $fxGainLoss > 0 ? $fxGainLoss : 0, 'line_order' => 3]);
 
             $payment = Payment::create([
                 'payment_number' => 'RCV-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                'fiscal_year_id' => $customerInvoice->fiscal_year_id,
                 'customer_invoice_id' => $customerInvoice->id,
                 'bank_account_id' => $bank->id,
                 'payment_method_id' => $data['payment_method_id'] ?? null,
@@ -275,6 +281,7 @@ class AccountsReceivableController extends Controller
             ]);
 
             BankTransaction::create([
+                'fiscal_year_id' => $customerInvoice->fiscal_year_id,
                 'bank_account_id' => $bank->id,
                 'payment_id' => $payment->id,
                 'transaction_date' => $data['payment_date'],

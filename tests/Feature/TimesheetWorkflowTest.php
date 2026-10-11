@@ -306,12 +306,15 @@ class TimesheetWorkflowTest extends TestCase
             'rate_scheme' => 'daily_capped_8h',
         ])->assertCreated();
 
+        // Rate scheme is a master-data financial control for non-approvers;
+        // change the employee master before creating the hourly entry.
+        $employee->update(['default_rate_scheme' => 'hourly_unlimited']);
+
         $this->actingAs($staff, 'sanctum')->postJson('/api/v1/timesheets/entries', [
             'employee_id' => $employee->id,
             'entry_date' => '2026-09-21',
             'hours' => 10.0,
             'description' => 'Entry 2',
-            'rate_scheme' => 'hourly_unlimited',
         ])->assertCreated();
 
         $list = $this->actingAs($staff, 'sanctum')

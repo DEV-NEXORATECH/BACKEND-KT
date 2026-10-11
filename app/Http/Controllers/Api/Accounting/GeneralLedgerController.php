@@ -10,9 +10,10 @@ class GeneralLedgerController extends Controller
 {
     public function index(Request $request)
     {
-        $filters = $request->validate(['start_date' => 'nullable|date', 'end_date' => 'nullable|date', 'account_id' => 'nullable|exists:chart_of_accounts,id', 'project_id' => 'nullable|exists:projects,id', 'donor_id' => 'nullable|exists:donors,id', 'department_id' => 'nullable|exists:departments,id']);
+        $filters = $request->validate(['fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'start_date' => 'nullable|date', 'end_date' => 'nullable|date', 'account_id' => 'nullable|exists:chart_of_accounts,id', 'project_id' => 'nullable|exists:projects,id', 'donor_id' => 'nullable|exists:donors,id', 'department_id' => 'nullable|exists:departments,id']);
         $query = JournalLine::with(['journal:id,journal_number,journal_date,reference,description,status', 'account:id,code,name'])
             ->whereHas('journal', fn ($journal) => $journal->where('status', 'posted'))
+            ->when($filters['fiscal_year_id'] ?? null, fn ($query, $id) => $query->whereHas('journal', fn ($journal) => $journal->where('fiscal_year_id', $id)))
             ->when($filters['start_date'] ?? null, fn ($query, $date) => $query->whereHas('journal', fn ($journal) => $journal->whereDate('journal_date', '>=', $date)))
             ->when($filters['end_date'] ?? null, fn ($query, $date) => $query->whereHas('journal', fn ($journal) => $journal->whereDate('journal_date', '<=', $date)))
             ->when($filters['account_id'] ?? null, fn ($query, $id) => $query->where('account_id', $id))

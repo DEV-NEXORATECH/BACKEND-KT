@@ -17,8 +17,10 @@ class ProcessDataSeeder extends Seeder
         $this->call([
             FeatureDataSeeder::class,
             UiDemoDataSeeder::class,
-            FiscalYearDemoSeeder::class,
             CompleteFeatureDataSeeder::class,
+            // Apply fiscal-year backfill and create the 2025/2027 counterparts
+            // after every feature seeder has finished creating its records.
+            FiscalYearDemoSeeder::class,
         ]);
     }
 }

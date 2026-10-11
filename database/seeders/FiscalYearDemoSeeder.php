@@ -431,8 +431,10 @@ class FiscalYearDemoSeeder extends Seeder
             'acquisition_date' => '2027-02-10', 'notes' => 'Seeded fixed asset for fiscal year 2027.',
         ]);
 
-        // Make the intended default explicit after older seeders have run.
-        DB::table('fiscal_years')->where('id', '!=', $fy2026)->update(['is_active' => false]);
-        DB::table('fiscal_years')->where('id', $fy2026)->update(['is_active' => true]);
+        // Keep one active year, but do not silently overwrite an administrator's
+        // existing active-year choice when the demo seeder runs again.
+        $activeFiscalYearId = $years[$activeYear]->id ?? $fy2026;
+        DB::table('fiscal_years')->where('id', '!=', $activeFiscalYearId)->update(['is_active' => false]);
+        DB::table('fiscal_years')->where('id', $activeFiscalYearId)->update(['is_active' => true]);
     }
 }

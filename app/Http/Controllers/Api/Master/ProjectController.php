@@ -28,6 +28,9 @@ class ProjectController extends BaseMasterController
                 ->with($this->defaultWith)
                 ->where('is_active', true)
                 ->whereHas('fiscalYears', fn ($query) => $query->whereKey($request->integer('fiscal_year_id')))
+                ->when($request->filled('grant_agreement_id'), fn ($query) => $query->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+                ->when($request->filled('program_id'), fn ($query) => $query->where('program_id', $request->integer('program_id')))
+                ->when($request->filled('donor_id'), fn ($query) => $query->whereHas('grantAgreement', fn ($grantQuery) => $grantQuery->where('donor_id', $request->integer('donor_id'))))
                 ->orderBy('name')
                 ->get();
 

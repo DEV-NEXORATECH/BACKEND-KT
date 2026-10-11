@@ -78,7 +78,11 @@ trait FilterableSearchableTrait
                             ->orWhere($filterCol, $request->query($filterCol));
                     });
                 } else {
-                    $query->where($filterCol, $request->query($filterCol));
+                    if (\Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), $filterCol)) {
+                        $query->where($filterCol, $request->query($filterCol));
+                    } elseif ($filterCol === 'donor_id' && method_exists($this, 'grantAgreement')) {
+                        $query->whereHas('grantAgreement', fn (Builder $grantQuery) => $grantQuery->where('donor_id', $request->query($filterCol)));
+                    }
                 }
             }
         }

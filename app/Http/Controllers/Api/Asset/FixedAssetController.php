@@ -155,6 +155,7 @@ class FixedAssetController extends Controller
 
         $asset = DB::transaction(function () use ($fixedAsset, $assetAccount, $clearingAccount, $request, $sourceJournal) {
             $journal = Journal::create([
+                'fiscal_year_id' => $fixedAsset->fiscal_year_id,
                 'journal_number' => 'FA-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $fixedAsset->acquisition_date,
                 'journal_type' => 'manual',
@@ -219,6 +220,7 @@ class FixedAssetController extends Controller
 
         $asset = DB::transaction(function () use ($fixedAsset, $data, $amount, $depreciationAccount, $accumulatedAccount) {
             $journal = Journal::create([
+                'fiscal_year_id' => $fixedAsset->fiscal_year_id,
                 'journal_number' => 'DEP-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $data['depreciation_date'],
                 'journal_type' => 'adjustment',
@@ -265,7 +267,7 @@ class FixedAssetController extends Controller
         $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
         if (! $lossAccount || ! $accumulatedAccount) throw ValidationException::withMessages(['account' => 'COA impairment loss dan accumulated asset harus tersedia.']);
         $asset = DB::transaction(function () use ($fixedAsset, $data, $amount, $lossAccount, $accumulatedAccount, $request) {
-            $journal = Journal::create(['journal_number' => 'IMP-'.now()->format('YmdHis').'-'.random_int(100, 999), 'journal_date' => $data['impairment_date'], 'journal_type' => 'adjustment', 'reference' => $fixedAsset->asset_code, 'description' => 'Impairment '.$fixedAsset->asset_name.' - '.$data['reason'], 'status' => 'posted', 'posted_by' => $request->user()->id, 'posted_at' => now(), 'source_type' => 'fixed_asset_impairment', 'source_id' => $fixedAsset->id]);
+            $journal = Journal::create(['fiscal_year_id' => $fixedAsset->fiscal_year_id, 'journal_number' => 'IMP-'.now()->format('YmdHis').'-'.random_int(100, 999), 'journal_date' => $data['impairment_date'], 'journal_type' => 'adjustment', 'reference' => $fixedAsset->asset_code, 'description' => 'Impairment '.$fixedAsset->asset_name.' - '.$data['reason'], 'status' => 'posted', 'posted_by' => $request->user()->id, 'posted_at' => now(), 'source_type' => 'fixed_asset_impairment', 'source_id' => $fixedAsset->id]);
             $journal->lines()->create(['account_id' => $lossAccount->id, 'project_id' => $fixedAsset->project_id, 'donor_id' => $fixedAsset->donor_id, 'program_id' => $fixedAsset->program_id, 'line_description' => 'Impairment loss', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
             $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Accumulated impairment', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
             $fixedAsset->update(['impairment_amount' => round((float) $fixedAsset->impairment_amount + $amount, 2), 'net_book_value' => max((float) $fixedAsset->residual_value, round((float) $fixedAsset->net_book_value - $amount, 2)), 'impairment_journal_id' => $journal->id]);
@@ -303,7 +305,7 @@ class FixedAssetController extends Controller
             $proceeds = (float) $data['disposal_proceeds'];
             $loss = max(0, round($netBookValue - $proceeds, 2));
             $gain = max(0, round($proceeds - $netBookValue, 2));
-            $journal = Journal::create(['journal_number' => 'DISP-'.now()->format('YmdHis').'-'.random_int(100, 999), 'journal_date' => $data['disposed_date'], 'journal_type' => 'adjustment', 'reference' => $fixedAsset->asset_code, 'description' => 'Disposal '.$fixedAsset->asset_name, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now(), 'source_type' => 'fixed_asset_disposal', 'source_id' => $fixedAsset->id]);
+            $journal = Journal::create(['fiscal_year_id' => $fixedAsset->fiscal_year_id, 'journal_number' => 'DISP-'.now()->format('YmdHis').'-'.random_int(100, 999), 'journal_date' => $data['disposed_date'], 'journal_type' => 'adjustment', 'reference' => $fixedAsset->asset_code, 'description' => 'Disposal '.$fixedAsset->asset_name, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now(), 'source_type' => 'fixed_asset_disposal', 'source_id' => $fixedAsset->id]);
             $line = 1;
             if ((float) $fixedAsset->accumulated_depreciation > 0) $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Remove accumulated depreciation', 'debit' => $fixedAsset->accumulated_depreciation, 'credit' => 0, 'line_order' => $line++]);
             if ($proceeds > 0 && $bank?->gl_account_id) $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Disposal proceeds', 'debit' => $proceeds, 'credit' => 0, 'line_order' => $line++]);
@@ -374,6 +376,7 @@ class FixedAssetController extends Controller
 
                 DB::transaction(function () use ($asset, $depreciationDate, $amount, $depreciationAccount, $accumulatedAccount) {
                     $journal = Journal::create([
+                        'fiscal_year_id' => $asset->fiscal_year_id,
                         'journal_number' => 'BULKDEP-'.now()->format('YmdHis').'-'.random_int(100, 999),
                         'journal_date' => $depreciationDate,
                         'journal_type' => 'adjustment',

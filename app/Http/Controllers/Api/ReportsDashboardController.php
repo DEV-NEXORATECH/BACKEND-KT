@@ -293,7 +293,7 @@ class ReportsDashboardController extends Controller
         ]);
 
         $budgetRows = $budgetService->summary(array_filter($filters));
-        $postedLines = $this->postedLines($period['start'], $period['end'], $request->input('project_id'));
+        $postedLines = $this->postedLines($period['start'], $period['end'], $request->input('project_id'), null, $period['fiscal_year_id']);
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
         $budgetTotals = $this->budgetTotals($budgetRows);
         $recentTransactions = $this->recentTransactions($period['start'], $period['end']);
@@ -480,8 +480,8 @@ class ReportsDashboardController extends Controller
         $grants = \App\Models\Master\GrantAgreement::query()->with(['donor', 'currency', 'projects'])->get();
         $grantDeadlines = GrantReportingDeadline::query()->whereIn('grant_agreement_id', $grants->pluck('id'))->orderBy('due_date')->get()->groupBy('grant_agreement_id');
 
-        $budgetRows = $budgetService->summary($request->only(['project_id', 'grant_agreement_id', 'donor_id']));
-        $postedLines = $this->postedLines($period['start'], $period['end']);
+        $budgetRows = $budgetService->summary($request->only(['fiscal_year_id', 'project_id', 'grant_agreement_id', 'donor_id']));
+        $postedLines = $this->postedLines($period['start'], $period['end'], null, null, $period['fiscal_year_id']);
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
         $totals = $this->budgetTotals($budgetRows);
 
@@ -567,7 +567,7 @@ class ReportsDashboardController extends Controller
         $period = $this->period($request);
         $filters = $request->only(['fiscal_year_id', 'start_date', 'end_date', 'donor_id', 'grant_agreement_id', 'program_id', 'project_id', 'currency_id']);
         $budgetRows = $budgetService->summary(array_filter($filters));
-        $postedLines = $this->postedLines($period['start'], $period['end'], $request->input('project_id'));
+        $postedLines = $this->postedLines($period['start'], $period['end'], $request->input('project_id'), null, $period['fiscal_year_id']);
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
         $totals = $this->budgetTotals($budgetRows);
 
@@ -680,7 +680,7 @@ class ReportsDashboardController extends Controller
         $projectId = $request->input('project_id');
         $budgetLineId = $request->input('budget_line_id');
         $budgetRows = $budgetService->summary($request->only(['project_id', 'grant_agreement_id', 'budget_category_id', 'budget_line_id']));
-        $postedLines = $this->postedLines($period['start'], $period['end'], $projectId, $budgetLineId);
+        $postedLines = $this->postedLines($period['start'], $period['end'], $projectId, $budgetLineId, $period['fiscal_year_id']);
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
 
         return response()->json([
@@ -688,7 +688,7 @@ class ReportsDashboardController extends Controller
             'period' => $period['label'],
             'financial_statement' => $this->financialStatement($postedLines),
             'profit_loss' => ['rows' => collect($this->financialStatement($postedLines)['rows'])->filter(fn (array $row) => in_array(strtolower((string) ($row['account_type'] ?? '')), ['revenue', 'income', 'expense'], true))->values()->all()],
-            'balance_sheet' => $this->balanceSheetData($request->input('as_of', $period['end']?->toDateString())),
+            'balance_sheet' => $this->balanceSheetData($request->input('as_of', $period['end']?->toDateString()), $period['fiscal_year_id']),
             'budget_vs_actual' => [
                 'totals' => $this->budgetTotals($budgetRows),
                 'rows' => array_values(collect($budgetRows)->map(fn (array $row) => [
@@ -779,7 +779,7 @@ class ReportsDashboardController extends Controller
         return response()->json([
             'success' => true,
             'as_of' => $asOf->toDateString(),
-            'data' => $this->balanceSheetData($asOf->toDateString()),
+            'data' => $this->balanceSheetData($asOf->toDateString(), $request->input('fiscal_year_id')),
         ]);
     }
 
@@ -788,7 +788,7 @@ class ReportsDashboardController extends Controller
     {
         $this->ensureExportScope($request);
         $period = $this->period($request);
-        $rows = $this->financialStatement($this->postedLines($period['start'], $period['end'], $request->input('project_id')))['rows'];
+        $rows = $this->financialStatement($this->postedLines($period['start'], $period['end'], $request->input('project_id'), null, $period['fiscal_year_id']))['rows'];
         $this->auditExport($request, 'profit_loss_pdf', count($rows));
 
         return Pdf::loadView('reports.profit-loss-pdf', [
@@ -802,7 +802,7 @@ class ReportsDashboardController extends Controller
     {
         $this->ensureExportScope($request);
         $asOf = $request->filled('as_of') ? CarbonImmutable::parse($request->string('as_of'))->toDateString() : CarbonImmutable::now()->toDateString();
-        $data = $this->balanceSheetData($asOf);
+        $data = $this->balanceSheetData($asOf, $request->input('fiscal_year_id'));
         $this->auditExport($request, 'balance_sheet_pdf', count($data['accounts']));
 
         return Pdf::loadView('reports.balance-sheet-pdf', ['data' => $data, 'as_of' => $asOf])
@@ -818,14 +818,14 @@ class ReportsDashboardController extends Controller
 
         if ($report === 'profit-loss') {
             $period = $this->period($request);
-            $rows = collect($this->financialStatement($this->postedLines($period['start'], $period['end'], $request->input('project_id')))['rows'])
+            $rows = collect($this->financialStatement($this->postedLines($period['start'], $period['end'], $request->input('project_id'), null, $period['fiscal_year_id']))['rows'])
                 ->filter(fn (array $row) => in_array(strtolower((string) ($row['account_type'] ?? '')), ['revenue', 'income', 'expense'], true))->values()->all();
             $title = 'Profit & Loss';
             $filename = 'laporan-laba-rugi-'.now()->format('Ymd_His');
             $pdfData = ['rows' => collect($rows), 'period_label' => $this->periodLabel($period)];
         } elseif ($report === 'balance-sheet') {
             $asOf = $request->filled('as_of') ? CarbonImmutable::parse($request->string('as_of'))->toDateString() : CarbonImmutable::now()->toDateString();
-            $data = $this->balanceSheetData($asOf);
+            $data = $this->balanceSheetData($asOf, $request->input('fiscal_year_id'));
             $rows = $data['accounts'];
             $title = 'Balance Sheet';
             $filename = 'neraca-'.$asOf.'-'.now()->format('His');
@@ -878,7 +878,9 @@ class ReportsDashboardController extends Controller
 
     public function fxAdjustments(Request $request): JsonResponse
     {
-        $rows = Journal::query()->where('status', 'posted')->where('fx_gain_loss', '!=', 0)->latest('journal_date')->limit(500)->get()
+        $rows = Journal::query()->where('status', 'posted')->where('fx_gain_loss', '!=', 0)
+            ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
+            ->latest('journal_date')->limit(500)->get()
             ->map(fn (Journal $journal) => ['id' => $journal->id, 'journal_number' => $journal->journal_number, 'date' => $journal->journal_date?->toDateString(), 'source_type' => $journal->source_type, 'source_id' => $journal->source_id, 'gain_loss' => round((float) $journal->fx_gain_loss, 2), 'currency' => $journal->functional_currency_code, 'rate' => $journal->exchange_rate])->values();
         return response()->json(['success' => true, 'data' => $rows]);
     }
@@ -895,7 +897,7 @@ class ReportsDashboardController extends Controller
 
         $months = max(3, min(12, (int) $request->input('months', 6)));
         $from = CarbonImmutable::now()->startOfMonth()->subMonths($months - 1);
-        $rows = JournalLine::query()->whereHas('journal', fn (Builder $q) => $q->where('status', 'posted')->whereDate('journal_date', '>=', $from))->with('journal:id,journal_date')->get();
+        $rows = JournalLine::query()->whereHas('journal', fn (Builder $q) => $q->where('status', 'posted')->whereDate('journal_date', '>=', $from)->when($request->filled('fiscal_year_id'), fn (Builder $yearQuery) => $yearQuery->where('fiscal_year_id', $request->integer('fiscal_year_id'))))->with('journal:id,journal_date')->get();
         $monthly = collect(range(0, $months - 1))->mapWithKeys(function ($index) use ($from, $rows) { $month = $from->addMonths($index); $key = $month->format('Y-m'); $value = $rows->filter(fn (JournalLine $line) => $line->journal?->journal_date?->format('Y-m') === $key)->sum(fn (JournalLine $line) => (float) $line->debit - (float) $line->credit); return [$key => round(max(0, $value), 2)]; });
         $average = round($monthly->avg(), 2);
         return response()->json(['success' => true, 'data' => ['months' => $monthly, 'average_monthly_expense' => $average, 'next_month_projection' => $average, 'method' => 'rolling_average']]);
@@ -954,7 +956,7 @@ class ReportsDashboardController extends Controller
         return "{$start} s.d. {$end}";
     }
 
-    private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null, ?string $budgetLineId = null)
+    private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null, ?string $budgetLineId = null, ?int $fiscalYearId = null)
     {
         return JournalLine::query()
             ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,grant_no,agreement_name'])
@@ -963,6 +965,7 @@ class ReportsDashboardController extends Controller
                     ->when($start, fn (Builder $inner) => $inner->whereDate('journal_date', '>=', $start))
                     ->when($end, fn (Builder $inner) => $inner->whereDate('journal_date', '<=', $end));
             })
+            ->when($fiscalYearId, fn (Builder $query) => $query->whereHas('journal', fn (Builder $journal) => $journal->where('fiscal_year_id', $fiscalYearId)))
             ->when($projectId, fn (Builder $query) => $query->where('project_id', $projectId))
             ->when($budgetLineId, fn (Builder $query) => $query->where('budget_line_id', $budgetLineId))
             ->get();
@@ -1176,11 +1179,11 @@ class ReportsDashboardController extends Controller
         ];
     }
 
-    private function balanceSheetData(?string $asOf): array
+    private function balanceSheetData(?string $asOf, ?int $fiscalYearId = null): array
     {
         $date = $asOf ? CarbonImmutable::parse($asOf)->endOfDay() : CarbonImmutable::now()->endOfDay();
         $lines = JournalLine::query()
-            ->whereHas('journal', fn (Builder $query) => $query->where('status', 'posted')->whereDate('journal_date', '<=', $date))
+            ->whereHas('journal', fn (Builder $query) => $query->where('status', 'posted')->whereDate('journal_date', '<=', $date)->when($fiscalYearId, fn (Builder $yearQuery) => $yearQuery->where('fiscal_year_id', $fiscalYearId)))
             ->get();
 
         $accounts = ChartOfAccount::query()
@@ -1459,6 +1462,7 @@ class ReportsDashboardController extends Controller
         $projectId = $request->input('project_id');
         $donorId = $request->input('donor_id');
         $budgetLineId = $request->input('budget_line_id');
+        $fiscalYearId = $request->input('fiscal_year_id');
         $startDate = $request->input('start_date');
         $endDate = $request->input('end_date');
 
@@ -1470,10 +1474,11 @@ class ReportsDashboardController extends Controller
                 'project:id,code,name',
                 'department:id,name',
             ])
-            ->whereHas('journal', function (Builder $q) use ($startDate, $endDate) {
+            ->whereHas('journal', function (Builder $q) use ($startDate, $endDate, $fiscalYearId) {
                 $q->where('status', 'posted')
                     ->when($startDate, fn ($inner) => $inner->whereDate('journal_date', '>=', $startDate))
-                    ->when($endDate, fn ($inner) => $inner->whereDate('journal_date', '<=', $endDate));
+                    ->when($endDate, fn ($inner) => $inner->whereDate('journal_date', '<=', $endDate))
+                    ->when($fiscalYearId, fn ($inner) => $inner->where('fiscal_year_id', $fiscalYearId));
             });
 
         if ($accountId) {

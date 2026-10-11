@@ -276,6 +276,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
         $expense = DB::transaction(function () use ($expenseRequest, $payable, $isCashAdvance, $staffAdvance) {
             $journal = Journal::create([
+                'fiscal_year_id' => $expenseRequest->fiscal_year_id,
                 'journal_number' => 'EXP-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $expenseRequest->request_date,
                 'journal_type' => 'accrual',
@@ -307,6 +308,8 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 }
                 $journal->lines()->create([
                     'account_id' => $account->id,
+                    'donor_id' => $expenseRequest->donor_id,
+                    'program_id' => $expenseRequest->program_id,
                     'project_id' => $expenseRequest->project_id,
                     'budget_line_id' => $line->budget_line_id,
                     'department_id' => $expenseRequest->department_id,
@@ -318,6 +321,9 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             }
             $journal->lines()->create([
                 'account_id' => $payable->id,
+                'donor_id' => $expenseRequest->donor_id,
+                'program_id' => $expenseRequest->program_id,
+                'project_id' => $expenseRequest->project_id,
                 'line_description' => 'Expense payable '.$expenseRequest->request_number,
                 'debit' => 0,
                 'credit' => $expenseRequest->total_amount,
@@ -334,6 +340,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                     ['source_type' => ExpenseRequest::class, 'source_id' => $expenseRequest->id],
                     [
                         'tax_id' => $tax->id,
+                        'fiscal_year_id' => $expenseRequest->fiscal_year_id,
                         'transaction_type' => 'expense',
                         'reference' => $expenseRequest->request_number,
                         'transaction_date' => $expenseRequest->request_date,
@@ -405,6 +412,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             $fxGainLoss = round($functionalAmount - $requestFunctionalAmount, 2);
             $fxAccount = $fxGainLoss > 0 ? ChartOfAccount::where('code', 'FX-LOSS')->first() : ChartOfAccount::where('code', 'FX-GAIN')->first();
             $journal = Journal::create([
+                'fiscal_year_id' => $expenseRequest->fiscal_year_id,
                 'journal_number' => 'EXPPAY-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $data['payment_date'],
                 'journal_type' => 'manual',
@@ -416,11 +424,13 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'source_type' => 'expense_request', 'source_id' => $expenseRequest->id,
                 'original_amount' => $data['amount'], 'converted_amount' => $functionalAmount, 'exchange_rate' => $paymentRate, 'rate_date' => $data['payment_date'], 'rate_source' => 'payment_snapshot', 'fx_gain_loss' => $fxGainLoss,
             ]);
-            $journal->lines()->create(['account_id' => $payable->id, 'line_description' => $isCashAdvance ? 'Staff Advance disbursement' : 'Expense payable payment', 'debit' => $requestFunctionalAmount, 'credit' => 0, 'line_order' => 1]);
-            $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank payment', 'debit' => 0, 'credit' => $functionalAmount, 'line_order' => 2]);
+            $lineContext = ['donor_id' => $expenseRequest->donor_id, 'program_id' => $expenseRequest->program_id, 'project_id' => $expenseRequest->project_id, 'department_id' => $expenseRequest->department_id];
+            $journal->lines()->create(array_merge(['account_id' => $payable->id, 'line_description' => $isCashAdvance ? 'Staff Advance disbursement' : 'Expense payable payment', 'debit' => $requestFunctionalAmount, 'credit' => 0, 'line_order' => 1], $lineContext));
+            $journal->lines()->create(array_merge(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank payment', 'debit' => 0, 'credit' => $functionalAmount, 'line_order' => 2], $lineContext));
             if (abs($fxGainLoss) >= 0.01 && $fxAccount) $journal->lines()->create(['account_id' => $fxAccount->id, 'line_description' => $fxGainLoss > 0 ? 'FX loss on expense payment' : 'FX gain on expense payment', 'debit' => $fxGainLoss > 0 ? $fxGainLoss : 0, 'credit' => $fxGainLoss < 0 ? abs($fxGainLoss) : 0, 'line_order' => 3]);
 
             $payment = Payment::create([
+                'fiscal_year_id' => $expenseRequest->fiscal_year_id,
                 'payment_number' => 'EXPPAY-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'expense_request_id' => $expenseRequest->id,
                 'bank_account_id' => $bank->id,
@@ -435,6 +445,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             ]);
 
             BankTransaction::create([
+                'fiscal_year_id' => $expenseRequest->fiscal_year_id,
                 'bank_account_id' => $bank->id,
                 'payment_id' => $payment->id,
                 'transaction_date' => $data['payment_date'],
@@ -494,6 +505,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             $staffAdvance = $this->staffAdvanceAccount();
             if (! $staffAdvance) throw ValidationException::withMessages(['account' => 'COA Employee Advances / Staff Receivable belum dikonfigurasi.']);
             $journal = Journal::create([
+                'fiscal_year_id' => $expenseRequest->fiscal_year_id,
                 'journal_number' => 'EXPSET-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => now()->toDateString(),
                 'journal_type' => 'manual',
@@ -515,7 +527,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 if ($amount <= 0) continue;
                 $account = $line->budgetLine?->glAccount ?? $line->expenseCategory?->defaultGlAccount ?? ChartOfAccount::where('account_type', 'expense')->where('is_header', false)->first();
                 if (! $account) throw ValidationException::withMessages(['account' => 'COA expense belum tersedia untuk settlement.']);
-                $journal->lines()->create(['account_id' => $account->id, 'project_id' => $expenseRequest->project_id, 'budget_line_id' => $line->budget_line_id, 'department_id' => $expenseRequest->department_id, 'line_description' => 'Settlement '.$line->description, 'debit' => $amount, 'credit' => 0, 'line_order' => $index + 1]);
+                $journal->lines()->create(['account_id' => $account->id, 'donor_id' => $expenseRequest->donor_id, 'program_id' => $expenseRequest->program_id, 'project_id' => $expenseRequest->project_id, 'budget_line_id' => $line->budget_line_id, 'department_id' => $expenseRequest->department_id, 'line_description' => 'Settlement '.$line->description, 'debit' => $amount, 'credit' => 0, 'line_order' => $index + 1]);
                 $remaining = round($remaining - $amount, 2);
             }
             if ($deltaCleared > 0) $journal->lines()->create(['account_id' => $staffAdvance->id, 'line_description' => 'Clear Staff Advance '.$expenseRequest->request_number, 'debit' => 0, 'credit' => $deltaCleared, 'line_order' => 999]);
@@ -548,11 +560,11 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         $return = DB::transaction(function () use ($expenseRequest, $data, $bank) {
             $staffAdvance = $this->staffAdvanceAccount();
             if (! $staffAdvance) throw ValidationException::withMessages(['account' => 'COA Employee Advances / Staff Receivable belum dikonfigurasi.']);
-            $journal = Journal::create(['journal_number' => 'CAR-'.now()->format('YmdHis').'-'.random_int(100,999), 'journal_date' => $data['return_date'], 'journal_type' => 'manual', 'reference' => $data['reference'] ?? $expenseRequest->request_number.'-RETURN', 'description' => 'Cash Advance return '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now(), 'source_type' => 'cash_advance_return', 'source_id' => $expenseRequest->id, 'original_amount' => $data['amount'], 'converted_amount' => $data['amount'], 'exchange_rate' => 1, 'rate_date' => $data['return_date'], 'rate_source' => 'return_snapshot']);
+            $journal = Journal::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'journal_number' => 'CAR-'.now()->format('YmdHis').'-'.random_int(100,999), 'journal_date' => $data['return_date'], 'journal_type' => 'manual', 'reference' => $data['reference'] ?? $expenseRequest->request_number.'-RETURN', 'description' => 'Cash Advance return '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now(), 'source_type' => 'cash_advance_return', 'source_id' => $expenseRequest->id, 'original_amount' => $data['amount'], 'converted_amount' => $data['amount'], 'exchange_rate' => 1, 'rate_date' => $data['return_date'], 'rate_source' => 'return_snapshot']);
             $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Cash Advance return received', 'debit' => $data['amount'], 'credit' => 0, 'line_order' => 1]);
             $journal->lines()->create(['account_id' => $staffAdvance->id, 'line_description' => 'Clear Staff Advance return', 'debit' => 0, 'credit' => $data['amount'], 'line_order' => 2]);
             $return = CashAdvanceReturn::create(['expense_request_id' => $expenseRequest->id, 'employee_id' => $expenseRequest->requester_id, 'bank_account_id' => $bank->id, 'return_amount' => $data['amount'], 'payment_method' => 'bank_transfer', 'return_date' => $data['return_date'], 'reference_no' => $data['reference'] ?? null, 'status' => 'received', 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
-            $txn = BankTransaction::create(['bank_account_id' => $bank->id, 'cash_advance_return_id' => $return->id, 'transaction_date' => $data['return_date'], 'reference' => $data['reference'] ?? $expenseRequest->request_number, 'description' => 'Cash Advance return '.$expenseRequest->request_number, 'debit' => $data['amount'], 'credit' => 0, 'status' => 'matched', 'created_by' => request()->user()->id]);
+            $txn = BankTransaction::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'bank_account_id' => $bank->id, 'cash_advance_return_id' => $return->id, 'transaction_date' => $data['return_date'], 'reference' => $data['reference'] ?? $expenseRequest->request_number, 'description' => 'Cash Advance return '.$expenseRequest->request_number, 'debit' => $data['amount'], 'credit' => 0, 'status' => 'matched', 'created_by' => request()->user()->id]);
             $return->update(['bank_transaction_id' => $txn->id]);
             $totalReturned = (float) $expenseRequest->cashAdvanceReturns()->where('status', 'received')->sum('return_amount') + (float) $data['amount'];
             $state = $totalReturned >= (float) ($expenseRequest->return_amount ?? 0) ? 'settled' : 'awaiting_return';
@@ -573,11 +585,11 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         $payable = ChartOfAccount::where('account_type', 'liability')->where('is_header', false)->first();
         if (! $payable) throw ValidationException::withMessages(['account' => 'COA payable belum dikonfigurasi.']);
         DB::transaction(function () use ($expenseRequest, $reimbursement, $data, $bank, $payable) {
-            $journal = Journal::create(['journal_number' => 'CARPAY-'.now()->format('YmdHis').'-'.random_int(100,999), 'journal_date' => $data['payment_date'], 'journal_type' => 'manual', 'reference' => $data['reference'] ?? $expenseRequest->request_number.'-REIMBURSEMENT', 'description' => 'Additional reimbursement '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now(), 'source_type' => 'cash_advance_reimbursement', 'source_id' => $expenseRequest->id, 'original_amount' => $reimbursement->amount, 'converted_amount' => $reimbursement->amount, 'exchange_rate' => 1, 'rate_date' => $data['payment_date'], 'rate_source' => 'reimbursement_snapshot']);
+            $journal = Journal::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'journal_number' => 'CARPAY-'.now()->format('YmdHis').'-'.random_int(100,999), 'journal_date' => $data['payment_date'], 'journal_type' => 'manual', 'reference' => $data['reference'] ?? $expenseRequest->request_number.'-REIMBURSEMENT', 'description' => 'Additional reimbursement '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now(), 'source_type' => 'cash_advance_reimbursement', 'source_id' => $expenseRequest->id, 'original_amount' => $reimbursement->amount, 'converted_amount' => $reimbursement->amount, 'exchange_rate' => 1, 'rate_date' => $data['payment_date'], 'rate_source' => 'reimbursement_snapshot']);
             $journal->lines()->create(['account_id' => $payable->id, 'line_description' => 'Additional reimbursement payable', 'debit' => $reimbursement->amount, 'credit' => 0, 'line_order' => 1]);
             $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Additional reimbursement payment', 'debit' => 0, 'credit' => $reimbursement->amount, 'line_order' => 2]);
-            $payment = Payment::create(['payment_number' => 'CARPAY-'.now()->format('YmdHis').'-'.random_int(100,999), 'expense_request_id' => $expenseRequest->id, 'bank_account_id' => $bank->id, 'payment_date' => $data['payment_date'], 'amount' => $reimbursement->amount, 'reference' => $data['reference'] ?? null, 'status' => 'paid', 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
-            BankTransaction::create(['bank_account_id' => $bank->id, 'payment_id' => $payment->id, 'transaction_date' => $data['payment_date'], 'reference' => $payment->payment_number, 'description' => 'Additional reimbursement '.$expenseRequest->request_number, 'debit' => 0, 'credit' => $reimbursement->amount, 'status' => 'matched', 'created_by' => request()->user()->id]);
+            $payment = Payment::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'payment_number' => 'CARPAY-'.now()->format('YmdHis').'-'.random_int(100,999), 'expense_request_id' => $expenseRequest->id, 'bank_account_id' => $bank->id, 'payment_date' => $data['payment_date'], 'amount' => $reimbursement->amount, 'reference' => $data['reference'] ?? null, 'status' => 'paid', 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
+            BankTransaction::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'bank_account_id' => $bank->id, 'payment_id' => $payment->id, 'transaction_date' => $data['payment_date'], 'reference' => $payment->payment_number, 'description' => 'Additional reimbursement '.$expenseRequest->request_number, 'debit' => 0, 'credit' => $reimbursement->amount, 'status' => 'matched', 'created_by' => request()->user()->id]);
             $reimbursement->update(['status' => 'paid', 'payment_id' => $payment->id, 'journal_id' => $journal->id, 'paid_at' => now(), 'updated_by' => request()->user()->id]);
             $expenseRequest->update(['settlement_state' => 'settled', 'settlement_status' => 'settled']);
         });
@@ -589,6 +601,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         return $request->validate([
             'request_number' => ['nullable', 'string', 'max:40', 'unique:expense_requests,request_number'],
             'external_request_id' => ['nullable', 'string', 'max:80', 'unique:expense_requests,external_request_id'],
+            'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
             'requester_id' => ['nullable', 'integer', 'exists:users,id'],
             'donor_id' => ['nullable', 'integer', 'exists:donors,id'],
             'grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],

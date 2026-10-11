@@ -95,6 +95,7 @@ class TaxTransactionController extends Controller
     {
         $data = $request->validate([
             'tax_id' => ['required', 'integer', 'exists:taxes,id'],
+            'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
             'transaction_type' => ['nullable', 'string', 'max:40'],
             'source_type' => ['nullable', 'string', 'max:120'],
             'source_id' => ['nullable', 'integer'],
@@ -114,9 +115,11 @@ class TaxTransactionController extends Controller
         app(AccountingPeriodService::class)->ensureOpen($data['transaction_date'], 'transaction_date');
 
         $tax = $this->resolveTax((int) $data['tax_id'], $data['transaction_date']);
+        $fiscalYearId = $data['fiscal_year_id'] ?? $tax->fiscal_year_id;
         $calculation = $this->calculateTax($tax, (float) $data['amount'], (bool) ($data['is_inclusive'] ?? false), $data['direction']);
 
         $item = TaxTransaction::create([
+            'fiscal_year_id' => $fiscalYearId,
             'tax_id' => $tax->id,
             'transaction_type' => $data['transaction_type'] ?? 'manual',
             'source_type' => $data['source_type'] ?? null,

@@ -385,6 +385,7 @@ class TimesheetEntryController extends Controller
                 }
 
                 $journal = \App\Models\Accounting\Journal::create([
+                    'fiscal_year_id' => $entry->fiscal_year_id,
                     'journal_number' => 'LABOR-'.now()->format('YmdHis').'-'.random_int(100, 999),
                     'journal_date' => $postingDate,
                     'journal_type' => 'manual',

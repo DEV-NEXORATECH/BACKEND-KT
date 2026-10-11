@@ -95,6 +95,7 @@ class AccountsPayableController extends Controller
 
         $invoice = DB::transaction(function () use ($supplierInvoice, $apAccount) {
             $journal = Journal::create([
+                'fiscal_year_id' => $supplierInvoice->fiscal_year_id,
                 'journal_number' => 'AP-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $supplierInvoice->invoice_date,
                 'journal_type' => 'accrual',
@@ -114,6 +115,9 @@ class AccountsPayableController extends Controller
                 }
                 $journal->lines()->create([
                     'account_id' => $expenseAccount->id,
+                    'project_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project_id,
+                    'donor_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project?->grantAgreement?->donor_id,
+                    'program_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project?->program_id,
                     'budget_line_id' => $line->purchaseOrderLine?->budget_line_id,
                     'line_description' => $line->item_description,
                     'debit' => $line->total_amount,
@@ -145,6 +149,7 @@ class AccountsPayableController extends Controller
                     ['source_type' => SupplierInvoice::class, 'source_id' => $supplierInvoice->id],
                     [
                         'tax_id' => $tax->id,
+                        'fiscal_year_id' => $supplierInvoice->fiscal_year_id,
                         'transaction_type' => 'ap_invoice',
                         'reference' => $supplierInvoice->invoice_number,
                         'transaction_date' => $supplierInvoice->invoice_date,
@@ -226,6 +231,7 @@ class AccountsPayableController extends Controller
             $fxGainLoss = round($functionalAmount - $invoiceFunctionalAmount, 2);
             $fxAccount = $fxGainLoss > 0 ? ChartOfAccount::where('code', 'FX-LOSS')->first() : ChartOfAccount::where('code', 'FX-GAIN')->first();
             $journal = Journal::create([
+                'fiscal_year_id' => $supplierInvoice->fiscal_year_id,
                 'journal_number' => 'PAY-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'journal_date' => $data['payment_date'],
                 'journal_type' => 'manual',
@@ -241,13 +247,15 @@ class AccountsPayableController extends Controller
                 'rate_source' => 'payment_snapshot',
                 'fx_gain_loss' => $fxGainLoss,
             ]);
-            $journal->lines()->create(['account_id' => $apAccount->id, 'line_description' => 'AP payment at invoice rate', 'debit' => $invoiceFunctionalAmount, 'credit' => 0, 'line_order' => 1]);
-            $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank payment', 'debit' => 0, 'credit' => $functionalAmount, 'line_order' => 2]);
+            $lineContext = ['project_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project_id, 'donor_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project?->grantAgreement?->donor_id, 'program_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project?->program_id];
+            $journal->lines()->create(array_merge(['account_id' => $apAccount->id, 'line_description' => 'AP payment at invoice rate', 'debit' => $invoiceFunctionalAmount, 'credit' => 0, 'line_order' => 1], $lineContext));
+            $journal->lines()->create(array_merge(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank payment', 'debit' => 0, 'credit' => $functionalAmount, 'line_order' => 2], $lineContext));
             if (abs($fxGainLoss) >= 0.01 && $fxAccount) {
                 $journal->lines()->create(['account_id' => $fxAccount->id, 'line_description' => $fxGainLoss > 0 ? 'FX loss on payment' : 'FX gain on payment', 'debit' => $fxGainLoss > 0 ? $fxGainLoss : 0, 'credit' => $fxGainLoss < 0 ? abs($fxGainLoss) : 0, 'line_order' => 3]);
             }
 
             $payment = Payment::create([
+                'fiscal_year_id' => $supplierInvoice->fiscal_year_id,
                 'payment_number' => 'PAY-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'supplier_invoice_id' => $supplierInvoice->id,
                 'vendor_id' => $supplierInvoice->vendor_id,
@@ -268,6 +276,7 @@ class AccountsPayableController extends Controller
             ]);
 
             BankTransaction::create([
+                'fiscal_year_id' => $supplierInvoice->fiscal_year_id,
                 'bank_account_id' => $bank->id,
                 'payment_id' => $payment->id,
                 'transaction_date' => $data['payment_date'],
