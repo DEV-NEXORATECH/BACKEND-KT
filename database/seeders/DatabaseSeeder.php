@@ -19,8 +19,7 @@ class DatabaseSeeder extends Seeder
             BudgetAlertThresholdSeeder::class,
             MasterMenuSeeder::class,
             UserSeeder::class,
-            FeatureDataSeeder::class,
-            UiDemoDataSeeder::class,
+            ProcessDataSeeder::class,
         ]);
     }
 }
