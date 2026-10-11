@@ -16,6 +16,7 @@ class FiscalYearDemoSeeder extends Seeder
 {
     public function run(): void
     {
+        $now = now();
         $years = [];
         foreach ([2025, 2026, 2027] as $year) {
             $years[$year] = FiscalYear::updateOrCreate(['year' => $year], [
