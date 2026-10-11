@@ -121,6 +121,7 @@ class RoleSeeder extends Seeder
                     ['title' => 'Fiscal Years', 'slug' => 'master-fiscal-years', 'path' => '/master-data/fiscal-years', 'sort_order' => 173],
                     ['title' => 'Accounting Periods', 'slug' => 'master-accounting-periods', 'path' => '/master-data/accounting-periods', 'sort_order' => 174],
                     ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
+                    ['title' => 'Customers', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 178],
                 ]],
                 ['title' => 'Programs & Projects', 'slug' => 'master-programs-projects', 'path' => '/master-data/programs', 'sort_order' => 18, 'children' => [
                     ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 180],
@@ -266,7 +267,7 @@ class RoleSeeder extends Seeder
             'Dashboard' => ['dashboard'],
             'Master Data' => [
                 'master-data', 'master-organization-structure', 'master-organization-chart', 'master-organizations', 'master-office-locations', 'master-departments', 'master-positions', 'master-employees',
-                'master-finance-accounting', 'master-chart-of-accounts', 'master-account-categories', 'master-bank-accounts', 'master-payment-methods', 'master-fx-rates', 'master-currencies', 'master-fiscal-years', 'master-accounting-periods', 'master-taxes',
+                'master-finance-accounting', 'master-chart-of-accounts', 'master-account-categories', 'master-bank-accounts', 'master-payment-methods', 'master-fx-rates', 'master-currencies', 'master-fiscal-years', 'master-accounting-periods', 'master-taxes', 'master-customers',
                 'master-funding-projects', 'master-donors', 'master-grant-agreements', 'master-programs-projects', 'master-programs', 'master-projects', 'master-activities', 'master-budget-codes', 'master-funding-sources',
                 'master-budget-reporting', 'master-budget-categories', 'master-budget-templates', 'master-reporting-categories', 'master-reporting-dimensions',
                 'master-expenses-assets', 'master-expense-categories', 'master-expense-types', 'master-asset-categories',

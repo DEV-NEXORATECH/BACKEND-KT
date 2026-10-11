@@ -33,6 +33,7 @@ class MasterMenuSeeder extends Seeder
                 ['title' => 'Fiscal Years', 'slug' => 'master-fiscal-years', 'path' => '/master-data/fiscal-years', 'sort_order' => 173],
                 ['title' => 'Accounting Periods', 'slug' => 'master-accounting-periods', 'path' => '/master-data/accounting-periods', 'sort_order' => 174],
                 ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
+                ['title' => 'Customers', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 178],
             ]],
             ['title' => 'Programs & Projects', 'slug' => 'master-programs-projects', 'path' => '/master-data/programs', 'sort_order' => 18, 'children' => [
                 ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 180],

@@ -354,6 +354,8 @@ class MasterDataSeeder extends Seeder
             ['code' => '11400', 'name' => 'AR PROJECT', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => true, 'parent_code' => '11000'],
             ['code' => '11410', 'name' => 'AR FGMC EIA', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 3, 'is_header' => false, 'parent_code' => '11400'],
             ['code' => '11500', 'name' => 'Employee Advances / Staff Receivable', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '11000'],
+            ['code' => '40000', 'name' => 'REVENUE', 'account_type' => 'revenue', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => true, 'parent_code' => null],
+            ['code' => '41000', 'name' => 'Program Service Revenue', 'account_type' => 'revenue', 'normal_balance' => 'credit', 'level' => 2, 'is_header' => false, 'parent_code' => '40000'],
         ];
 
         $createdCoa = [];

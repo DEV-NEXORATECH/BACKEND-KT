@@ -134,6 +134,7 @@ class FiscalYearDemoSeeder extends Seeder
         // column. Treat their dated demo rows as 2026 before making the
         // 2025/2027 counterparts below.
         foreach ([
+            'budget_lines', 'approval_matrices', 'exchange_rates',
             'grant_agreements', 'expense_requests', 'purchase_requests',
             'purchase_orders', 'goods_receipts', 'rfqs',
             'supplier_contract_notifications', 'supplier_invoices',
@@ -212,6 +213,7 @@ class FiscalYearDemoSeeder extends Seeder
                     if (! $budgetProjectId) continue;
                     $budgetPayload['project_id'] = $budgetProjectId;
                     $budgetPayload['line_code'] = $budgetCode;
+                    $budgetPayload['fiscal_year_id'] = str_contains($budgetCode, '2025') ? $fy2025 : $fy2027;
                     $budgetPayload['description'] = 'Field mapping and community engagement allocation '.substr($budgetCode, -4);
                     $budgetPayload['created_at'] = $now;
                     $budgetPayload['updated_at'] = $now;

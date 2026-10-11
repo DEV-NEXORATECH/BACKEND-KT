@@ -24,7 +24,12 @@ class TaxTransactionController extends Controller
         return response()->json([
             'success' => true,
             'data' => Tax::query()
-                ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
+                ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where(function (Builder $scope) use ($request) {
+                    // Tax codes are reusable master data. Keep global codes
+                    // visible even when the transaction screen carries the
+                    // selected fiscal year automatically.
+                    $scope->whereNull('fiscal_year_id')->orWhere('fiscal_year_id', $request->integer('fiscal_year_id'));
+                }))
                 ->where('is_active', true)
                 ->when(! app(SystemPolicyService::class)->vatEnabled(), fn (Builder $query) => $query->whereRaw("upper(tax_type) not in ('PPN','VAT')"))
                 ->where(fn (Builder $query) => $query->whereNull('effective_start_date')->orWhereDate('effective_start_date', '<=', $today))

@@ -50,6 +50,7 @@ use App\Http\Controllers\Api\Master\AccountingPeriodController;
 use App\Http\Controllers\Api\Master\ChartOfAccountController;
 use App\Http\Controllers\Api\Master\AccountCategoryController;
 use App\Http\Controllers\Api\Master\TaxController;
+use App\Http\Controllers\Api\Master\CustomerController;
 use App\Http\Controllers\Api\Master\BankAccountController;
 use App\Http\Controllers\Api\Master\PettyCashController;
 use App\Http\Controllers\Api\Master\PaymentMethodController;
@@ -403,6 +404,7 @@ Route::middleware('auth:sanctum')->group(function () {
             'chart-of-accounts' => ChartOfAccountController::class,
             'account-categories' => AccountCategoryController::class,
             'taxes' => TaxController::class,
+            'customers' => CustomerController::class,
             'bank-accounts' => BankAccountController::class,
             'petty-cashes' => PettyCashController::class,
             'payment-methods' => PaymentMethodController::class,
