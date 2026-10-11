@@ -1255,16 +1255,19 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        // These are organization-wide masters. They remain reusable in 2026,
-        // 2027, and future years; only year-specific agreements, projects,
-        // budgets, rates, approvals, and transactions carry a fiscal year.
-        Currency::query()->update(['fiscal_year_id' => null]);
-        Donor::query()->update(['fiscal_year_id' => null]);
-        Employee::query()->update(['fiscal_year_id' => null]);
-        Vendor::query()->update(['fiscal_year_id' => null]);
-        ChartOfAccount::query()->update(['fiscal_year_id' => null]);
-        BankAccount::query()->update(['fiscal_year_id' => null]);
-        Tax::query()->update(['fiscal_year_id' => null]);
+        // Keep seeded master records attached to the default demo fiscal year.
+        // Resetting these relations to NULL made the Effective Year column
+        // blank and caused the fiscal-year filter to behave inconsistently.
+        // They can still be reused by other years through their normal master
+        // data relation, but the demo records must have a deterministic year.
+        $defaultFiscalYearId = $fy2026->id;
+        Currency::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
+        Donor::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
+        Employee::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
+        Vendor::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
+        ChartOfAccount::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
+        BankAccount::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
+        Tax::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
 
         // 15. Expense Categories & Document Types
         ExpenseCategory::updateOrCreate(['code' => 'EXP-PERDIEM'], [

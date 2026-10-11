@@ -18,13 +18,15 @@ class FiscalYearDemoSeeder extends Seeder
     {
         $now = now();
         $years = [];
+        $existingActiveYear = FiscalYear::query()->where('is_active', true)->value('year');
+        $activeYear = $existingActiveYear ?: 2026;
         foreach ([2025, 2026, 2027] as $year) {
             $years[$year] = FiscalYear::updateOrCreate(['year' => $year], [
                 'name' => "Tahun Fiskal {$year}",
                 'start_date' => "{$year}-01-01",
                 'end_date' => "{$year}-12-31",
                 'status' => 'open',
-                'is_active' => $year === 2026,
+                'is_active' => $year === $activeYear,
             ]);
 
             for ($period = 1; $period <= 12; $period++) {

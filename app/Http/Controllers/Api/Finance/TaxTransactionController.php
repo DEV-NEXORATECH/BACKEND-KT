@@ -254,6 +254,7 @@ class TaxTransactionController extends Controller
             ->with('tax:id,code,name,tax_type,rate_percent')
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
+            ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
             ->when($request->filled('tax_type'), fn (Builder $query) => $query->whereHas('tax', fn (Builder $taxQuery) => $taxQuery->where('tax_type', $request->string('tax_type'))))
             ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
             ->where('status', '!=', 'cancelled');
