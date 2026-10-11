@@ -42,7 +42,8 @@ abstract class BaseMasterController extends Controller
             if ($isOptions) {
                 try {
                     $table = (new $this->modelClass)->getTable();
-                    if (! $request->has('is_active') && \Illuminate\Support\Facades\Schema::hasColumn($table, 'is_active')) {
+                    $isFiscalYearOptions = is_a($this->modelClass, \App\Models\Master\FiscalYear::class, true);
+                    if (! $isFiscalYearOptions && ! $request->has('is_active') && \Illuminate\Support\Facades\Schema::hasColumn($table, 'is_active')) {
                         $query->where('is_active', true);
                     }
                     // Dropdowns should show global masters plus the active
