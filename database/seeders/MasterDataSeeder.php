@@ -60,7 +60,7 @@ class MasterDataSeeder extends Seeder
             'symbol' => 'Rp',
             'decimal_places' => 0,
             'is_base_currency' => true,
-            'is_active' => false,
+            'is_active' => true,
         ]);
 
         $usd = Currency::updateOrCreate(['code' => 'USD'], [
@@ -68,7 +68,7 @@ class MasterDataSeeder extends Seeder
             'symbol' => '$',
             'decimal_places' => 2,
             'is_base_currency' => false,
-            'is_active' => false,
+            'is_active' => true,
         ]);
 
         // Kaoem Telapak currently operates from one active office. Keep legacy
@@ -80,7 +80,7 @@ class MasterDataSeeder extends Seeder
             'symbol' => '£',
             'decimal_places' => 2,
             'is_base_currency' => false,
-            'is_active' => false,
+            'is_active' => true,
         ]);
 
         $nok = Currency::updateOrCreate(['code' => 'NOK'], [
