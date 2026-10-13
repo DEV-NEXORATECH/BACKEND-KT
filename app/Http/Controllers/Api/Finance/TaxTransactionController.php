@@ -43,7 +43,7 @@ class TaxTransactionController extends Controller
     public function calculate(Request $request, TaxCalculationService $calculator): JsonResponse
     {
         if ($request->filled('tax_type') || $request->filled('gross_amount')) {
-            $data = $request->validate(['tax_id' => ['nullable', 'integer', 'exists:taxes,id'], 'tax_type' => ['nullable', 'string'], 'gross_amount' => ['required', 'numeric', 'min:0'], 'tax_date' => ['nullable', 'date'], 'is_inclusive' => ['nullable', 'boolean'], 'direction' => ['nullable', 'string']]);
+            $data = $request->validate(['tax_id' => ['nullable', 'integer', 'exists:taxes,id'], 'tax_type' => ['nullable', 'string'], 'gross_amount' => ['required', 'numeric', 'min:0'], 'tax_date' => ['nullable', 'date'], 'is_inclusive' => ['nullable', 'boolean'], 'direction' => ['nullable', 'string'], 'calculation_method' => ['nullable', 'in:gross,gross_up'], 'recipient_category' => ['nullable', 'string', 'max:50'], 'accumulated_gross' => ['nullable', 'numeric', 'min:0'], 'has_npwp' => ['nullable', 'boolean'], 'work_days' => ['nullable', 'integer', 'min:1', 'max:31']]);
             if (strtoupper((string) ($data['tax_type'] ?? '')) === 'PPN' && ! app(SystemPolicyService::class)->vatEnabled()) abort(422, 'PPN/VAT tidak diaktifkan untuk organisasi ini.');
             return response()->json(['success' => true, 'data' => $calculator->resolve($data)]);
         }
@@ -52,14 +52,14 @@ class TaxTransactionController extends Controller
             'amount' => ['required', 'numeric', 'min:0'],
             'is_inclusive' => ['nullable', 'boolean'],
             'direction' => ['nullable', 'in:sales,purchase,withholding_in,withholding_out'],
-            'as_of' => ['nullable', 'date'],
+            'as_of' => ['nullable', 'date'], 'calculation_method' => ['nullable', 'in:gross,gross_up'],
         ]);
 
         $tax = $this->resolveTax((int) $data['tax_id'], $request->date('as_of')?->toDateString() ?? now()->toDateString());
 
         return response()->json([
             'success' => true,
-            'data' => app(TaxCalculationService::class)->calculate($tax, (float) $data['amount'], (bool) ($data['is_inclusive'] ?? false), $data['direction'] ?? 'purchase'),
+            'data' => app(TaxCalculationService::class)->calculate($tax, (float) $data['amount'], (bool) ($data['is_inclusive'] ?? false), $data['direction'] ?? 'purchase', $data['calculation_method'] ?? 'gross'),
         ]);
     }
 

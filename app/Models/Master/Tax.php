@@ -26,6 +26,7 @@ class Tax extends Model
         'effective_end_date',
         'applicable_rule',
         'description',
+        'calculation_config',
         'sales_gl_account_id',
         'purchase_gl_account_id',
         'is_active',
@@ -38,6 +39,7 @@ class Tax extends Model
         'is_active' => 'boolean',
         'effective_start_date' => 'date',
         'effective_end_date' => 'date',
+        'calculation_config' => 'array',
     ];
 
     public function salesGlAccount()

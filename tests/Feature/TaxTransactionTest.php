@@ -70,6 +70,32 @@ class TaxTransactionTest extends TestCase
         $this->postJson('/api/v1/tax/calculate', ['tax_id' => $tax->id, 'gross_amount' => 100, 'tax_date' => '2025-12-31'])->assertStatus(422);
     }
 
+    public function test_non_staff_calculation_uses_dpp_and_accumulated_progressive_layers(): void
+    {
+        [$user] = $this->fixture();
+        $tax = Tax::create([
+            'code' => 'PPH21-NONSTAFF-TEST', 'name' => 'PPh 21 Non Staff', 'tax_type' => 'PPH21',
+            'rate_percent' => 0, 'applicable_rule' => 'Pasal 17 progressive', 'effective_start_date' => '2026-01-01', 'is_active' => true,
+            'calculation_config' => [
+                'dpp_percent' => ['default' => 50, 'consultant' => 50],
+                'pasal_17_tiers' => [
+                    ['up_to' => 60000000, 'rate_percent' => 5],
+                    ['up_to' => 250000000, 'rate_percent' => 15],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/tax/calculate', [
+            'tax_id' => $tax->id, 'gross_amount' => 15000000, 'tax_date' => '2026-09-30',
+            'recipient_category' => 'consultant', 'accumulated_gross' => 120000000,
+        ])->assertOk()
+            ->assertJsonPath('data.dpp_percent', 50)
+            ->assertJsonPath('data.taxable_amount', 7500000)
+            ->assertJsonPath('data.tax_amount', 1125000)
+            ->assertJsonPath('data.calculation_method', 'pasal_17_progressive')
+            ->assertJsonPath('data.recipient_category', 'consultant');
+    }
+
     private function fixture(): array
     {
         $role = Role::create(['name' => 'Tax Role', 'slug' => 'tax-role']);

@@ -397,6 +397,22 @@ class MasterDataSeeder extends Seeder
             'rate_percent' => 5.00,
             'applicable_rule' => 'Tarif Progresif UU HPP Pasal 17 (5% s.d. 35%) atas 50% Penghasilan Bruto',
             'description' => 'Pemotongan PPh 21 atas imbalan jasa konsultan, tenaga ahli, dan narasumber non-pegawai tetap.',
+            'calculation_config' => [
+                'dpp_percent' => ['default' => 50, 'consultant' => 50, 'expert' => 50, 'speaker' => 50, 'other' => 50],
+                'no_npwp_multiplier' => 1.2,
+                'daily_brackets' => [
+                    ['up_to' => 450000, 'rate_percent' => 0],
+                    ['up_to' => 2500000, 'rate_percent' => 0.5],
+                    ['up_to' => 999999999999999, 'rate_percent' => 5],
+                ],
+                'pasal_17_tiers' => [
+                    ['up_to' => 60000000, 'rate_percent' => 5],
+                    ['up_to' => 250000000, 'rate_percent' => 15],
+                    ['up_to' => 500000000, 'rate_percent' => 25],
+                    ['up_to' => 5000000000, 'rate_percent' => 30],
+                    ['up_to' => 999999999999999, 'rate_percent' => 35],
+                ],
+            ],
             'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
             'is_active' => true,
         ]);
