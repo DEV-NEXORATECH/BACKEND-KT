@@ -423,6 +423,14 @@ class MasterDataSeeder extends Seeder
             'rate_percent' => 5.00,
             'applicable_rule' => 'PP 68/2009: 0% (<=50jt), 5% (>50jt-100jt), 15% (>100jt-500jt), 25% (>500jt)',
             'description' => 'Pemotongan pajak final uang pesangon, kompensasi kerja, paklaring, dan pensiun dibayarkan sekaligus.',
+            'calculation_config' => [
+                'final_tiers' => [
+                    ['up_to' => 50000000, 'rate_percent' => 0],
+                    ['up_to' => 100000000, 'rate_percent' => 5],
+                    ['up_to' => 500000000, 'rate_percent' => 15],
+                    ['up_to' => 999999999999999, 'rate_percent' => 25],
+                ],
+            ],
             'purchase_gl_account_id' => $createdCoa['2120']->id ?? null,
             'is_active' => true,
         ]);

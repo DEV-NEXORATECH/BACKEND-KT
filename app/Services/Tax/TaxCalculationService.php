@@ -70,6 +70,25 @@ class TaxCalculationService
         $year = (int) substr($date, 0, 4);
         $dppPercent = (float) ($config['dpp_percent'][$category] ?? $config['dpp_percent']['default'] ?? 50);
         $dpp = round($gross * $dppPercent / 100, 2);
+        if ($category === 'final') {
+            $tiers = $config['final_tiers'] ?? [];
+            if (! $tiers) {
+                throw ValidationException::withMessages(['tax' => 'Konfigurasi PPh 21 Final belum tersedia di Tax Master.']);
+            }
+            $accumulatedGross = max(0, (float) ($options['accumulated_gross'] ?? 0));
+            $priorTax = $this->progressiveTax($accumulatedGross, $tiers)['tax_amount'];
+            $calculation = $this->progressiveTax($accumulatedGross + $gross, $tiers);
+            $currentTax = round(max(0, $calculation['tax_amount'] - $priorTax), 2);
+            return [
+                'tax_rule' => $tax->applicable_rule ?: $tax->code, 'tax_id' => $tax->id, 'tax_type' => $tax->tax_type,
+                'recipient_category' => $category, 'object_code' => $options['object_code'] ?? null, 'gross_amount' => round($gross, 2), 'dpp_percent' => 100,
+                'taxable_base' => round($gross, 2), 'taxable_amount' => round($gross, 2), 'rate' => $gross > 0 ? round(($calculation['tax_amount'] / $gross) * 100, 4) : 0,
+                'rate_basis' => 'Tarif PPh 21 Final berdasarkan Tax Master', 'progressive_layers' => $calculation['layers'],
+                'accumulated_gross' => $accumulatedGross, 'tax_amount' => $currentTax, 'take_home_pay' => round($gross - $currentTax, 2),
+                'effective_date' => $tax->effective_start_date?->toDateString(), 'tax_year' => $year,
+                'calculation_method' => 'pph21_final', 'withholding_method' => $calculationMethod, 'tax_allowance' => 0, 'direction' => $direction,
+            ];
+        }
         if ($category === 'daily') {
             $days = max(1, (int) ($options['work_days'] ?? 1));
             $dailyGross = round($gross / $days, 2);
@@ -107,6 +126,7 @@ class TaxCalculationService
             'tax_id' => $tax->id,
             'tax_type' => $tax->tax_type,
             'recipient_category' => $category,
+            'object_code' => $options['object_code'] ?? null,
             'gross_amount' => round($gross, 2),
             'dpp_percent' => $dppPercent,
             'taxable_base' => $dpp,
