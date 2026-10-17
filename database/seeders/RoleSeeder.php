@@ -121,24 +121,31 @@ class RoleSeeder extends Seeder
                     ['title' => 'Fiscal Years', 'slug' => 'master-fiscal-years', 'path' => '/master-data/fiscal-years', 'sort_order' => 173],
                     ['title' => 'Accounting Periods', 'slug' => 'master-accounting-periods', 'path' => '/master-data/accounting-periods', 'sort_order' => 174],
                     ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
-                    ['title' => 'Customers', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 178],
+                    ['title' => 'Members / Anggota', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 178],
+                    ['title' => 'Iuran Anggota', 'slug' => 'master-membership-dues', 'path' => '/master-data/membership-dues', 'sort_order' => 181],
                 ]],
-                ['title' => 'Programs & Projects', 'slug' => 'master-programs-projects', 'path' => '/master-data/programs', 'sort_order' => 18, 'children' => [
-                    ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 180],
-                    ['title' => 'Funding Sources', 'slug' => 'master-funding-sources', 'path' => '/master-data/funding-sources', 'sort_order' => 182],
-                    ['title' => 'Donor Types', 'slug' => 'master-donor-types', 'path' => '/master-data/donor-types', 'sort_order' => 183],
+                ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 18, 'children' => [
+                    ['title' => 'Donor & Grant Terintegrasi', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 180],
                 ]],
-                ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 18, 'children' => []],
-                ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'path' => '/master-data', 'sort_order' => 19, 'children' => [
+                ['title' => 'Budget & Forecast', 'slug' => 'master-budget-reporting', 'path' => '/master-data', 'sort_order' => 19, 'children' => [
                     ['title' => 'Budget Categories', 'slug' => 'master-budget-categories', 'path' => '/master-data/budget-categories', 'sort_order' => 193],
                     ['title' => 'Budget Categories & Templates', 'slug' => 'master-budget-templates', 'path' => '/master-data/budget-lines', 'sort_order' => 194],
                     ['title' => 'Reporting Categories', 'slug' => 'master-reporting-categories', 'path' => '/master-data/reporting-categories', 'sort_order' => 195],
                     ['title' => 'Reporting Dimensions', 'slug' => 'master-reporting-dimensions', 'path' => '/master-data/reporting-dimensions', 'sort_order' => 191],
                 ]],
-                ['title' => 'Expenses & Assets', 'slug' => 'master-expenses-assets', 'path' => '/master-data', 'sort_order' => 20, 'children' => [
+                ['title' => 'Expenses', 'slug' => 'master-expenses', 'path' => '/master-data', 'sort_order' => 20, 'children' => [
                     ['title' => 'Expense Categories', 'slug' => 'master-expense-categories', 'path' => '/master-data/expense-categories', 'sort_order' => 201],
                     ['title' => 'Document Types', 'slug' => 'master-expense-types', 'path' => '/master-data/document-types', 'sort_order' => 202],
+                ]],
+                ['title' => 'Assets', 'slug' => 'master-assets', 'path' => '/master-data', 'sort_order' => 21, 'children' => [
                     ['title' => 'Asset Categories', 'slug' => 'master-asset-categories', 'path' => '/master-data/asset-categories', 'sort_order' => 203],
+                ]],
+                ['title' => 'Procurement', 'slug' => 'master-procurement', 'path' => '/master-data', 'sort_order' => 22, 'children' => [
+                    ['title' => 'Suppliers / Vendors', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 210],
+                    ['title' => 'Vendor Categories', 'slug' => 'master-vendor-categories', 'path' => '/master-data/vendor-categories', 'sort_order' => 211],
+                    ['title' => 'Items / Services', 'slug' => 'master-items-services', 'path' => '/master-data/procurement-items', 'sort_order' => 212],
+                    ['title' => 'Unit of Measures', 'slug' => 'master-unit-of-measures', 'path' => '/master-data/unit-of-measures', 'sort_order' => 213],
+                    ['title' => 'Procurement Categories', 'slug' => 'master-procurement-categories', 'path' => '/master-data/procurement-categories', 'sort_order' => 214],
                 ]],
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/donor-grant', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
@@ -270,7 +277,7 @@ class RoleSeeder extends Seeder
                 'master-finance-accounting', 'master-chart-of-accounts', 'master-account-categories', 'master-bank-accounts', 'master-payment-methods', 'master-fx-rates', 'master-currencies', 'master-fiscal-years', 'master-accounting-periods', 'master-taxes', 'master-customers',
                 'master-funding-projects', 'master-donors', 'master-grant-agreements', 'master-programs-projects', 'master-programs', 'master-projects', 'master-activities', 'master-budget-codes', 'master-funding-sources',
                 'master-budget-reporting', 'master-budget-categories', 'master-budget-templates', 'master-reporting-categories', 'master-reporting-dimensions',
-                'master-expenses-assets', 'master-expense-categories', 'master-expense-types', 'master-asset-categories',
+                'master-expenses', 'master-expenses-assets', 'master-expense-categories', 'master-expense-types', 'master-assets', 'master-asset-categories',
                 'master-procurement', 'master-vendors', 'master-vendor-categories', 'master-items-services', 'master-unit-of-measures', 'master-procurement-categories',
             ],
             'Accounting' => [

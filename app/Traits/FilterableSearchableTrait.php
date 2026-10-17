@@ -37,6 +37,13 @@ trait FilterableSearchableTrait
             $query->where('status', $request->query('status'));
         }
 
+        // Date-effective master data (currently FX rates) can be viewed as of
+        // a selected date. Use the latest record on or before that date.
+        if ($request->filled('rate_date') && \Schema::hasColumn($this->getTable(), 'date')) {
+            $query->whereDate('date', '<=', $request->query('rate_date'))
+                ->orderByDesc('date');
+        }
+
         if ($request->filled('parent_id')) {
             $val = $request->query('parent_id');
             if ($val === 'null' || $val === 'root') {

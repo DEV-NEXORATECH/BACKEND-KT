@@ -13,6 +13,15 @@ class MasterMenuSeeder extends Seeder
      */
     public function run(): void
     {
+        // The Programs & Projects group is intentionally nested under Donor & Grant.
+        // Deactivate the legacy parent so old seeded menus do not remain visible.
+        Menu::whereIn('slug', [
+            'master-programs-projects', 'master-programs', 'master-funding-sources',
+            'master-donor-types', 'master-projects-activities', 'master-project-workplan',
+            'master-grant-agreements', 'master-project-frameworks', 'master-project-timeline-workplan',
+            'master-expenses-assets',
+        ])->update(['is_active' => false]);
+
         // Keep this standalone seeder aligned with DatabaseSeeder. These are
         // the only categories that should be visible below Master Data.
         $masterMenu = Menu::updateOrCreate(['slug' => 'master-data'], [
@@ -33,24 +42,31 @@ class MasterMenuSeeder extends Seeder
                 ['title' => 'Fiscal Years', 'slug' => 'master-fiscal-years', 'path' => '/master-data/fiscal-years', 'sort_order' => 173],
                 ['title' => 'Accounting Periods', 'slug' => 'master-accounting-periods', 'path' => '/master-data/accounting-periods', 'sort_order' => 174],
                 ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
-                ['title' => 'Customers', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 178],
+                ['title' => 'Members / Anggota', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 178],
+                ['title' => 'Iuran Anggota', 'slug' => 'master-membership-dues', 'path' => '/master-data/membership-dues', 'sort_order' => 181],
             ]],
-            ['title' => 'Programs & Projects', 'slug' => 'master-programs-projects', 'path' => '/master-data/programs', 'sort_order' => 18, 'children' => [
-                ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 180],
-                ['title' => 'Funding Sources', 'slug' => 'master-funding-sources', 'path' => '/master-data/funding-sources', 'sort_order' => 182],
-                ['title' => 'Donor Types', 'slug' => 'master-donor-types', 'path' => '/master-data/donor-types', 'sort_order' => 183],
+            ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 18, 'children' => [
+                ['title' => 'Donor & Grant Terintegrasi', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 180],
             ]],
-            ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 18, 'children' => []],
-            ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'sort_order' => 19, 'children' => [
+            ['title' => 'Budget & Forecast', 'slug' => 'master-budget-reporting', 'sort_order' => 19, 'children' => [
                 ['title' => 'Budget Categories', 'slug' => 'master-budget-categories', 'path' => '/master-data/budget-categories', 'sort_order' => 193],
                 ['title' => 'Budget Categories & Templates', 'slug' => 'master-budget-templates', 'path' => '/master-data/budget-lines', 'sort_order' => 194],
                 ['title' => 'Reporting Categories', 'slug' => 'master-reporting-categories', 'path' => '/master-data/reporting-categories', 'sort_order' => 195],
                 ['title' => 'Reporting Dimensions', 'slug' => 'master-reporting-dimensions', 'path' => '/master-data/reporting-dimensions', 'sort_order' => 191],
             ]],
-            ['title' => 'Expenses & Assets', 'slug' => 'master-expenses-assets', 'sort_order' => 20, 'children' => [
+            ['title' => 'Expenses', 'slug' => 'master-expenses', 'sort_order' => 20, 'children' => [
                 ['title' => 'Expense Categories', 'slug' => 'master-expense-categories', 'path' => '/master-data/expense-categories', 'sort_order' => 201],
                 ['title' => 'Document Types', 'slug' => 'master-expense-types', 'path' => '/master-data/document-types', 'sort_order' => 202],
+            ]],
+            ['title' => 'Assets', 'slug' => 'master-assets', 'sort_order' => 21, 'children' => [
                 ['title' => 'Asset Categories', 'slug' => 'master-asset-categories', 'path' => '/master-data/asset-categories', 'sort_order' => 203],
+            ]],
+            ['title' => 'Procurement', 'slug' => 'master-procurement', 'sort_order' => 22, 'children' => [
+                ['title' => 'Suppliers / Vendors', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 210],
+                ['title' => 'Vendor Categories', 'slug' => 'master-vendor-categories', 'path' => '/master-data/vendor-categories', 'sort_order' => 211],
+                ['title' => 'Items / Services', 'slug' => 'master-items-services', 'path' => '/master-data/procurement-items', 'sort_order' => 212],
+                ['title' => 'Unit of Measures', 'slug' => 'master-unit-of-measures', 'path' => '/master-data/unit-of-measures', 'sort_order' => 213],
+                ['title' => 'Procurement Categories', 'slug' => 'master-procurement-categories', 'path' => '/master-data/procurement-categories', 'sort_order' => 214],
             ]],
         ];
 
@@ -66,6 +82,19 @@ class MasterMenuSeeder extends Seeder
                 Menu::updateOrCreate(['slug' => $child['slug']], [...$child, 'parent_id' => $groupMenu->id, 'is_active' => true]);
             }
         }
+
+        // Programs and projects are presented under Donor & Grant in the UI.
+        // Their routes and database relationships remain unchanged.
+        Menu::whereIn('slug', [
+            'master-programs-projects',
+            'master-donors',
+            'master-grant-agreements',
+            'master-programs',
+            'master-funding-sources',
+            'master-donor-types',
+            'master-projects',
+            'master-activities',
+        ])->update(['is_active' => false]);
 
         // Donor and grant records are now created and viewed through the
         // single integrated master page. Disable legacy duplicate entries.
@@ -88,7 +117,8 @@ class MasterMenuSeeder extends Seeder
 
         // Project Frameworks belongs only under the functional Donor & Grant
         // menu, not under the Master Data group.
-        Menu::where('slug', 'master-project-frameworks')->update(['is_active' => false]);
+        // Project Frameworks is now also exposed under Master Data so users
+        // can open it directly from Programs & Projects / Donor & Grant.
 
         Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-projects', 'master-activities'])
             ->update(['is_active' => false]);

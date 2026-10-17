@@ -14,6 +14,7 @@ class StoreBankAccountRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'organization_id' => 'nullable|integer|exists:organizations,id',
             'bank_name' => 'required|string|max:100',
             'account_number' => 'required|string|max:50|unique:bank_accounts,account_number',

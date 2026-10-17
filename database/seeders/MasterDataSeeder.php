@@ -297,8 +297,6 @@ class MasterDataSeeder extends Seeder
         // Global masters (currency, donor, vendor, employee, and COA) remain
         // reusable across fiscal years and are intentionally left unscoped.
         ApprovalMatrix::whereNull('fiscal_year_id')->update(['fiscal_year_id' => $fy2026->id]);
-        ExchangeRate::whereDate('date', '2026-01-02')->update(['fiscal_year_id' => $fy2026->id]);
-        ExchangeRate::whereDate('date', '2027-01-04')->update(['fiscal_year_id' => $fy2027->id]);
 
         // 4. Chart of Accounts
         // Account categories are maintained separately so the COA setup can
@@ -625,6 +623,13 @@ class MasterDataSeeder extends Seeder
         PaymentMethod::updateOrCreate(['code' => 'PM-CARD'], [
             'name' => 'Corporate Credit Card',
             'type' => 'corporate_card',
+            'default_gl_account_id' => null,
+            'is_active' => true,
+        ]);
+
+        PaymentMethod::updateOrCreate(['code' => 'PM-CEKBG'], [
+            'name' => 'Cek / BG',
+            'type' => 'cheque_bg',
             'default_gl_account_id' => null,
             'is_active' => true,
         ]);
@@ -1279,13 +1284,10 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        // Keep seeded master records attached to the default demo fiscal year.
-        // Resetting these relations to NULL made the Effective Year column
-        // blank and caused the fiscal-year filter to behave inconsistently.
-        // They can still be reused by other years through their normal master
-        // data relation, but the demo records must have a deterministic year.
+        // Keep period-specific master records attached to the default demo
+        // fiscal year. Currency is intentionally global and is not scoped to
+        // any fiscal year.
         $defaultFiscalYearId = $fy2026->id;
-        Currency::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
         Donor::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
         Employee::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
         Vendor::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);

@@ -14,13 +14,12 @@ class StoreExchangeRateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'date' => 'required|date',
             'from_currency_id' => 'required|integer|exists:currencies,id',
             'to_currency_id' => 'required|integer|exists:currencies,id',
             'rate' => 'required|numeric|min:0',
             'rate_type' => 'required|in:spot,average,donor,bank,manual,donor_incoming_avg',
-            'source' => 'nullable|string|max:150',
+            'source' => 'required|string|max:150',
             'reference' => 'nullable|string|max:150',
             'notes' => 'nullable|string|max:2000',
             'is_active' => 'boolean',

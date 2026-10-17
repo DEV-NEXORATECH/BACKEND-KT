@@ -464,7 +464,7 @@ class ReportsDashboardController extends Controller
 
     public function donorDashboard(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
-        $period = $this->period($request);
+        $period = $this->donorPeriod($request);
         if (! app(DataScopeService::class)->canAccessAll($request->user())) {
             return response()->json([
                 'success' => true,
@@ -521,6 +521,7 @@ class ReportsDashboardController extends Controller
                 'donor_name' => $grant->donor?->name ?? '-',
                 'start_date' => $grant->start_date?->toDateString(),
                 'end_date' => $grant->end_date?->toDateString(),
+                'donor_fiscal_calendar' => $grant->donor_fiscal_calendar ?: 'JAN_DEC',
                 'approved_budget' => round($grantTotal, 2),
                 'grant_value' => round((float) $grant->grant_value, 2),
                 'actual' => round($actual, 2),
@@ -540,6 +541,7 @@ class ReportsDashboardController extends Controller
         return response()->json([
             'success' => true,
             'period' => $period['label'],
+            'donor_fiscal_calendar' => $period['donor_fiscal_calendar'],
             'summary' => [
                 'total_donors' => $donors->count(),
                 'total_grants' => $grants->count(),
@@ -564,7 +566,7 @@ class ReportsDashboardController extends Controller
      */
     public function grantReporting(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
-        $period = $this->period($request);
+        $period = $this->donorPeriod($request);
         $filters = $request->only(['fiscal_year_id', 'start_date', 'end_date', 'donor_id', 'grant_agreement_id', 'program_id', 'project_id', 'currency_id']);
         $budgetRows = $budgetService->summary(array_filter($filters));
         $postedLines = $this->postedLines($period['start'], $period['end'], $request->input('project_id'), null, $period['fiscal_year_id']);
@@ -646,6 +648,7 @@ class ReportsDashboardController extends Controller
         return response()->json([
             'success' => true,
             'period' => $period['label'],
+            'donor_fiscal_calendar' => $period['donor_fiscal_calendar'],
             'summary' => [
                 'approved_budget' => $totals['approved_budget'],
                 'actual' => $totals['actual'],
@@ -924,6 +927,43 @@ class ReportsDashboardController extends Controller
                 'fiscal_year' => $fiscalYear?->year,
             ],
         ];
+    }
+
+    /**
+     * Donor reports may use a calendar that differs from the organisation's
+     * accounting fiscal year. The donor calendar is explicit in the request
+     * when selected by the user; when a single grant is selected we inherit
+     * its configured calendar. We deliberately do not change the accounting
+     * period or journal fiscal-year assignment here.
+     */
+    private function donorPeriod(Request $request): array
+    {
+        $period = $this->period($request);
+        $calendar = $request->input('donor_fiscal_calendar');
+
+        if (! in_array($calendar, ['JAN_DEC', 'APR_MAR'], true) && $request->filled('grant_agreement_id')) {
+            $calendar = App\Models\Master\GrantAgreement::query()
+                ->whereKey($request->integer('grant_agreement_id'))
+                ->value('donor_fiscal_calendar');
+        }
+
+        $calendar = in_array($calendar, ['JAN_DEC', 'APR_MAR'], true) ? $calendar : 'JAN_DEC';
+        if ($calendar !== 'APR_MAR' || ! $period['fiscal_year']) {
+            $period['donor_fiscal_calendar'] = $calendar;
+            return $period;
+        }
+
+        $year = (int) $period['fiscal_year'];
+        $period['start'] = CarbonImmutable::create($year, 4, 1)->startOfDay();
+        $period['end'] = CarbonImmutable::create($year + 1, 3, 31)->endOfDay();
+        $period['label'] = [
+            'start_date' => $period['start']->toDateString(),
+            'end_date' => $period['end']->toDateString(),
+            'fiscal_year' => $period['fiscal_year'],
+        ];
+        $period['donor_fiscal_calendar'] = $calendar;
+
+        return $period;
     }
 
     private function ensureExportScope(Request $request): void

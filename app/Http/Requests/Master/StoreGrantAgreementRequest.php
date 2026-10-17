@@ -23,6 +23,7 @@ class StoreGrantAgreementRequest extends FormRequest
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'reporting_period' => 'nullable|in:quarterly,monthly,semi_annual,annual',
+            'donor_fiscal_calendar' => 'nullable|in:JAN_DEC,APR_MAR',
             'agreement_document' => 'nullable|file|mimes:pdf,doc,docx|max:10240',
             'currency_id' => 'required|integer|exists:currencies,id',
             'grant_value' => 'required|numeric|min:0',

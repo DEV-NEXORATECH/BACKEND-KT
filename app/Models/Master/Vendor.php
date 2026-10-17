@@ -15,7 +15,7 @@ class Vendor extends Model
 
     protected $table = 'vendors';
 
-    protected $fillable = ['code', 'name', 'type', 'vendor_category_id', 'npwp', 'address', 'contact_person', 'phone', 'email', 'bank_name', 'bank_account_number', 'bank_account_holder', 'tax_id', 'fiscal_year_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'name', 'type', 'vendor_category_id', 'npwp', 'address', 'contact_person', 'contact_person_title', 'phone', 'email', 'bank_name', 'bank_account_number', 'bank_account_holder', 'tax_id', 'fiscal_year_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',

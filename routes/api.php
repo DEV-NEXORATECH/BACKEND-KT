@@ -82,6 +82,7 @@ use App\Http\Controllers\Api\Master\ProjectWorkplanController;
 use App\Http\Controllers\Api\Master\IntegratedDonorGrantController;
 use App\Http\Controllers\Api\Master\GrantReportingDeadlineController;
 use App\Http\Controllers\Api\Master\OrganizationStructureController;
+use App\Http\Controllers\Api\Master\MembershipDueController;
 
 Route::get('/health', function () {
     $healthy = true;
@@ -392,6 +393,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('project-workplans', ProjectWorkplanController::class)->middleware('permission:master-data');
         Route::apiResource('grant-reporting-deadlines', GrantReportingDeadlineController::class)->middleware('permission:master-data');
         Route::get('roles', [RoleMenuController::class, 'options'])->middleware('permission:master-data.view');
+        Route::get('exchange-rates/resolve', [ExchangeRateController::class, 'resolve'])->middleware('permission:master-data.view');
+        Route::post('bank-accounts/{bankAccount}/post-opening-balance', [BankAccountController::class, 'postOpeningBalance'])->middleware('permission:master-data.manage');
         $masterResources = [
             'organizations' => OrganizationController::class,
             'office-locations' => OfficeLocationController::class,
@@ -405,6 +408,7 @@ Route::middleware('auth:sanctum')->group(function () {
             'account-categories' => AccountCategoryController::class,
             'taxes' => TaxController::class,
             'customers' => CustomerController::class,
+            'membership-dues' => MembershipDueController::class,
             'bank-accounts' => BankAccountController::class,
             'petty-cashes' => PettyCashController::class,
             'payment-methods' => PaymentMethodController::class,

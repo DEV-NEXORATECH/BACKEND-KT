@@ -14,10 +14,11 @@ class FiscalYear extends Model
 
     protected $table = 'fiscal_years';
 
-    protected $fillable = ['year', 'name', 'start_date', 'end_date', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['year', 'name', 'calendar_code', 'start_month', 'start_date', 'end_date', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'start_month' => 'integer',
         'start_date' => 'date',
         'end_date' => 'date',
     ];

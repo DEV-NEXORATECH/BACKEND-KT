@@ -22,6 +22,7 @@ class StoreVendorRequest extends FormRequest
             'npwp' => 'nullable|string|max:50',
             'address' => 'nullable|string',
             'contact_person' => 'nullable|string|max:100',
+            'contact_person_title' => 'nullable|string|max:100',
             'phone' => 'nullable|string|max:30',
             'email' => 'nullable|email|max:100',
             'bank_name' => 'nullable|string|max:100',
