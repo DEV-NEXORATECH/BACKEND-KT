@@ -140,13 +140,7 @@ class RoleSeeder extends Seeder
                 ['title' => 'Assets', 'slug' => 'master-assets', 'path' => '/master-data', 'sort_order' => 21, 'children' => [
                     ['title' => 'Asset Categories', 'slug' => 'master-asset-categories', 'path' => '/master-data/asset-categories', 'sort_order' => 203],
                 ]],
-                ['title' => 'Procurement', 'slug' => 'master-procurement', 'path' => '/master-data', 'sort_order' => 22, 'children' => [
-                    ['title' => 'Suppliers / Vendors', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 210],
-                    ['title' => 'Vendor Categories', 'slug' => 'master-vendor-categories', 'path' => '/master-data/vendor-categories', 'sort_order' => 211],
-                    ['title' => 'Items / Services', 'slug' => 'master-items-services', 'path' => '/master-data/procurement-items', 'sort_order' => 212],
-                    ['title' => 'Unit of Measures', 'slug' => 'master-unit-of-measures', 'path' => '/master-data/unit-of-measures', 'sort_order' => 213],
-                    ['title' => 'Procurement Categories', 'slug' => 'master-procurement-categories', 'path' => '/master-data/procurement-categories', 'sort_order' => 214],
-                ]],
+                ['title' => 'Suppliers / Vendors', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 22],
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/donor-grant', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'donor-grant-dashboard', 'path' => '/donor-grant/dashboard', 'sort_order' => 21],
@@ -196,7 +190,6 @@ class RoleSeeder extends Seeder
                 ['title' => 'Dashboard', 'slug' => 'procurement-dashboard', 'path' => '/procurement/dashboard', 'sort_order' => 490],
                 ['title' => 'Purchase Request', 'slug' => 'procurement-purchase-request', 'path' => '/procurement/purchase-requests', 'sort_order' => 491],
                 ['title' => 'RFQ & CBA', 'slug' => 'procurement-rfq-cba', 'path' => '/procurement/rfq-cba', 'sort_order' => 492],
-                ['title' => 'Vendors', 'slug' => 'procurement-vendors', 'path' => '/master-data/vendors', 'sort_order' => 493],
                 ['title' => 'Purchase Orders', 'slug' => 'procurement-purchase-orders', 'path' => '/procurement/purchase-orders', 'sort_order' => 494],
                 ['title' => 'Procurement Contracts', 'slug' => 'procurement-contracts', 'path' => '/procurement/contracts', 'sort_order' => 495],
                 ['title' => 'Supplier Contract Notification', 'slug' => 'procurement-scn', 'path' => '/procurement/scn', 'sort_order' => 496],
@@ -266,7 +259,7 @@ class RoleSeeder extends Seeder
         }
 
         // Clean up legacy menu entries so they cannot reappear under Master Data.
-        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types', 'master-projects', 'master-activities', 'donor-grant-programs-projects', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom'])
+        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types', 'master-projects', 'master-activities', 'donor-grant-programs-projects', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom', 'master-procurement', 'master-vendor-categories', 'master-items-services', 'master-unit-of-measures', 'master-procurement-categories'])
             ->update(['is_active' => false]);
 
         // 3. Define Menu Groups mapping for ease of assignment
@@ -278,7 +271,6 @@ class RoleSeeder extends Seeder
                 'master-funding-projects', 'master-donors', 'master-grant-agreements', 'master-programs-projects', 'master-programs', 'master-projects', 'master-activities', 'master-budget-codes', 'master-funding-sources',
                 'master-budget-reporting', 'master-budget-categories', 'master-budget-templates', 'master-reporting-categories', 'master-reporting-dimensions',
                 'master-expenses', 'master-expenses-assets', 'master-expense-categories', 'master-expense-types', 'master-assets', 'master-asset-categories',
-                'master-procurement', 'master-vendors', 'master-vendor-categories', 'master-items-services', 'master-unit-of-measures', 'master-procurement-categories',
             ],
             'Accounting' => [
                 'accounting', 'accounting-dashboard', 'accounting-chart-of-accounts', 'journal', 'general-ledger', 'accounts-payable', 'accounts-receivable', 'banking', 'bank-reconciliation', 'fixed-assets', 'period-closing',
