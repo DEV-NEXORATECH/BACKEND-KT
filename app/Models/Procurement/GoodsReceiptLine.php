@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class GoodsReceiptLine extends Model
 {
-    protected $fillable = ['goods_receipt_id', 'purchase_order_line_id', 'received_quantity'];
+    protected $fillable = ['goods_receipt_id', 'purchase_order_line_id', 'received_quantity', 'quality_check', 'comment'];
 
     protected $casts = ['received_quantity' => 'decimal:2'];
 

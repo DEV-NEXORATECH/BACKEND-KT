@@ -14,9 +14,21 @@ class PurchaseOrder extends Model
 {
     use SoftDeletes, AuditTrailTrait, FiscalYearScopedTrait;
 
-    protected $fillable = ['fiscal_year_id', 'purchase_request_id', 'rfq_id', 'cba_id', 'vendor_id', 'po_number', 'contract_number', 'po_date', 'contract_date', 'terms', 'status', 'attachments', 'approved_by', 'approved_at', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = [
+        'fiscal_year_id', 'purchase_request_id', 'rfq_id', 'cba_id', 'vendor_id', 'po_number', 'po_date',
+        'required_delivery_date', 'delivery_method', 'payment_terms', 'delivery_address',
+        'supplier_contact_name', 'supplier_email', 'supplier_phone', 'supplier_fax', 'supplier_mobile', 'supplier_address',
+        'procurement_contact_name', 'procurement_contact_email', 'procurement_address',
+        'other_tax', 'other_charges', 'checked_by', 'budget_holder_name', 'budget_holder_title',
+        'supplier_acceptance_name', 'supplier_acceptance_title', 'contract_number', 'contract_date', 'terms',
+        'status', 'attachments', 'approved_by', 'approved_at', 'created_by', 'updated_by', 'deleted_by',
+    ];
 
-    protected $casts = ['po_date' => 'date', 'contract_date' => 'date', 'attachments' => 'array', 'approved_at' => 'datetime'];
+    protected $casts = [
+        'po_date' => 'date', 'required_delivery_date' => 'date', 'contract_date' => 'date',
+        'other_tax' => 'decimal:2', 'other_charges' => 'decimal:2',
+        'attachments' => 'array', 'approved_at' => 'datetime',
+    ];
 
     public function purchaseRequest(): BelongsTo
     {

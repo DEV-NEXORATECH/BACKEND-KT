@@ -32,6 +32,8 @@ class ProcurementWaiver extends Model
         'attachment_name',
         'attachment_path',
         'date',
+        'donor_name', 'vendor_rows', 'prepared_by', 'prepared_title', 'authorised_by', 'authorised_title',
+        'verified_by', 'verified_title', 'remarks',
         'status',
         'approved_by',
         'approved_at',
@@ -45,6 +47,7 @@ class ProcurementWaiver extends Model
         'date' => 'date',
         'total_amount' => 'decimal:2',
         'approved_at' => 'datetime',
+        'vendor_rows' => 'array',
     ];
 
     public function fiscalYear(): BelongsTo
