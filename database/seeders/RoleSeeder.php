@@ -140,6 +140,10 @@ class RoleSeeder extends Seeder
                 ['title' => 'Assets', 'slug' => 'master-assets', 'path' => '/master-data', 'sort_order' => 21, 'children' => [
                     ['title' => 'Asset Categories', 'slug' => 'master-asset-categories', 'path' => '/master-data/asset-categories', 'sort_order' => 203],
                 ]],
+                ['title' => 'Procurement', 'slug' => 'master-procurement', 'path' => '/master-data', 'sort_order' => 23, 'children' => [
+                    ['title' => 'Delivery Methods', 'slug' => 'master-delivery-methods', 'path' => '/master-data/delivery-methods', 'sort_order' => 231],
+                    ['title' => 'Payment Terms', 'slug' => 'master-payment-terms', 'path' => '/master-data/payment-terms', 'sort_order' => 232],
+                ]],
                 ['title' => 'Suppliers / Vendors', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 22],
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/donor-grant', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
@@ -259,7 +263,7 @@ class RoleSeeder extends Seeder
         }
 
         // Clean up legacy menu entries so they cannot reappear under Master Data.
-        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types', 'master-projects', 'master-activities', 'donor-grant-programs-projects', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom', 'master-procurement', 'master-vendor-categories', 'master-items-services', 'master-unit-of-measures', 'master-procurement-categories'])
+        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types', 'master-projects', 'master-activities', 'donor-grant-programs-projects', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom', 'master-vendor-categories', 'master-items-services', 'master-unit-of-measures', 'master-procurement-categories'])
             ->update(['is_active' => false]);
 
         // 3. Define Menu Groups mapping for ease of assignment
