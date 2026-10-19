@@ -35,6 +35,7 @@ class PurchaseRequestController extends Controller
 
         $requests = PurchaseRequest::query()
             ->with($this->with)
+            ->when($request->filled('fiscal_year_id'), fn ($query) => $query->where('fiscal_year_id', (int) $request->query('fiscal_year_id')))
             ->when(! $this->canAccessAll($request), fn ($query) => $query->where('requester_id', $request->user()->id))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->query('status')))
             ->when($request->filled('search'), function ($query) use ($request) {

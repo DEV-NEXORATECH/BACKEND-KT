@@ -20,7 +20,8 @@ class AdvancedProcurementController extends Controller
 {
     public function rfqs(Request $request): JsonResponse
     {
-        $query = Rfq::with(['purchaseRequest:id,pr_number,status', 'vendors:id,code,name', 'quotations.vendor:id,code,name', 'cba.selectedVendor:id,code,name']);
+        $query = Rfq::with(['purchaseRequest:id,pr_number,status', 'vendors:id,code,name', 'quotations.vendor:id,code,name', 'cba.selectedVendor:id,code,name'])
+            ->when($request->filled('fiscal_year_id'), fn ($query) => $query->where('fiscal_year_id', (int) $request->query('fiscal_year_id')));
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
         return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn (Rfq $rfq) => $this->formatRfq($rfq))]);
     }

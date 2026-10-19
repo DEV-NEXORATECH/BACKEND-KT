@@ -16,9 +16,11 @@ trait FiscalYearScopedTrait
             }
 
             $request = request();
-            $fiscalYearId = $request->query('fiscal_year_id')
+            $requestedFiscalYearId = $request->query('fiscal_year_id')
                 ?: $request->input('fiscal_year_id')
                 ?: $request->header('X-Fiscal-Year-Id');
+
+            $fiscalYearId = $requestedFiscalYearId;
 
             // The active fiscal year is the default context when a client
             // does not explicitly send one. Global records with NULL remain
@@ -32,12 +34,18 @@ trait FiscalYearScopedTrait
                 return;
             }
 
-            // NULL remains a global record and is intentionally available in
-            // every year. Records assigned to a year are isolated to that year.
             $qualified = $query->getModel()->qualifyColumn('fiscal_year_id');
-            $query->where(function (Builder $scope) use ($qualified, $fiscalYearId) {
-                $scope->whereNull($qualified)->orWhere($qualified, (int) $fiscalYearId);
-            });
+            if ($requestedFiscalYearId) {
+                // An explicit selection must be exact. Unassigned legacy rows
+                // must not leak into every selected fiscal year.
+                $query->where($qualified, (int) $fiscalYearId);
+            } else {
+                // Without an explicit selection, retain global rows while
+                // defaulting assigned records to the active fiscal year.
+                $query->where(function (Builder $scope) use ($qualified, $fiscalYearId) {
+                    $scope->whereNull($qualified)->orWhere($qualified, (int) $fiscalYearId);
+                });
+            }
         });
 
         static::creating(function ($model) {

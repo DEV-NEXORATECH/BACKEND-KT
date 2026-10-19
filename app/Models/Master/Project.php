@@ -20,6 +20,24 @@ class Project extends Model
         'is_active' => 'boolean',
     ];
 
+    protected static function booted(): void
+    {
+        static::addGlobalScope('fiscal_year_context', function ($query) {
+            if (! function_exists('request')) {
+                return;
+            }
+
+            $request = request();
+            $fiscalYearId = $request->query('fiscal_year_id')
+                ?: $request->input('fiscal_year_id')
+                ?: $request->header('X-Fiscal-Year-Id');
+
+            if ($fiscalYearId) {
+                $query->whereHas('fiscalYears', fn ($fiscalQuery) => $fiscalQuery->whereKey((int) $fiscalYearId));
+            }
+        });
+    }
+
     public function program()
     {
         return $this->belongsTo(\App\Models\Master\Program::class, 'program_id');
