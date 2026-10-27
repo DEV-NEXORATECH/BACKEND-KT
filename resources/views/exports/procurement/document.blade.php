@@ -3,55 +3,69 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 28px 32px 55px; }
-        body { font-family: DejaVu Sans, Arial, sans-serif; color: #1f2937; font-size: 9px; line-height: 1.45; }
-        .brand { color: #075e54; font-size: 14px; font-weight: bold; letter-spacing: .5px; }
-        .document-title { font-size: 17px; color: #0f172a; font-weight: bold; margin-top: 4px; }
-        .header { border-bottom: 2px solid #0f766e; padding-bottom: 13px; margin-bottom: 17px; }
-        .header-table, .details-table, .items-table, .signature-table { width: 100%; border-collapse: collapse; }
-        .document-number { font-size: 12px; font-weight: bold; text-align: right; }
-        .status { color: #075e54; background: #e7f5f1; font-size: 8px; font-weight: bold; padding: 4px 7px; text-transform: uppercase; }
-        .details-table td { width: 50%; padding: 5px 11px 5px 0; vertical-align: top; border-bottom: 1px solid #e5e7eb; }
-        .details-table .label { color: #64748b; display: block; font-size: 8px; text-transform: uppercase; margin-bottom: 2px; }
-        .section-title { color: #0f766e; font-size: 10px; font-weight: bold; text-transform: uppercase; margin: 20px 0 7px; }
-        .items-table th { background: #0f766e; color: #fff; text-align: left; padding: 7px 6px; font-size: 8px; }
-        .items-table td { padding: 7px 6px; border-bottom: 1px solid #dbe5e3; vertical-align: top; }
-        .items-table .number { text-align: right; white-space: nowrap; }
-        .total-row td { border-top: 2px solid #0f766e; font-weight: bold; font-size: 10px; }
-        .letter-body { font-size: 10px; line-height: 1.65; margin-top: 18px; min-height: 190px; }
-        .signature-table { margin-top: 38px; }
-        .signature-table td { width: 33.33%; vertical-align: top; text-align: center; padding: 0 10px; }
-        .signature-space { height: 45px; }
-        .sign-name { border-top: 1px solid #64748b; padding-top: 5px; font-weight: bold; }
-        .sign-role { color: #64748b; font-size: 8px; }
-        .footer { position: fixed; bottom: -35px; left: 0; right: 0; color: #64748b; font-size: 7px; border-top: 1px solid #dbe5e3; padding-top: 6px; }
+        @page { margin: 18mm 16mm 18mm; }
+        * { box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #111111; font-size: 9pt; line-height: 1.35; }
+        .header { width: 100%; border-bottom: 1.2pt solid #0B2345; padding-bottom: 9pt; margin-bottom: 13pt; }
+        .header-table { width: 100%; border-collapse: collapse; }
+        .header-table td { vertical-align: top; }
+        .company { width: 56%; color: #0B2345; font-size: 9pt; font-weight: bold; }
+        .company img { display: block; max-width: 125px; max-height: 48px; margin-bottom: 4pt; }
+        .company-name { font-size: 10pt; }
+        .company-meta { color: #475569; font-size: 8pt; font-weight: normal; max-width: 250px; }
+        .document { width: 44%; text-align: right; }
+        .document-title { color: #0B2345; font-size: 16pt; font-weight: bold; line-height: 1.15; }
+        .document-meta { color: #475569; font-size: 8pt; margin-top: 3pt; }
+        .section-title { color: #0B2345; font-size: 10pt; font-weight: bold; margin: 13pt 0 5pt; border-bottom: .7pt solid #0B2345; padding-bottom: 3pt; }
+        .details-table, .items-table, .summary-table { width: 100%; border-collapse: collapse; }
+        .details-table td { width: 50%; padding: 3.5pt 14pt 3.5pt 0; border-bottom: .45pt solid #CBD5E1; vertical-align: top; }
+        .label { color: #475569; font-size: 7.5pt; font-weight: bold; display: block; margin-bottom: 1pt; }
+        .value { color: #111111; font-size: 9pt; }
+        .items-table { page-break-inside: auto; }
+        .items-table thead { display: table-header-group; }
+        .items-table th { color: #111111; background: #FFFFFF; border-top: 1pt solid #111111; border-bottom: 1pt solid #111111; padding: 5pt 4pt; text-align: left; font-size: 8pt; }
+        .items-table td { border-bottom: .45pt solid #CBD5E1; padding: 4pt; vertical-align: top; font-size: 8.5pt; }
+        .items-table tr { page-break-inside: avoid; }
+        .number { text-align: right; white-space: nowrap; }
+        .total-row td { border-top: 1pt solid #0B2345; border-bottom: 0; font-weight: bold; font-size: 9.5pt; padding-top: 6pt; }
+        .summary-wrap { width: 48%; margin-left: auto; margin-top: 8pt; }
+        .summary-table td { padding: 3pt 0; }
+        .summary-table td:last-child { text-align: right; }
+        .grand-total td { border-top: 1pt solid #0B2345; color: #0B2345; font-weight: bold; padding-top: 5pt; }
+        .notes { margin-top: 8pt; color: #111111; white-space: pre-line; }
+        .footer { position: fixed; bottom: -10mm; left: 0; right: 0; border-top: .45pt solid #CBD5E1; padding-top: 4pt; color: #475569; font-size: 7.5pt; }
+        .footer-table { width: 100%; border-collapse: collapse; }
+        .footer-table td { width: 33.33%; }
+        .footer-table td:nth-child(2) { text-align: center; }
+        .footer-table td:last-child { text-align: right; }
     </style>
 </head>
 <body>
     <div class="header">
-        <table class="header-table"><tr><td><div class="brand">KAOEM TELAPAK</div><div class="document-title">{{ $title }}</div></td><td><div class="document-number">{{ $documentNumber }}</div><div style="text-align:right; margin-top:8px;"><span class="status">{{ $status }}</span></div></td></tr></table>
+        <table class="header-table"><tr>
+            <td class="company">
+                @if(!empty($branding['logo']))<img src="{{ $branding['logo'] }}" alt="{{ $branding['name'] }}">@endif
+                <div class="company-name">{{ $branding['name'] }}</div>
+                @if(!empty($branding['address']))<div class="company-meta">{{ $branding['address'] }}</div>@endif
+                @if(!empty($branding['email']))<div class="company-meta">{{ $branding['email'] }}</div>@endif
+            </td>
+            <td class="document"><div class="document-title">{{ strtoupper($title) }}</div><div class="document-meta">Document No. {{ $documentNumber }}</div><div class="document-meta">Status: {{ $status }}</div></td>
+        </tr></table>
     </div>
 
-    <table class="details-table">
-        @foreach(array_chunk($details, 2, true) as $detailRow)
-            <tr>
-                @foreach($detailRow as $label => $value)<td><span class="label">{{ $label }}</span>{{ $value }}</td>@endforeach
-                @if(count($detailRow) === 1)<td></td>@endif
-            </tr>
-        @endforeach
-    </table>
+    @if(count($details))
+        <div class="section-title">DOCUMENT INFORMATION</div>
+        <table class="details-table">
+            @foreach(array_chunk($details, 2, true) as $detailRow)
+                <tr>@foreach($detailRow as $label => $value)<td><span class="label">{{ $label }}</span><span class="value">{{ $value }}</span></td>@endforeach @if(count($detailRow) === 1)<td></td>@endif</tr>
+            @endforeach
+        </table>
+    @endif
 
-    @if($letter)
-        <div class="letter-body">
-            <p>Dear {{ $details['Vendor'] ?? 'Supplier' }},</p>
-            <p>This notification confirms the procurement decision and related contract information stated above. Please acknowledge receipt and coordinate the required next steps with the Kaoem Telapak procurement team.</p>
-            <p>{{ $details['Notes'] ?? '' }}</p>
-            <p>Thank you for your cooperation.</p>
-        </div>
-    @elseif(count($lines))
-        <div class="section-title">Items / Services</div>
+    @if(count($lines))
+        <div class="section-title">DETAIL ITEMS</div>
         <table class="items-table">
-            <thead><tr><th style="width:24px">No.</th><th>Description</th><th>Budget Line</th><th class="number">{{ $quantityLabel }}</th><th class="number">Unit Price</th><th class="number">Amount</th></tr></thead>
+            <thead><tr><th style="width:24pt">No.</th><th>Description</th><th>Budget Line</th><th class="number">{{ $quantityLabel }}</th><th class="number">Unit Price</th><th class="number">Amount</th></tr></thead>
             <tbody>
                 @foreach($lines as $index => $line)
                     <tr><td>{{ $index + 1 }}</td><td>{{ $line['description'] ?: '-' }}</td><td>{{ $line['budget_code'] ?: '-' }}</td><td class="number">{{ number_format((float) $line['quantity'], 2) }}</td><td class="number">{{ number_format((float) $line['unit_price'], 2) }}</td><td class="number">{{ number_format((float) $line['amount'], 2) }}</td></tr>
@@ -59,14 +73,14 @@
                 @if(!is_null($total))<tr class="total-row"><td colspan="5" class="number">TOTAL</td><td class="number">{{ number_format((float) $total, 2) }}</td></tr>@endif
             </tbody>
         </table>
+    @elseif(!is_null($total))
+        <div class="summary-wrap"><table class="summary-table"><tr class="grand-total"><td>Total Amount</td><td>{{ number_format((float) $total, 2) }}</td></tr></table></div>
     @endif
 
-    <table class="signature-table"><tr>
-        <td><div>Prepared by</div><div class="signature-space"></div><div class="sign-name">________________________</div><div class="sign-role">Procurement / Requester</div></td>
-        <td><div>Reviewed by</div><div class="signature-space"></div><div class="sign-name">________________________</div><div class="sign-role">Finance / Budget Holder</div></td>
-        <td><div>Approved by</div><div class="signature-space"></div><div class="sign-name">________________________</div><div class="sign-role">Authorized Signatory</div></td>
-    </tr></table>
+    @if(!empty($details['Notes']) || !empty($details['Justification']) || !empty($details['Description']))
+        <div class="section-title">NOTES / JUSTIFICATION</div><div class="notes">{{ $details['Notes'] ?? ($details['Justification'] ?? ($details['Description'] ?? '')) }}</div>
+    @endif
 
-    <div class="footer">Kaoem Telapak ERP - {{ $title }} {{ $documentNumber }} - Generated {{ $generatedAt }}</div>
+    <div class="footer"><table class="footer-table"><tr><td>Kaoem Telapak ERP</td><td>Generated {{ $generatedAt }}</td><td></td></tr></table></div>
 </body>
 </html>

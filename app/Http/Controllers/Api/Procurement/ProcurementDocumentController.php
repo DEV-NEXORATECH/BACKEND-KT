@@ -10,8 +10,10 @@ use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierContractNotification;
 use App\Models\Procurement\SupplierInvoice;
+use App\Models\Master\Organization;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ProcurementDocumentController extends Controller
@@ -34,7 +36,7 @@ class ProcurementDocumentController extends Controller
             'quantity' => $line->quantity,
             'unit_price' => $line->unit_price,
             'amount' => $line->total_amount,
-        ])->all(), $purchaseRequest->lines->sum('total_amount'));
+        ])->all(), $purchaseRequest->lines->sum('total_amount'), null, false, 'exports.procurement.purchase-request');
     }
 
     public function purchaseOrder(PurchaseOrder $purchaseOrder): Response
@@ -57,7 +59,7 @@ class ProcurementDocumentController extends Controller
             'quantity' => $line->quantity,
             'unit_price' => $line->unit_price,
             'amount' => $line->total_amount,
-        ])->all(), $purchaseOrder->lines->sum('total_amount'));
+        ])->all(), $purchaseOrder->lines->sum('total_amount'), null, false, 'exports.procurement.purchase-order');
     }
 
     public function goodsReceipt(GoodsReceipt $goodsReceipt): Response
@@ -77,7 +79,7 @@ class ProcurementDocumentController extends Controller
             'quantity' => $line->received_quantity,
             'unit_price' => $line->purchaseOrderLine?->unit_price,
             'amount' => (float) $line->received_quantity * (float) ($line->purchaseOrderLine?->unit_price ?? 0),
-        ])->all(), null, 'Received Quantity');
+        ])->all(), null, 'Received Quantity', false, 'exports.procurement.goods-receipt');
     }
 
     public function supplierInvoice(SupplierInvoice $supplierInvoice): Response
@@ -99,7 +101,7 @@ class ProcurementDocumentController extends Controller
             'quantity' => $line->quantity,
             'unit_price' => $line->unit_price,
             'amount' => $line->total_amount,
-        ])->all(), $supplierInvoice->total_amount);
+        ])->all(), $supplierInvoice->total_amount, null, false, 'exports.procurement.supplier-invoice');
     }
 
     public function scn(SupplierContractNotification $supplierContractNotification): Response
@@ -114,7 +116,7 @@ class ProcurementDocumentController extends Controller
             'Purchase Order' => $supplierContractNotification->purchaseOrder?->po_number,
             'Project' => $supplierContractNotification->purchaseRequest?->project?->name ?: $supplierContractNotification->purchaseOrder?->purchaseRequest?->project?->name,
             'Notes' => $supplierContractNotification->notes,
-        ], [], null, null, true);
+        ], [], null, null, true, 'exports.procurement.supplier-contract-notification');
     }
 
     public function contract(Contract $contract): Response
@@ -133,7 +135,7 @@ class ProcurementDocumentController extends Controller
             'Payment Terms' => $contract->payment_terms,
             'Scope of Work' => $contract->scope_of_work,
             'Notes' => $contract->notes,
-        ], [], (float) $contract->total_value, null, true);
+        ], [], (float) $contract->total_value, null, true, 'exports.procurement.contract');
     }
 
     public function waiver(ProcurementWaiver $waiver): Response
@@ -150,12 +152,21 @@ class ProcurementDocumentController extends Controller
             'Approved By' => $waiver->approver?->name,
             'Approved At' => $waiver->approved_at?->format('d M Y H:i'),
             'Notes' => $waiver->notes,
-        ], [], (float) $waiver->total_amount, null, true);
+        ], [], (float) $waiver->total_amount, null, true, 'exports.procurement.waiver');
     }
 
-    private function download(string $title, string $documentNumber, string $status, array $details, array $lines, ?float $total = null, ?string $quantityLabel = null, bool $letter = false): Response
+    private function download(string $title, string $documentNumber, string $status, array $details, array $lines, ?float $total = null, ?string $quantityLabel = null, bool $letter = false, string $view = 'exports.procurement.document'): Response
     {
-        $pdf = Pdf::loadView('exports.procurement.document', [
+        $organization = Organization::query()->where('is_active', true)->orderBy('id')->first();
+        $logo = null;
+        if ($organization?->logo_url) {
+            $logoPath = ltrim(parse_url($organization->logo_url, PHP_URL_PATH) ?: $organization->logo_url, '/');
+            if (Storage::disk('public')->exists($logoPath)) {
+                $mime = Storage::disk('public')->mimeType($logoPath) ?: 'image/png';
+                $logo = 'data:'.$mime.';base64,'.base64_encode(Storage::disk('public')->get($logoPath));
+            }
+        }
+        $pdf = Pdf::loadView($view, [
             'title' => $title,
             'documentNumber' => $documentNumber,
             'status' => $status,
@@ -165,7 +176,18 @@ class ProcurementDocumentController extends Controller
             'quantityLabel' => $quantityLabel ?? 'Quantity',
             'letter' => $letter,
             'generatedAt' => now()->format('d M Y H:i'),
+            'branding' => [
+                'name' => $organization?->legal_name ?: $organization?->name ?: 'Kaoem Telapak',
+                'address' => $organization?->address,
+                'email' => $organization?->email,
+                'logo' => $logo,
+            ],
         ])->setPaper('a4', 'portrait');
+
+        // DomPDF page counters are drawn by the canvas so they remain accurate
+        // across multi-page procurement documents.
+        $pdf->getDomPDF()->render();
+        $pdf->getDomPDF()->getCanvas()->page_text(510, 820, 'Page {PAGE_NUM} of {PAGE_COUNT}', null, 8, [71 / 255, 85 / 255, 105 / 255]);
 
         return $pdf->download(Str::slug($documentNumber).'.pdf');
     }
