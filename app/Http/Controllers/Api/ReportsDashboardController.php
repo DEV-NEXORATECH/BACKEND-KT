@@ -8,6 +8,7 @@ use App\Models\Accounting\JournalLine;
 use App\Models\Asset\FixedAsset;
 use App\Models\Budget\BudgetCommitment;
 use App\Models\Expense\ExpenseRequest;
+use App\Models\ApprovalWorkflowRun;
 use App\Models\Finance\BankTransaction;
 use App\Models\Finance\CustomerInvoice;
 use App\Models\Finance\Payment;
@@ -714,6 +715,9 @@ class ReportsDashboardController extends Controller
             'cash_bank' => $this->cashBank($period['start'], $period['end']),
             'procurement' => $this->procurementReport(),
             'expense' => $this->expenseReport(),
+            'my_requests' => $this->expenseReportWorkspace($request, $period),
+            'historical_expenses' => $this->historicalExpenseReport($request, $period),
+            'cash_advance_settlement' => $this->cashAdvanceSettlementReport($request, $period),
             'recent_transactions' => $budgetLineId
                 ? $postedLines->sortByDesc(fn (JournalLine $line) => $line->journal?->journal_date)->take(100)->map(fn (JournalLine $line) => ['date' => $line->journal?->journal_date?->toDateString(), 'reference' => $line->journal?->reference ?: $line->journal?->journal_number, 'description' => $line->line_description ?: $line->journal?->description, 'status' => $line->journal?->status, 'amount' => round((float) $line->debit - (float) $line->credit, 2)])->values()->all()
                 : $this->recentTransactions($period['start'], $period['end']),
@@ -755,8 +759,115 @@ class ReportsDashboardController extends Controller
             'cash_bank' => ['total_balance' => 0, 'accounts' => []],
             'procurement' => ['summary' => [], 'rows' => []],
             'expense' => ['total' => $total, 'rows' => $rows],
+            'my_requests' => $this->expenseReportWorkspace($request, $period),
+            'historical_expenses' => ['total' => $total, 'rows' => $rows],
+            'cash_advance_settlement' => $this->cashAdvanceSettlementReport($request, $period),
             'recent_transactions' => $rows,
         ]);
+    }
+
+    /**
+     * Expense and approval data used by the Expenses & Approvals report cards.
+     * The fixed stage names are the business workflow; every status, amount,
+     * actor, journal reference, and date below comes from the accounting data.
+     */
+    private function expenseReportWorkspace(Request $request, array $period): array
+    {
+        $query = ExpenseRequest::query()
+            ->with(['requester:id,name', 'project:id,code,name', 'donor:id,code,name', 'cashAdvanceReturns', 'cashAdvanceReimbursements', 'payments:id,expense_request_id,payment_number,payment_date,amount,status,reference'])
+            ->when(! app(DataScopeService::class)->canAccessAll($request->user()), fn (Builder $q) => $q->where('requester_id', $request->user()->id))
+            ->when($period['start'], fn (Builder $q) => $q->whereDate('request_date', '>=', $period['start']))
+            ->when($period['end'], fn (Builder $q) => $q->whereDate('request_date', '<=', $period['end']))
+            ->latest('id');
+
+        $expenses = $query->limit(200)->get();
+        $runs = ApprovalWorkflowRun::query()
+            ->with(['actions.approvalMatrix', 'actions.actionBy:id,name'])
+            ->where('module', 'expense')
+            ->where('approvable_type', ExpenseRequest::class)
+            ->whereIn('approvable_id', $expenses->pluck('id'))
+            ->get()->keyBy('approvable_id');
+
+        $rows = $expenses->map(fn (ExpenseRequest $expense) => $this->reportExpenseRow($expense, $runs->get($expense->id)))->values();
+        $cash = $rows->filter(fn (array $row) => $row['expense_type'] === 'cash_advance')->values();
+
+        return [
+            'total' => (float) $expenses->sum('total_amount'),
+            'count' => $expenses->count(),
+            'rows' => $rows->all(),
+            'stages' => ['Submitted', 'Budget Holder', 'Finance Verification', 'Manager Verification', 'Approved', 'Payment', 'Paid'],
+            'cash_advance_count' => $cash->count(),
+        ];
+    }
+
+    private function historicalExpenseReport(Request $request, array $period): array
+    {
+        $workspace = $this->expenseReportWorkspace($request, $period);
+        return ['total' => $workspace['total'], 'count' => $workspace['count'], 'rows' => $workspace['rows']];
+    }
+
+    private function cashAdvanceSettlementReport(Request $request, array $period): array
+    {
+        $workspace = $this->expenseReportWorkspace($request, $period);
+        $rows = collect($workspace['rows'])->filter(fn (array $row) => $row['expense_type'] === 'cash_advance')->values();
+        return [
+            'total_requested' => round((float) $rows->sum('amount'), 2),
+            'total_paid' => round((float) $rows->sum('paid_amount'), 2),
+            'total_settled' => round((float) $rows->sum('settled_amount'), 2),
+            'total_outstanding' => round((float) $rows->sum('staff_advance_outstanding'), 2),
+            'rows' => $rows->all(),
+            'accounting_link' => 'Payment, settlement journal, bank transaction, and reimbursement records are linked by the backend.',
+        ];
+    }
+
+    private function reportExpenseRow(ExpenseRequest $expense, ?ApprovalWorkflowRun $run): array
+    {
+        $status = (string) $expense->status;
+        $payment = $expense->payments->sortByDesc('payment_date')->first();
+        $isPaid = in_array($status, ['paid'], true) || $payment?->status === 'paid' || ((float) $expense->paid_amount >= (float) $expense->total_amount && (float) $expense->total_amount > 0);
+        $actions = collect($run?->actions ?? []);
+        $levelOne = $actions->firstWhere('level', 1);
+        $levelTwo = $actions->firstWhere('level', 2);
+        $levelOneDone = $levelOne && $levelOne->status === 'approved';
+        $levelTwoDone = $levelTwo && $levelTwo->status === 'approved';
+        $timeline = [
+            ['key' => 'submitted', 'label' => 'Submitted', 'state' => $status === 'draft' ? 'pending' : 'completed', 'date' => $expense->submitted_at?->toISOString(), 'actor' => null],
+            ['key' => 'budget_holder', 'label' => 'Budget Holder', 'state' => $levelOneDone || in_array($status, ['verified', 'approved', 'posted', 'paid'], true) ? 'completed' : ($status === 'submitted' ? 'current' : 'pending'), 'date' => $levelOne?->action_at?->toISOString(), 'actor' => $levelOne?->actionBy?->name],
+            ['key' => 'finance_verification', 'label' => 'Finance Verification', 'state' => in_array($status, ['verified', 'approved', 'posted', 'paid'], true) ? 'completed' : ($status === 'submitted' ? 'current' : 'pending'), 'date' => $expense->verified_at?->toISOString(), 'actor' => $expense->verified_by],
+            ['key' => 'manager_verification', 'label' => 'Manager Verification', 'state' => $levelTwoDone || in_array($status, ['approved', 'posted', 'paid'], true) ? 'completed' : ($status === 'verified' ? 'current' : 'pending'), 'date' => $levelTwo?->action_at?->toISOString(), 'actor' => $levelTwo?->actionBy?->name],
+            ['key' => 'approved', 'label' => 'Approved', 'state' => in_array($status, ['approved', 'posted', 'paid'], true) ? 'completed' : ($status === 'verified' ? 'current' : 'pending'), 'date' => $expense->approved_at?->toISOString(), 'actor' => $expense->approved_by],
+            ['key' => 'payment', 'label' => 'Payment', 'state' => $payment || in_array($status, ['posted', 'paid'], true) ? 'completed' : ($status === 'approved' ? 'current' : 'pending'), 'date' => $payment?->payment_date?->toISOString(), 'actor' => $payment?->payment_number],
+            ['key' => 'paid', 'label' => 'Paid', 'state' => $isPaid ? 'completed' : ($status === 'posted' ? 'current' : 'pending'), 'date' => $payment?->payment_date?->toISOString(), 'actor' => $payment?->reference],
+        ];
+        if ($status === 'rejected') {
+            foreach ($timeline as &$stage) if ($stage['state'] !== 'completed') $stage['state'] = 'rejected';
+            unset($stage);
+        }
+
+        $returned = (float) $expense->cashAdvanceReturns->where('status', 'received')->sum('return_amount');
+        return [
+            'id' => $expense->id,
+            'reference' => $expense->request_number,
+            'date' => $expense->request_date?->toDateString(),
+            'description' => $expense->description,
+            'status' => $status,
+            'expense_type' => $expense->expense_type,
+            'amount' => (float) $expense->total_amount,
+            'paid_amount' => (float) ($expense->paid_amount ?? 0),
+            'settled_amount' => (float) ($expense->settled_amount ?? 0),
+            'staff_advance_outstanding' => max(0, round((float) ($expense->paid_amount ?? 0) - (float) ($expense->settled_amount ?? 0) - $returned, 2)),
+            'settlement_state' => $expense->settlement_state ?? $expense->settlement_status,
+            'settlement_due_date' => $expense->settlement_due_date?->toDateString(),
+            'project' => $expense->project?->name,
+            'donor' => $expense->donor?->name,
+            'requester' => $expense->requester?->name,
+            'journal_id' => $expense->journal_id,
+            'settlement_journal_id' => $expense->settlement_journal_id,
+            'payment_number' => $payment?->payment_number,
+            'payment_reference' => $payment?->reference,
+            'payment_date' => $payment?->payment_date?->toDateString(),
+            'timeline' => $timeline,
+        ];
     }
 
     /**

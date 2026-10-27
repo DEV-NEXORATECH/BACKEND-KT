@@ -28,7 +28,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ExpenseRequestController extends Controller
 {
-    private array $with = ['requester:id,name,email', 'fiscalYear:id,year,name', 'donor:id,code,name', 'grantAgreement', 'program:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
+    private array $with = ['requester:id,name,email', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
 
     public function index(Request $request): JsonResponse
     {
@@ -94,7 +94,9 @@ class ExpenseRequestController extends Controller
 
         $expense = DB::transaction(function () use ($payload, $request) {
             $lines = $payload['lines'];
+            $fundings = $payload['funding_allocations'] ?? [];
             unset($payload['lines']);
+            unset($payload['funding_allocations']);
 
             $expense = ExpenseRequest::create([
                 ...$payload,
@@ -105,6 +107,9 @@ class ExpenseRequestController extends Controller
 
             foreach ($lines as $index => $line) {
                 $expense->lines()->create([...$line, 'line_order' => $index + 1]);
+            }
+            foreach ($fundings as $funding) {
+                $expense->fundings()->create([...$funding, 'currency_code' => $payload['currency_code'] ?? 'IDR', 'exchange_rate' => $payload['exchange_rate'] ?? 1]);
             }
 
             return $expense->load($this->with);
@@ -604,8 +609,10 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
             'requester_id' => ['nullable', 'integer', 'exists:users,id'],
             'donor_id' => ['nullable', 'integer', 'exists:donors,id'],
+            'second_donor_id' => ['nullable', 'integer', 'exists:donors,id', 'different:donor_id'],
             'grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
             'program_id' => ['nullable', 'integer', 'exists:programs,id'],
+            'second_program_id' => ['nullable', 'integer', 'exists:programs,id', 'different:program_id'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'funding_source_id' => ['nullable', 'integer', 'exists:funding_sources,id'],
@@ -614,12 +621,19 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'attachments' => ['nullable', 'array'],
             'attachments.*' => ['string', 'max:255'],
             'expense_type' => ['required', 'in:reimbursement,supplier_payment,loan,cash_advance,settlement_advance'],
+            'funding_mode' => ['nullable', 'in:solo,joint'],
             'request_date' => ['required', 'date'],
             'settlement_due_date' => ['nullable', 'date', 'after_or_equal:request_date'],
+            'parent_expense_request_id' => ['nullable', 'integer', 'exists:expense_requests,id'],
             'currency_code' => ['nullable', 'string', 'max:10'],
             'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
             'description' => ['required', 'string'],
             'lines' => ['required', 'array', 'min:1'],
+            'funding_allocations' => ['nullable', 'array'],
+            'funding_allocations.*.donor_id' => ['nullable', 'integer', 'exists:donors,id'],
+            'funding_allocations.*.program_id' => ['nullable', 'integer', 'exists:programs,id'],
+            'funding_allocations.*.budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
+            'funding_allocations.*.amount' => ['required_with:funding_allocations', 'numeric', 'min:0.01'],
             'lines.*.expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
             'lines.*.budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
             'lines.*.description' => ['required', 'string', 'max:255'],
@@ -689,8 +703,10 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'external_request_id' => $expense->external_request_id,
             'requester_name' => $expense->requester?->name,
             'donor' => $expense->donor ? ['id' => $expense->donor->id, 'code' => $expense->donor->code, 'name' => $expense->donor->name] : null,
+            'second_donor' => $expense->secondDonor ? ['id' => $expense->secondDonor->id, 'code' => $expense->secondDonor->code, 'name' => $expense->secondDonor->name] : null,
             'grant' => $expense->grantAgreement ? ['id' => $expense->grantAgreement->id, 'number' => $expense->grantAgreement->grant_no ?? $expense->grantAgreement->agreement_number ?? null, 'title' => $expense->grantAgreement->agreement_name ?? $expense->grantAgreement->title ?? null] : null,
             'program' => $expense->program ? ['id' => $expense->program->id, 'code' => $expense->program->code, 'name' => $expense->program->name] : null,
+            'second_program' => $expense->secondProgram ? ['id' => $expense->secondProgram->id, 'code' => $expense->secondProgram->code, 'name' => $expense->secondProgram->name] : null,
             'funding_source' => $expense->fundingSource ? ['id' => $expense->fundingSource->id, 'code' => $expense->fundingSource->code, 'name' => $expense->fundingSource->name] : null,
             'document_type' => $expense->documentType ? ['id' => $expense->documentType->id, 'code' => $expense->documentType->code, 'name' => $expense->documentType->name] : null,
             'tax' => $expense->tax ? ['id' => $expense->tax->id, 'code' => $expense->tax->code, 'name' => $expense->tax->name] : null,
@@ -716,6 +732,23 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'project_name' => $expense->project?->name,
             'department_name' => $expense->department?->name,
             'expense_type' => $expense->expense_type,
+            'funding_mode' => $expense->funding_mode ?? 'solo',
+            'donor_id' => $expense->donor_id,
+            'second_donor_id' => $expense->second_donor_id,
+            'program_id' => $expense->program_id,
+            'second_program_id' => $expense->second_program_id,
+            'funding_allocations' => $expense->fundings->map(fn ($funding) => [
+                'id' => $funding->id,
+                'donor_id' => $funding->donor_id,
+                'donor' => $funding->donor ? ['id' => $funding->donor->id, 'code' => $funding->donor->code, 'name' => $funding->donor->name] : null,
+                'program_id' => $funding->program_id,
+                'program' => $funding->program ? ['id' => $funding->program->id, 'code' => $funding->program->code, 'name' => $funding->program->name] : null,
+                'budget_line_id' => $funding->budget_line_id,
+                'budget_line' => $funding->budgetLine ? ['id' => $funding->budgetLine->id, 'code' => $funding->budgetLine->line_code, 'description' => $funding->budgetLine->description] : null,
+                'amount' => $funding->amount,
+                'currency_code' => $funding->currency_code,
+                'exchange_rate' => $funding->exchange_rate,
+            ])->values()->all(),
             'request_date' => $expense->request_date?->toDateString(),
             'currency_code' => $expense->currency_code,
             'exchange_rate' => $expense->exchange_rate,

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\Master\ApprovalMatrix;
+use App\Models\User;
 
 class ApprovalWorkflowAction extends Model
 {
@@ -14,4 +15,5 @@ class ApprovalWorkflowAction extends Model
     public function run(): BelongsTo { return $this->belongsTo(ApprovalWorkflowRun::class, 'approval_workflow_run_id'); }
 
     public function approvalMatrix(): BelongsTo { return $this->belongsTo(ApprovalMatrix::class, 'approval_matrix_id'); }
+    public function actionBy(): BelongsTo { return $this->belongsTo(User::class, 'action_by'); }
 }
