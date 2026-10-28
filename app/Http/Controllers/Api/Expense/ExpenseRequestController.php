@@ -152,9 +152,12 @@ class ExpenseRequestController extends Controller
     {
         $this->authorizeScope($request, $expenseRequest);
         $data = $request->validate([
-            'settlement_due_date' => ['required', 'date', 'after_or_equal:activity_end_date'],
+            'settlement_due_date' => ['required', 'date'],
             'reason' => ['required', 'string', 'min:5', 'max:1000'],
         ]);
+        if ($expenseRequest->activity_end_date && $data['settlement_due_date'] < $expenseRequest->activity_end_date->toDateString()) {
+            throw ValidationException::withMessages(['settlement_due_date' => 'The due date cannot be before the activity end date.']);
+        }
         $before = ['settlement_due_date' => $expenseRequest->settlement_due_date?->toDateString()];
         $expenseRequest->update([
             'settlement_due_date' => $data['settlement_due_date'],
