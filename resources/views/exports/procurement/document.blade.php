@@ -3,9 +3,11 @@
 <head>
     <meta charset="utf-8">
     <style>
+        @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 400; src: url('{{ public_path('fonts/Montserrat-Regular.ttf') }}') format('truetype'); }
+        @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 700; src: url('{{ public_path('fonts/Montserrat-Bold.ttf') }}') format('truetype'); }
         @page { size: A4 portrait; margin: 16mm 18mm; }
         * { box-sizing: border-box; }
-        body { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 9pt; font-weight: 600; line-height: 1.35; }
+        body { font-family: 'Montserrat', sans-serif; color: #000; font-size: 9pt; font-weight: 400; line-height: 1.35; }
         .header { width: 100%; padding-bottom: 12pt; margin-bottom: 18pt; }
         .header-table { width: 100%; border-collapse: collapse; }
         .header-table td { vertical-align: top; }

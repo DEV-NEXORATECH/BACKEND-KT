@@ -4,9 +4,11 @@
     <meta charset="UTF-8">
     <title>Laporan Laba Rugi (Profit & Loss)</title>
     <style>
+        @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 400; src: url('{{ public_path('fonts/Montserrat-Regular.ttf') }}') format('truetype'); }
+        @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 700; src: url('{{ public_path('fonts/Montserrat-Bold.ttf') }}') format('truetype'); }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         @page { size: A4 portrait; margin: 16mm 18mm; }
-        body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; font-weight: 600; color: #000; }
+        body { font-family: 'Montserrat', sans-serif; font-size: 10pt; font-weight: 400; color: #000; }
         .header { text-align: left; padding-bottom: 12px; margin-bottom: 18px; }
         .header h1 { font-size: 16pt; color: #000; margin-bottom: 2px; }
         .header h2 { font-size: 12pt; color: #000; font-weight: bold; margin-bottom: 4px; }
