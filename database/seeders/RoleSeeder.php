@@ -129,7 +129,6 @@ class RoleSeeder extends Seeder
                 ]],
                 ['title' => 'Budget & Forecast', 'slug' => 'master-budget-reporting', 'path' => '/master-data', 'sort_order' => 19, 'children' => [
                     ['title' => 'Budget Categories', 'slug' => 'master-budget-categories', 'path' => '/master-data/budget-categories', 'sort_order' => 193],
-                    ['title' => 'Budget Categories & Templates', 'slug' => 'master-budget-templates', 'path' => '/master-data/budget-lines', 'sort_order' => 194],
                     ['title' => 'Reporting Categories', 'slug' => 'master-reporting-categories', 'path' => '/master-data/reporting-categories', 'sort_order' => 195],
                     ['title' => 'Reporting Dimensions', 'slug' => 'master-reporting-dimensions', 'path' => '/master-data/reporting-dimensions', 'sort_order' => 191],
                 ]],
@@ -151,9 +150,13 @@ class RoleSeeder extends Seeder
                 ['title' => 'Project Frameworks', 'slug' => 'donor-grant-programs-projects', 'path' => '/project-frameworks', 'sort_order' => 23],
                 ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/project-timeline-workplan', 'sort_order' => 23.2],
                 ['title' => 'Grant Agreements', 'slug' => 'donor-grant-grants', 'path' => '/donor-grant/grants', 'sort_order' => 24],
-                ['title' => 'Grant / Project Budget', 'slug' => 'donor-grant-budget', 'path' => '/donor-grant/budget', 'sort_order' => 25],
-                ['title' => 'Budget Monitoring', 'slug' => 'donor-grant-budget-monitoring', 'path' => '/donor-grant/budget-monitoring', 'sort_order' => 26],
                 ['title' => 'Grant Reporting', 'slug' => 'donor-grant-reporting', 'path' => '/donor-grant/reporting', 'sort_order' => 27],
+            ]],
+            ['title' => 'Budget & Forecast', 'slug' => 'budget-forecast', 'path' => '/donor-grant/budget', 'icon' => 'chart', 'sort_order' => 28, 'children' => [
+                ['title' => 'Budget Planning', 'slug' => 'budget-forecast-planning', 'path' => '/donor-grant/budget', 'sort_order' => 281],
+                ['title' => 'Budget Monitoring', 'slug' => 'budget-forecast-monitoring', 'path' => '/donor-grant/budget-monitoring', 'sort_order' => 282],
+                ['title' => 'Forecast', 'slug' => 'budget-forecast-forecast', 'path' => '/reports/forecast', 'sort_order' => 283],
+                ['title' => 'Budget Reallocation', 'slug' => 'budget-forecast-reallocation', 'path' => '/funding-projects/budget-reallocation', 'sort_order' => 284],
             ]],
             ['title' => 'Expenses & Approvals', 'slug' => 'expenses-approvals', 'path' => '/expenses-approvals', 'icon' => 'wallet', 'sort_order' => 30, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'expenses-dashboard', 'path' => '/expenses-approvals/dashboard', 'sort_order' => 30],
@@ -263,7 +266,7 @@ class RoleSeeder extends Seeder
         }
 
         // Clean up legacy menu entries so they cannot reappear under Master Data.
-        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-document-types', 'master-projects', 'master-activities', 'donor-grant-programs-projects', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom', 'master-vendor-categories', 'master-items-services', 'master-unit-of-measures', 'master-procurement-categories'])
+        Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-budget-templates', 'master-budget-reporting', 'master-budget-categories', 'master-reporting-categories', 'master-reporting-dimensions', 'master-document-types', 'master-projects', 'master-activities', 'donor-grant-programs-projects', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom', 'master-vendor-categories', 'master-items-services', 'master-unit-of-measures', 'master-procurement-categories'])
             ->update(['is_active' => false]);
 
         // 3. Define Menu Groups mapping for ease of assignment
@@ -273,7 +276,7 @@ class RoleSeeder extends Seeder
                 'master-data', 'master-organization-structure', 'master-organization-chart', 'master-organizations', 'master-office-locations', 'master-departments', 'master-positions', 'master-employees',
                 'master-finance-accounting', 'master-chart-of-accounts', 'master-account-categories', 'master-bank-accounts', 'master-payment-methods', 'master-fx-rates', 'master-currencies', 'master-fiscal-years', 'master-accounting-periods', 'master-taxes', 'master-customers',
                 'master-funding-projects', 'master-donors', 'master-grant-agreements', 'master-programs-projects', 'master-programs', 'master-projects', 'master-activities', 'master-budget-codes', 'master-funding-sources',
-                'master-budget-reporting', 'master-budget-categories', 'master-budget-templates', 'master-reporting-categories', 'master-reporting-dimensions',
+                'master-budget-reporting', 'master-budget-categories', 'master-reporting-categories', 'master-reporting-dimensions',
                 'master-expenses', 'master-expenses-assets', 'master-expense-categories', 'master-expense-types', 'master-assets', 'master-asset-categories',
             ],
             'Accounting' => [

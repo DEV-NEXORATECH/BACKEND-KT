@@ -16,7 +16,6 @@ use App\Http\Controllers\Api\Budget\BudgetReallocationController;
 use App\Http\Controllers\Api\Procurement\PurchaseRequestController;
 use App\Http\Controllers\Api\Procurement\ProcurementFulfillmentController;
 use App\Http\Controllers\Api\Procurement\AdvancedProcurementController;
-use App\Http\Controllers\Api\Procurement\ProcurementDocumentController;
 use App\Http\Controllers\Api\Procurement\SupplierContractNotificationController;
 use App\Http\Controllers\Api\Procurement\ContractController;
 use App\Http\Controllers\Api\Procurement\ProcurementWaiverController;
@@ -149,8 +148,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/reports/aging', [ReportsDashboardController::class, 'aging'])->middleware('permission:reports.view');
     Route::get('/v1/reports/cash-bank', [ReportsDashboardController::class, 'cashBankReport'])->middleware('permission:reports.view');
     Route::get('/v1/reports/drilldown', [ReportsDashboardController::class, 'drilldown'])->middleware('permission:reports.view');
-    Route::get('/v1/reports/profit-loss/pdf', [ReportsDashboardController::class, 'profitLossPdf'])->middleware('permission:reports.export');
-    Route::get('/v1/reports/balance-sheet/pdf', [ReportsDashboardController::class, 'balanceSheetPdf'])->middleware('permission:reports.export');
     Route::get('/v1/reports/export/{report}/{format}', [ReportsDashboardController::class, 'exportStandard'])->middleware('permission:reports.export');
     Route::get('/v1/reports/fx-adjustments', [ReportsDashboardController::class, 'fxAdjustments'])->middleware('permission:reports.view');
     Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');
@@ -217,11 +214,6 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1/procurement')->group(function () {
-        Route::get('purchase-requests/{purchaseRequest}/pdf', [ProcurementDocumentController::class, 'purchaseRequest'])->middleware('permission:procurement.pr.view');
-        Route::get('purchase-orders/{purchaseOrder}/pdf', [ProcurementDocumentController::class, 'purchaseOrder'])->middleware('permission:procurement.po.view');
-        Route::get('goods-receipts/{goodsReceipt}/pdf', [ProcurementDocumentController::class, 'goodsReceipt'])->middleware('permission:procurement.grn.view');
-        Route::get('supplier-invoices/{supplierInvoice}/pdf', [ProcurementDocumentController::class, 'supplierInvoice'])->middleware('permission:procurement.invoice.view');
-        Route::get('scns/{supplierContractNotification}/pdf', [ProcurementDocumentController::class, 'scn'])->middleware('permission:procurement.pr.view');
         Route::get('processes/options', [ProcurementFulfillmentController::class, 'processOptions'])->middleware('permission:procurement.po.view');
         Route::get('goods-receipts', [ProcurementFulfillmentController::class, 'goodsReceipts'])->middleware('permission:procurement.grn.view');
         Route::get('goods-receipts/{goodsReceipt}', [ProcurementFulfillmentController::class, 'showGoodsReceipt'])->middleware('permission:procurement.grn.view');
@@ -272,7 +264,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('scns/{supplierContractNotification}/cancel', [SupplierContractNotificationController::class, 'cancel'])->middleware('permission:procurement.pr.approve');
 
         // Contracts
-        Route::get('contracts/{contract}/pdf', [ProcurementDocumentController::class, 'contract'])->middleware('permission:procurement.po.view');
         Route::get('contracts', [ContractController::class, 'index'])->middleware('permission:procurement.po.view');
         Route::post('contracts', [ContractController::class, 'store'])->middleware('permission:procurement.po.create');
         Route::get('contracts/{contract}', [ContractController::class, 'show'])->middleware('permission:procurement.po.view');
@@ -282,7 +273,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('contracts/{contract}/terminate', [ContractController::class, 'terminate'])->middleware('permission:procurement.po.approve');
 
         // Waivers
-        Route::get('waivers/{waiver}/pdf', [ProcurementDocumentController::class, 'waiver'])->middleware('permission:procurement.pr.view');
         Route::get('waivers', [ProcurementWaiverController::class, 'index'])->middleware('permission:procurement.pr.view');
         Route::post('waivers', [ProcurementWaiverController::class, 'store'])->middleware('permission:procurement.pr.create');
         Route::get('waivers/{waiver}', [ProcurementWaiverController::class, 'show'])->middleware('permission:procurement.pr.view');

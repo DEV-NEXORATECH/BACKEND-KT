@@ -14,10 +14,12 @@ class AssetCategory extends Model
 
     protected $table = 'asset_categories';
 
-    protected $fillable = ['code', 'name', 'useful_life_months', 'depreciation_method', 'asset_gl_account_id', 'depreciation_gl_account_id', 'accumulated_gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'name', 'description', 'useful_life_months', 'depreciation_method', 'is_non_depreciable', 'residual_value_percent', 'asset_gl_account_id', 'depreciation_gl_account_id', 'accumulated_gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'is_non_depreciable' => 'boolean',
+        'residual_value_percent' => 'decimal:2',
     ];
 
     public function assetGlAccount()

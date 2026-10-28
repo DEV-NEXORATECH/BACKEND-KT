@@ -21,7 +21,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class FixedAssetController extends Controller
 {
-    private array $with = ['category:id,code,name,useful_life_months,depreciation_method,asset_gl_account_id,depreciation_gl_account_id,accumulated_gl_account_id', 'vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'supplierInvoice:id,invoice_number,status,journal_id,total_amount', 'donor:id,code,name', 'program:id,code,name', 'project:id,code,name', 'custodian:id,employee_id_number,name', 'disposalBankAccount:id,bank_name,account_number,gl_account_id', 'depreciations'];
+    private array $with = ['category:id,code,name,useful_life_months,depreciation_method,is_non_depreciable,asset_gl_account_id,depreciation_gl_account_id,accumulated_gl_account_id', 'category.assetGlAccount:id,code,name', 'category.depreciationGlAccount:id,code,name', 'category.accumulatedGlAccount:id,code,name', 'assetGlAccount:id,code,name', 'depreciationGlAccount:id,code,name', 'accumulatedGlAccount:id,code,name', 'vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'supplierInvoice:id,invoice_number,status,journal_id,total_amount', 'donor:id,code,name', 'program:id,code,name', 'project:id,code,name', 'custodian:id,employee_id_number,name', 'disposalBankAccount:id,bank_name,account_number,gl_account_id', 'depreciations'];
 
     public function index(Request $request): JsonResponse
     {
@@ -92,7 +92,8 @@ class FixedAssetController extends Controller
             ...$payload,
             'asset_code' => $payload['asset_code'] ?? $this->nextAssetCode(),
             'useful_life_months' => $payload['useful_life_months'] ?? $category?->useful_life_months ?? 60,
-            'depreciation_method' => $payload['depreciation_method'] ?? $category?->depreciation_method ?? 'straight_line',
+            'depreciation_method' => ($payload['is_non_depreciable'] ?? false) ? 'none' : ($payload['depreciation_method'] ?? $category?->depreciation_method ?? 'straight_line'),
+            'is_non_depreciable' => (bool) ($payload['is_non_depreciable'] ?? $category?->is_non_depreciable ?? false),
             'accumulated_depreciation' => 0,
             'net_book_value' => $cost,
             'status' => 'draft',
@@ -139,7 +140,7 @@ class FixedAssetController extends Controller
         if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Approval asset tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($fixedAsset->fresh($this->with))]);
 
         $category = $fixedAsset->category;
-        $assetAccount = $category?->assetGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('is_header', false)->first();
+        $assetAccount = $fixedAsset->assetGlAccount ?: $category?->assetGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('is_header', false)->first();
         $clearingAccount = ChartOfAccount::query()->where('account_type', 'liability')->where('is_header', false)->first()
             ?: ChartOfAccount::query()->where('account_type', 'equity')->where('is_header', false)->first();
         if (! $assetAccount || ! $clearingAccount) {
@@ -200,8 +201,8 @@ class FixedAssetController extends Controller
         $data = $request->validate(['depreciation_date' => ['required', 'date'], 'amount' => ['nullable', 'numeric', 'min:0.01']]);
         app(AccountingPeriodService::class)->ensureOpen($data['depreciation_date'], 'depreciation_date');
         $category = $fixedAsset->category;
-        $depreciationAccount = $category?->depreciationGlAccount ?: ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
-        $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
+        $depreciationAccount = $fixedAsset->depreciationGlAccount ?: $category?->depreciationGlAccount ?: ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
+        $accumulatedAccount = $fixedAsset->accumulatedGlAccount ?: $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
         if (! $depreciationAccount || ! $accumulatedAccount) {
             throw ValidationException::withMessages(['account' => 'COA depreciation dan accumulated depreciation harus tersedia.']);
         }
@@ -352,8 +353,8 @@ class FixedAssetController extends Controller
                     continue;
                 }
                 $category = $asset->category;
-                $depreciationAccount = $category?->depreciationGlAccount ?: ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
-                $accumulatedAccount = $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
+                $depreciationAccount = $asset->depreciationGlAccount ?: $category?->depreciationGlAccount ?: ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
+                $accumulatedAccount = $asset->accumulatedGlAccount ?: $category?->accumulatedGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('normal_balance', 'credit')->where('is_header', false)->first();
 
                 if (! $depreciationAccount || ! $accumulatedAccount) {
                     $skipped[] = ['asset_id' => $asset->id, 'reason' => 'COA depresiasi atau akumulasi belum dikonfigurasi.'];
@@ -449,7 +450,9 @@ class FixedAssetController extends Controller
         return $request->validate([
             'asset_code' => ['nullable', 'string', 'max:50', 'unique:fixed_assets,asset_code'.($updating && $assetId ? ','.$assetId : '')],
             'asset_name' => ['required', 'string', 'max:160'],
+            'description' => ['nullable', 'string'],
             'asset_category_id' => ['nullable', 'integer', 'exists:asset_categories,id'],
+            'is_non_depreciable' => ['nullable', 'boolean'],
             'acquisition_date' => ['required', 'date'],
             'in_service_date' => ['nullable', 'date', 'after_or_equal:acquisition_date'],
             'acquisition_cost' => ['required', 'numeric', 'min:0.01'],
@@ -465,6 +468,9 @@ class FixedAssetController extends Controller
             'custodian_id' => ['nullable', 'integer', 'exists:employees,id'],
             'useful_life_months' => ['nullable', 'integer', 'min:1'],
             'depreciation_method' => ['nullable', 'in:straight_line,declining_balance,none'],
+            'asset_gl_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'depreciation_gl_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
+            'accumulated_gl_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'notes' => ['nullable', 'string'],
         ]);
     }
@@ -491,8 +497,10 @@ class FixedAssetController extends Controller
             'id' => $asset->id,
             'asset_code' => $asset->asset_code,
             'asset_name' => $asset->asset_name,
-            'category' => $asset->category ? ['id' => $asset->category->id, 'code' => $asset->category->code, 'name' => $asset->category->name] : null,
+            'description' => $asset->description,
+            'category' => $asset->category ? ['id' => $asset->category->id, 'code' => $asset->category->code, 'name' => $asset->category->name, 'useful_life_months' => $asset->category->useful_life_months, 'depreciation_method' => $asset->category->depreciation_method, 'is_non_depreciable' => (bool) $asset->category->is_non_depreciable, 'asset_gl_account_id' => $asset->category->asset_gl_account_id, 'depreciation_gl_account_id' => $asset->category->depreciation_gl_account_id, 'accumulated_gl_account_id' => $asset->category->accumulated_gl_account_id, 'asset_gl_account' => $asset->category->assetGlAccount ? ['id' => $asset->category->assetGlAccount->id, 'code' => $asset->category->assetGlAccount->code, 'name' => $asset->category->assetGlAccount->name] : null] : null,
             'asset_category_id' => $asset->asset_category_id,
+            'is_non_depreciable' => (bool) $asset->is_non_depreciable,
             'acquisition_date' => $asset->acquisition_date?->toDateString(),
             'in_service_date' => $asset->in_service_date?->toDateString(),
             'acquisition_cost' => $asset->acquisition_cost,
@@ -502,6 +510,12 @@ class FixedAssetController extends Controller
             'net_book_value' => $asset->net_book_value,
             'depreciation_method' => $asset->depreciation_method,
             'useful_life_months' => $asset->useful_life_months,
+            'asset_gl_account_id' => $asset->asset_gl_account_id,
+            'depreciation_gl_account_id' => $asset->depreciation_gl_account_id,
+            'accumulated_gl_account_id' => $asset->accumulated_gl_account_id,
+            'asset_account' => $asset->assetGlAccount ? ['id' => $asset->assetGlAccount->id, 'code' => $asset->assetGlAccount->code, 'name' => $asset->assetGlAccount->name] : null,
+            'depreciation_account' => $asset->depreciationGlAccount ? ['id' => $asset->depreciationGlAccount->id, 'code' => $asset->depreciationGlAccount->code, 'name' => $asset->depreciationGlAccount->name] : null,
+            'accumulated_account' => $asset->accumulatedGlAccount ? ['id' => $asset->accumulatedGlAccount->id, 'code' => $asset->accumulatedGlAccount->code, 'name' => $asset->accumulatedGlAccount->name] : null,
             'location' => $asset->location,
             'custodian' => $asset->custodian ? ['id' => $asset->custodian->id, 'name' => $asset->custodian->name] : null,
             'custodian_id' => $asset->custodian_id,

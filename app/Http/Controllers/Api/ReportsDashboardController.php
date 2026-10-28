@@ -20,7 +20,6 @@ use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
 use App\Services\Budget\BudgetMonitoringService;
 use App\Services\Rbac\DataScopeService;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -897,38 +896,12 @@ class ReportsDashboardController extends Controller
         ]);
     }
 
-    /** Download an official Profit & Loss PDF from posted journal data only. */
-    public function profitLossPdf(Request $request): Response
-    {
-        $this->ensureExportScope($request);
-        $period = $this->period($request);
-        $rows = $this->financialStatement($this->postedLines($period['start'], $period['end'], $request->input('project_id'), null, $period['fiscal_year_id']))['rows'];
-        $this->auditExport($request, 'profit_loss_pdf', count($rows));
-
-        return Pdf::loadView('reports.profit-loss-pdf', [
-            'rows' => collect($rows),
-            'period_label' => $this->periodLabel($period),
-        ])->setPaper('a4')->download('laporan-laba-rugi-'.now()->format('YmdHis').'.pdf');
-    }
-
-    /** Download an official balance sheet PDF as of the selected reporting date. */
-    public function balanceSheetPdf(Request $request): Response
-    {
-        $this->ensureExportScope($request);
-        $asOf = $request->filled('as_of') ? CarbonImmutable::parse($request->string('as_of'))->toDateString() : CarbonImmutable::now()->toDateString();
-        $data = $this->balanceSheetData($asOf, $request->input('fiscal_year_id'));
-        $this->auditExport($request, 'balance_sheet_pdf', count($data['accounts']));
-
-        return Pdf::loadView('reports.balance-sheet-pdf', ['data' => $data, 'as_of' => $asOf])
-            ->setPaper('a4')->download('neraca-'.now()->format('YmdHis').'.pdf');
-    }
-
     /** Export the same filtered report data used by the on-screen report. */
     public function exportStandard(Request $request, string $report, string $format): Response|StreamedResponse
     {
         $this->ensureExportScope($request);
         abort_unless(in_array($report, ['profit-loss', 'balance-sheet', 'aging', 'cash-bank', 'procurement', 'donor-grant'], true), 404);
-        abort_unless(in_array($format, ['csv', 'xlsx', 'pdf'], true), 422, 'Format export tidak didukung.');
+        abort_unless(in_array($format, ['csv', 'xlsx'], true), 422, 'Format export tidak didukung. PDF dibuat oleh frontend professionalPdf.js.');
 
         if ($report === 'profit-loss') {
             $period = $this->period($request);
@@ -962,17 +935,6 @@ class ReportsDashboardController extends Controller
             $title = 'Donor Grant'; $filename = 'donor-grant-'.now()->format('Ymd_His'); $pdfData = null;
         }
         $this->auditExport($request, $report.'_'.$format, count($rows));
-
-        if ($format === 'pdf' && $pdfData) {
-            $view = $report === 'profit-loss' ? 'reports.profit-loss-pdf' : 'reports.balance-sheet-pdf';
-            return Pdf::loadView($view, $pdfData)->setPaper('a4')->download($filename.'.pdf');
-        }
-        if ($format === 'pdf') {
-            $safe = fn ($value) => e((string) $value);
-            $html = '<h1>'.e($title).'</h1><table border="1" cellspacing="0" cellpadding="5"><thead><tr>'.implode('', array_map(fn ($header) => '<th>'.$safe($header).'</th>', array_keys((array) ($rows[0] ?? ['No data' => ''])))).'</tr></thead><tbody>';
-            foreach ($rows as $row) $html .= '<tr>'.implode('', array_map(fn ($value) => '<td>'.$safe($value).'</td>', (array) $row)).'</tr>';
-            return Pdf::loadHTML($html.'</tbody></table>')->setPaper('a4', 'landscape')->download($filename.'.pdf');
-        }
 
         $headers = array_keys((array) ($rows[0] ?? ['No data' => '']));
         $normalized = collect($rows)->map(fn ($row) => (array) $row)->values();
