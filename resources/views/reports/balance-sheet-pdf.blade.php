@@ -4,12 +4,9 @@
     <meta charset="UTF-8">
     <title>Neraca (Balance Sheet)</title>
     <style>
-        @if(file_exists(public_path('fonts/Montserrat-Variable.ttf')))
-        @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; src: url('{{ public_path('fonts/Montserrat-Variable.ttf') }}') format('truetype'); }
-        @endif
         * { margin: 0; padding: 0; box-sizing: border-box; }
         @page { size: A4 portrait; margin: 16mm 18mm; }
-        body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; }
         .header { text-align: left; padding-bottom: 12px; margin-bottom: 18px; }
         .header h1 { font-size: 16pt; color: #000; margin-bottom: 2px; }
         .header h2 { font-size: 12pt; color: #333; font-weight: normal; margin-bottom: 4px; }

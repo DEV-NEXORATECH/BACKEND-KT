@@ -3,18 +3,15 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @if(file_exists(public_path('fonts/Montserrat-Variable.ttf')))
-        @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; src: url('{{ public_path('fonts/Montserrat-Variable.ttf') }}') format('truetype'); }
-        @endif
         @page { size: A4 portrait; margin: 16mm 18mm; }
         * { box-sizing: border-box; }
-        body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; color: #000; font-size: 9pt; line-height: 1.35; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 9pt; line-height: 1.35; }
         .header { width: 100%; padding-bottom: 12pt; margin-bottom: 18pt; }
         .header-table { width: 100%; border-collapse: collapse; }
         .header-table td { vertical-align: top; }
         .company { width: 56%; color: #000; font-size: 9pt; font-weight: bold; }
-        .company img { display: block; max-width: 125px; max-height: 48px; margin-bottom: 4pt; }
-        .company-name { font-size: 10pt; }
+        .company img { display: block; max-width: 112px; max-height: 42px; margin-bottom: 5pt; }
+        .company-name { font-size: 9pt; }
         .company-meta { color: #555; font-size: 8pt; font-weight: normal; max-width: 250px; }
         .document { width: 44%; text-align: right; }
         .document-title { color: #000; font-size: 16pt; font-weight: bold; line-height: 1.15; }

@@ -4,12 +4,9 @@
     <meta charset="utf-8">
     <title>Master Data - {{ $entityName }}</title>
     <style>
-        @if(file_exists(public_path('fonts/Montserrat-Variable.ttf')))
-        @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; src: url('{{ public_path('fonts/Montserrat-Variable.ttf') }}') format('truetype'); }
-        @endif
         @page { size: A4 landscape; margin: 16mm 18mm; }
         * { box-sizing: border-box; }
-        body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; font-size: 9px; color: #000; margin: 0; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 9px; color: #000; margin: 0; }
         .header {
             text-align: left;
             padding-bottom: 12px;

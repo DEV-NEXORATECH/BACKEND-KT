@@ -166,6 +166,9 @@ class ProcurementDocumentController extends Controller
                 $logo = 'data:'.$mime.';base64,'.base64_encode(Storage::disk('public')->get($logoPath));
             }
         }
+        if (!$logo && is_file(public_path('assets/kaoem-telapak-logo-transparent.png'))) {
+            $logo = 'data:image/png;base64,'.base64_encode(file_get_contents(public_path('assets/kaoem-telapak-logo-transparent.png')));
+        }
         $pdf = Pdf::loadView($view, [
             'title' => $title,
             'documentNumber' => $documentNumber,
