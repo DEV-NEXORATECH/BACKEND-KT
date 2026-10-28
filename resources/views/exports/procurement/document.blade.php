@@ -51,7 +51,7 @@
                 @if(!empty($branding['email']))<div class="company-meta">{{ $branding['email'] }}</div>@endif
                 @if(!empty($branding['phone']))<div class="company-meta">{{ $branding['phone'] }}</div>@endif
             </td>
-            <td class="document"><div class="document-title">{{ strtoupper($title) }}</div><div class="document-meta">Document No. : {{ $documentNumber }}</div><div class="document-meta">Document Date : {{ \CarbonCarbon::parse($generatedAt)->format('d M Y') }}</div></td>
+            <td class="document"><div class="document-title">{{ strtoupper($title) }}</div><div class="document-meta">Document No. : {{ $documentNumber }}</div><div class="document-meta">Document Date : {{ \Carbon\Carbon::parse($generatedAt)->format('d M Y') }}</div></td>
         </tr></table>
     </div>
 
