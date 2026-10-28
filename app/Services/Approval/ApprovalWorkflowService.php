@@ -22,6 +22,19 @@ class ApprovalWorkflowService
                     || ($matrix->role_id && (int) $matrix->role_id === (int) $requester->role_id))->values();
             }
         }
+        // A person may be represented by both an explicit user and employee
+        // matrix row. Keep the first matching row so one person never appears
+        // twice in a single approval chain.
+        $seenPeople = [];
+        $matrices = $matrices->filter(function ($matrix) use (&$seenPeople) {
+            $identity = $matrix->user_id
+                ? 'user:' . (int) $matrix->user_id
+                : ($matrix->employee_id ? 'employee:' . (int) $matrix->employee_id : null);
+            if ($identity === null) return true;
+            if (isset($seenPeople[$identity])) return false;
+            $seenPeople[$identity] = true;
+            return true;
+        })->values();
         if ($matrices->isEmpty()) return null;
 
         return DB::transaction(function () use ($module, $entity, $matrices, $submittedBy) {

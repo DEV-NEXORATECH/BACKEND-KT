@@ -386,6 +386,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('grant-reporting-deadlines', GrantReportingDeadlineController::class)->middleware('permission:master-data');
         Route::get('roles', [RoleMenuController::class, 'options'])->middleware('permission:master-data.view');
         Route::get('exchange-rates/resolve', [ExchangeRateController::class, 'resolve'])->middleware('permission:master-data.view');
+        Route::get('holidays', [HolidayCalendarController::class, 'index'])->middleware('permission:master-data.view');
+        Route::post('holidays', [HolidayCalendarController::class, 'store'])->middleware('permission:master-data.manage');
+        Route::patch('holidays/{holiday}', [HolidayCalendarController::class, 'update'])->middleware('permission:master-data.manage');
+        Route::delete('holidays/{holiday}', [HolidayCalendarController::class, 'destroy'])->middleware('permission:master-data.manage');
         Route::post('bank-accounts/{bankAccount}/post-opening-balance', [BankAccountController::class, 'postOpeningBalance'])->middleware('permission:master-data.manage');
         $masterResources = [
             'organizations' => OrganizationController::class,
@@ -429,7 +433,6 @@ Route::middleware('auth:sanctum')->group(function () {
             'document-types' => DocumentTypeController::class,
             'asset-categories' => AssetCategoryController::class,
             'approval-matrices' => ApprovalMatrixController::class,
-            'holidays' => HolidayCalendarController::class,
         ];
         Route::post('accounting-periods/{id}/close', [AccountingPeriodController::class, 'close'])->middleware('permission:settings.manage');
         Route::post('accounting-periods/{id}/reopen', [AccountingPeriodController::class, 'reopen'])->middleware('permission:settings.manage');
