@@ -12,6 +12,7 @@ use App\Models\Finance\Payment;
 use App\Models\Finance\TaxTransaction;
 use App\Models\Master\BankAccount;
 use App\Models\Notification;
+use App\Models\AuditLog;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\ExpenseCategory;
@@ -145,6 +146,35 @@ class ExpenseRequestController extends Controller
             'submitted_by' => request()->user()->id,
             'submitted_at' => now(),
         ], 'Expense request berhasil disubmit.');
+    }
+
+    public function overrideSettlementDueDate(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    {
+        $this->authorizeScope($request, $expenseRequest);
+        $data = $request->validate([
+            'settlement_due_date' => ['required', 'date', 'after_or_equal:activity_end_date'],
+            'reason' => ['required', 'string', 'min:5', 'max:1000'],
+        ]);
+        $before = ['settlement_due_date' => $expenseRequest->settlement_due_date?->toDateString()];
+        $expenseRequest->update([
+            'settlement_due_date' => $data['settlement_due_date'],
+            'settlement_due_override_reason' => $data['reason'],
+            'settlement_due_overridden_by' => $request->user()->id,
+            'settlement_due_overridden_at' => now(),
+        ]);
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'module' => 'expense',
+            'platform' => strtolower($request->header('X-Client-Platform', 'web')),
+            'action' => 'OVERRIDE_SETTLEMENT_DUE_DATE',
+            'entity_type' => ExpenseRequest::class,
+            'entity_id' => $expenseRequest->id,
+            'previous_values' => $before,
+            'new_values' => ['settlement_due_date' => $data['settlement_due_date'], 'reason' => $data['reason']],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+        return response()->json(['success' => true, 'data' => $this->format($expenseRequest->fresh($this->with))]);
     }
 
     public function uploadAttachment(Request $request, ExpenseRequest $expenseRequest): JsonResponse

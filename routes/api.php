@@ -358,6 +358,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('requests/{expenseRequest}/attachments', [ExpenseRequestController::class, 'uploadAttachment'])->middleware('permission:expense.create');
         Route::get('requests/{expenseRequest}/attachments/{index}', [ExpenseRequestController::class, 'downloadAttachment'])->middleware('permission:expense.view');
         Route::post('requests/{expenseRequest}/submit', [ExpenseRequestController::class, 'submit'])->middleware('permission:expense.submit');
+        Route::post('requests/{expenseRequest}/settlement-due-date/override', [ExpenseRequestController::class, 'overrideSettlementDueDate'])->middleware('permission:expense.verify');
         Route::post('requests/{expenseRequest}/verify', [ExpenseRequestController::class, 'verify'])->middleware('permission:expense.verify');
         Route::post('requests/{expenseRequest}/approve', [ExpenseRequestController::class, 'approve'])->middleware('permission:expense.approve');
         Route::post('requests/{expenseRequest}/reject', [ExpenseRequestController::class, 'reject'])->middleware('permission:expense.approve');
