@@ -9,19 +9,19 @@
         .header { width: 100%; padding-bottom: 12pt; margin-bottom: 18pt; }
         .header-table { width: 100%; border-collapse: collapse; }
         .header-table td { vertical-align: top; }
-        .company { width: 56%; color: #000; font-size: 9pt; font-weight: bold; }
-        .company img { display: block; max-width: 112px; max-height: 42px; margin-bottom: 5pt; }
-        .company-name { font-size: 9pt; }
-        .company-meta { color: #555; font-size: 8pt; font-weight: normal; max-width: 250px; }
-        .document { width: 44%; text-align: right; }
+        .company { width: 48%; color: #000; font-size: 9pt; font-weight: bold; }
+        .company img { display: block; max-width: 150px; max-height: 62px; }
+        .company-name { display: block; font-size: 8pt; margin-top: 5pt; }
+        .company-meta { display: block; color: #555; font-size: 7.5pt; font-weight: normal; max-width: 250px; margin-top: 1pt; }
+        .document { width: 52%; text-align: right; }
         .document-title { color: #000; font-size: 16pt; font-weight: bold; line-height: 1.15; }
-        .document-meta { color: #555; font-size: 8pt; margin-top: 3pt; }
+        .document-meta { color: #555; font-size: 8pt; margin-top: 4pt; }
         .section-title { color: #000; font-size: 10pt; font-weight: bold; margin: 18pt 0 7pt; padding-bottom: 0; }
         .details-table, .items-table, .summary-table { width: 100%; border-collapse: collapse; }
-        .details-table td { width: 50%; padding: 3.5pt 14pt 3.5pt 0; border: 0; vertical-align: top; }
-        .label { color: #000; font-size: 7.5pt; font-weight: bold; display: inline; margin-right: 4pt; }
+        .details-table td { width: 50%; padding: 4pt 14pt 4pt 0; border: 0; vertical-align: top; }
+        .label { color: #000; font-size: 8pt; font-weight: bold; display: inline-block; width: 52pt; vertical-align: top; }
         .label:after { content: ' :'; color: #555; }
-        .value { color: #000; font-size: 9pt; }
+        .value { color: #000; font-size: 9pt; display: inline; }
         .items-table { page-break-inside: auto; }
         .items-table thead { display: table-header-group; }
         .items-table th { color: #000; background: #FFFFFF; border-top: 0; border-bottom: 1pt solid #000; padding: 5pt 4pt; text-align: left; font-size: 8pt; }
@@ -49,8 +49,9 @@
                 <div class="company-name">{{ $branding['name'] }}</div>
                 @if(!empty($branding['address']))<div class="company-meta">{{ $branding['address'] }}</div>@endif
                 @if(!empty($branding['email']))<div class="company-meta">{{ $branding['email'] }}</div>@endif
+                @if(!empty($branding['phone']))<div class="company-meta">{{ $branding['phone'] }}</div>@endif
             </td>
-            <td class="document"><div class="document-title">{{ strtoupper($title) }}</div><div class="document-meta">Document No. {{ $documentNumber }}</div><div class="document-meta">Status: {{ $status }}</div></td>
+            <td class="document"><div class="document-title">{{ strtoupper($title) }}</div><div class="document-meta">Document No. : {{ $documentNumber }}</div><div class="document-meta">Document Date : {{ \CarbonCarbon::parse($generatedAt)->format('d M Y') }}</div></td>
         </tr></table>
     </div>
 

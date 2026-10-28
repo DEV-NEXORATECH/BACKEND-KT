@@ -158,6 +158,7 @@ class ProcurementDocumentController extends Controller
     private function download(string $title, string $documentNumber, string $status, array $details, array $lines, ?float $total = null, ?string $quantityLabel = null, bool $letter = false, string $view = 'exports.procurement.document'): Response
     {
         $organization = Organization::query()->where('is_active', true)->orderBy('id')->first();
+        $office = $organization?->officeLocations()->where('is_active', true)->orderByDesc('is_head_office')->orderBy('id')->first();
         $logo = null;
         if ($organization?->logo_url) {
             $logoPath = ltrim(parse_url($organization->logo_url, PHP_URL_PATH) ?: $organization->logo_url, '/');
@@ -181,8 +182,9 @@ class ProcurementDocumentController extends Controller
             'generatedAt' => now()->format('d M Y H:i'),
             'branding' => [
                 'name' => $organization?->legal_name ?: $organization?->name ?: 'Kaoem Telapak',
-                'address' => $organization?->address,
-                'email' => $organization?->email,
+                'address' => $office?->address ?: $organization?->address,
+                'email' => $office?->email ?: $organization?->email,
+                'phone' => $office?->phone,
                 'logo' => $logo,
             ],
         ])->setPaper('a4', 'portrait');
