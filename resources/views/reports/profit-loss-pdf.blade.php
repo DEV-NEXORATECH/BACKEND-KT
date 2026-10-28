@@ -4,22 +4,23 @@
     <meta charset="UTF-8">
     <title>Laporan Laba Rugi (Profit & Loss)</title>
     <style>
+        @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; src: url('{{ public_path('fonts/Montserrat-Variable.ttf') }}') format('truetype'); }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 10pt; color: #222; }
-        .header { text-align: center; border-bottom: 3px double #1a5632; padding-bottom: 12px; margin-bottom: 18px; }
-        .header h1 { font-size: 16pt; color: #1a5632; margin-bottom: 2px; }
+        @page { size: A4 portrait; margin: 16mm 18mm; }
+        body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; }
+        .header { text-align: left; padding-bottom: 12px; margin-bottom: 18px; }
+        .header h1 { font-size: 16pt; color: #000; margin-bottom: 2px; }
         .header h2 { font-size: 12pt; color: #333; font-weight: normal; margin-bottom: 4px; }
         .header p { font-size: 9pt; color: #666; }
         .meta { text-align: right; font-size: 9pt; color: #666; margin-bottom: 14px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-        th { background: #1a5632; color: #fff; text-align: left; padding: 6px 8px; font-size: 9pt; }
-        td { border-bottom: 1px solid #ddd; padding: 5px 8px; font-size: 9pt; }
+        th { background: #fff; color: #000; text-align: left; padding: 6px 8px; font-size: 9pt; border-bottom: 1px solid #000; }
+        td { border: 0; padding: 5px 8px; font-size: 9pt; }
         .right { text-align: right; }
-        .section-title { background: #e8f5e9; font-weight: bold; padding: 6px 8px; font-size: 10pt; color: #1a5632; }
-        .subtotal { font-weight: bold; background: #f5f5f5; }
-        .grand-total { font-weight: bold; background: #1a5632; color: #fff; }
-        .surplus { color: #2e7d32; }
-        .deficit { color: #c62828; }
+        .section-title { background: #fff; font-weight: bold; padding: 6px 0; font-size: 10pt; color: #000; }
+        .subtotal { font-weight: bold; background: #fff; }
+        .grand-total { font-weight: bold; background: #fff; color: #000; border-top: 1px solid #000; }
+        .surplus, .deficit { color: #000; }
         .footer { text-align: center; font-size: 8pt; color: #999; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 8px; }
     </style>
 </head>

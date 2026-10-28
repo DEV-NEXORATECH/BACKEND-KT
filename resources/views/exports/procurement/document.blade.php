@@ -3,37 +3,39 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 18mm 16mm 18mm; }
+        @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; src: url('{{ public_path('fonts/Montserrat-Variable.ttf') }}') format('truetype'); }
+        @page { size: A4 portrait; margin: 16mm 18mm; }
         * { box-sizing: border-box; }
-        body { font-family: Arial, Helvetica, sans-serif; color: #111111; font-size: 9pt; line-height: 1.35; }
-        .header { width: 100%; border-bottom: 1.2pt solid #0B2345; padding-bottom: 9pt; margin-bottom: 13pt; }
+        body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; color: #000; font-size: 9pt; line-height: 1.35; }
+        .header { width: 100%; padding-bottom: 12pt; margin-bottom: 18pt; }
         .header-table { width: 100%; border-collapse: collapse; }
         .header-table td { vertical-align: top; }
-        .company { width: 56%; color: #0B2345; font-size: 9pt; font-weight: bold; }
+        .company { width: 56%; color: #000; font-size: 9pt; font-weight: bold; }
         .company img { display: block; max-width: 125px; max-height: 48px; margin-bottom: 4pt; }
         .company-name { font-size: 10pt; }
-        .company-meta { color: #475569; font-size: 8pt; font-weight: normal; max-width: 250px; }
+        .company-meta { color: #555; font-size: 8pt; font-weight: normal; max-width: 250px; }
         .document { width: 44%; text-align: right; }
-        .document-title { color: #0B2345; font-size: 16pt; font-weight: bold; line-height: 1.15; }
-        .document-meta { color: #475569; font-size: 8pt; margin-top: 3pt; }
-        .section-title { color: #0B2345; font-size: 10pt; font-weight: bold; margin: 13pt 0 5pt; border-bottom: .7pt solid #0B2345; padding-bottom: 3pt; }
+        .document-title { color: #000; font-size: 16pt; font-weight: bold; line-height: 1.15; }
+        .document-meta { color: #555; font-size: 8pt; margin-top: 3pt; }
+        .section-title { color: #000; font-size: 10pt; font-weight: bold; margin: 18pt 0 7pt; padding-bottom: 0; }
         .details-table, .items-table, .summary-table { width: 100%; border-collapse: collapse; }
-        .details-table td { width: 50%; padding: 3.5pt 14pt 3.5pt 0; border-bottom: .45pt solid #CBD5E1; vertical-align: top; }
-        .label { color: #475569; font-size: 7.5pt; font-weight: bold; display: block; margin-bottom: 1pt; }
-        .value { color: #111111; font-size: 9pt; }
+        .details-table td { width: 50%; padding: 3.5pt 14pt 3.5pt 0; border: 0; vertical-align: top; }
+        .label { color: #000; font-size: 7.5pt; font-weight: bold; display: inline; margin-right: 4pt; }
+        .label:after { content: ' :'; color: #555; }
+        .value { color: #000; font-size: 9pt; }
         .items-table { page-break-inside: auto; }
         .items-table thead { display: table-header-group; }
-        .items-table th { color: #111111; background: #FFFFFF; border-top: 1pt solid #111111; border-bottom: 1pt solid #111111; padding: 5pt 4pt; text-align: left; font-size: 8pt; }
-        .items-table td { border-bottom: .45pt solid #CBD5E1; padding: 4pt; vertical-align: top; font-size: 8.5pt; }
+        .items-table th { color: #000; background: #FFFFFF; border-top: 0; border-bottom: 1pt solid #000; padding: 5pt 4pt; text-align: left; font-size: 8pt; }
+        .items-table td { border: 0; padding: 4pt; vertical-align: top; font-size: 8.5pt; }
         .items-table tr { page-break-inside: avoid; }
         .number { text-align: right; white-space: nowrap; }
-        .total-row td { border-top: 1pt solid #0B2345; border-bottom: 0; font-weight: bold; font-size: 9.5pt; padding-top: 6pt; }
+        .total-row td { border-top: 1pt solid #000; border-bottom: 0; font-weight: bold; font-size: 9.5pt; padding-top: 6pt; }
         .summary-wrap { width: 48%; margin-left: auto; margin-top: 8pt; }
         .summary-table td { padding: 3pt 0; }
         .summary-table td:last-child { text-align: right; }
-        .grand-total td { border-top: 1pt solid #0B2345; color: #0B2345; font-weight: bold; padding-top: 5pt; }
+        .grand-total td { border-top: 1pt solid #000; color: #000; font-weight: bold; padding-top: 5pt; }
         .notes { margin-top: 8pt; color: #111111; white-space: pre-line; }
-        .footer { position: fixed; bottom: -10mm; left: 0; right: 0; border-top: .45pt solid #CBD5E1; padding-top: 4pt; color: #475569; font-size: 7.5pt; }
+        .footer { position: fixed; bottom: -10mm; left: 0; right: 0; border-top: .45pt solid #bbb; padding-top: 4pt; color: #555; font-size: 7.5pt; }
         .footer-table { width: 100%; border-collapse: collapse; }
         .footer-table td { width: 33.33%; }
         .footer-table td:nth-child(2) { text-align: center; }
