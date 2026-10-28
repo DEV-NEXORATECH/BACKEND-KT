@@ -6,12 +6,12 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         @page { size: A4 portrait; margin: 16mm 18mm; }
-        body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; font-weight: 600; color: #000; }
         .header { text-align: left; padding-bottom: 12px; margin-bottom: 18px; }
         .header h1 { font-size: 16pt; color: #000; margin-bottom: 2px; }
-        .header h2 { font-size: 12pt; color: #333; font-weight: normal; margin-bottom: 4px; }
-        .header p { font-size: 9pt; color: #666; }
-        .meta { text-align: right; font-size: 9pt; color: #666; margin-bottom: 14px; }
+        .header h2 { font-size: 12pt; color: #000; font-weight: bold; margin-bottom: 4px; }
+        .header p { font-size: 9pt; color: #000; font-weight: 600; }
+        .meta { text-align: right; font-size: 9pt; color: #000; font-weight: 600; margin-bottom: 14px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
         th { background: #fff; color: #000; text-align: left; padding: 6px 8px; font-size: 9pt; border-bottom: 1px solid #000; }
         td { border: 0; padding: 5px 8px; font-size: 9pt; }
@@ -19,7 +19,7 @@
         .section-title { background: #fff; font-weight: bold; padding: 6px 0; font-size: 10pt; color: #000; }
         .subtotal { font-weight: bold; background: #fff; }
         .grand-total { font-weight: bold; background: #fff; color: #000; border-top: 1px solid #000; }
-        .footer { text-align: center; font-size: 8pt; color: #999; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 8px; }
+        .footer { text-align: center; font-size: 8pt; color: #000; font-weight: 600; margin-top: 20px; border-top: 1px solid #000; padding-top: 8px; }
     </style>
 </head>
 <body>

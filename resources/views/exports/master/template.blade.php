@@ -6,7 +6,7 @@
     <style>
         @page { size: A4 landscape; margin: 16mm 18mm; }
         * { box-sizing: border-box; }
-        body { font-family: Arial, Helvetica, sans-serif; font-size: 9px; color: #000; margin: 0; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 9px; font-weight: 600; color: #000; margin: 0; }
         .header {
             text-align: left;
             padding-bottom: 12px;
@@ -14,13 +14,13 @@
         }
         .org-name { font-size: 16px; font-weight: bold; text-transform: uppercase; }
         .doc-title { font-size: 13px; font-weight: bold; margin-top: 4px; }
-        .meta { font-size: 9px; color: #555; margin-top: 3px; }
+        .meta { font-size: 9px; color: #000; font-weight: 600; margin-top: 3px; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background: #fff; color: #000; font-weight: bold; text-align: left; padding: 6px 8px; border-bottom: 1px solid #000; font-size: 9px; text-transform: uppercase; }
         td { padding: 5px 8px; border: 0; font-size: 9px; vertical-align: top; }
         tr:nth-child(even) { background: #fff; }
         .badge-active, .badge-inactive { color: #000; font-weight: bold; }
-        .footer { position: fixed; bottom: 0; left: 0; right: 0; font-size: 8px; text-align: right; color: #555; border-top: 1px solid #bbb; padding-top: 4px; }
+        .footer { position: fixed; bottom: 0; left: 0; right: 0; font-size: 8px; text-align: right; color: #000; font-weight: 600; border-top: 1px solid #000; padding-top: 4px; }
     </style>
 </head>
 <body>

@@ -5,23 +5,23 @@
     <style>
         @page { size: A4 portrait; margin: 16mm 18mm; }
         * { box-sizing: border-box; }
-        body { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 9pt; line-height: 1.35; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 9pt; font-weight: 600; line-height: 1.35; }
         .header { width: 100%; padding-bottom: 12pt; margin-bottom: 18pt; }
         .header-table { width: 100%; border-collapse: collapse; }
         .header-table td { vertical-align: top; }
         .company { width: 48%; color: #000; font-size: 9pt; font-weight: bold; }
         .company img { display: block; max-width: 150px; max-height: 62px; }
         .company-name { display: block; font-size: 8pt; margin-top: 5pt; }
-        .company-meta { display: block; color: #555; font-size: 7.5pt; font-weight: normal; max-width: 250px; margin-top: 1pt; }
+        .company-meta { display: block; color: #000; font-size: 7.5pt; font-weight: 600; max-width: 250px; margin-top: 1pt; }
         .document { width: 52%; text-align: right; }
         .document-title { color: #000; font-size: 16pt; font-weight: bold; line-height: 1.15; }
-        .document-meta { color: #555; font-size: 8pt; margin-top: 4pt; }
+        .document-meta { color: #000; font-size: 8pt; font-weight: 600; margin-top: 4pt; }
         .section-title { color: #000; font-size: 10pt; font-weight: bold; margin: 18pt 0 7pt; padding-bottom: 0; }
         .details-table, .items-table, .summary-table { width: 100%; border-collapse: collapse; }
         .details-table td { width: 50%; padding: 4pt 14pt 4pt 0; border: 0; vertical-align: top; }
         .label { color: #000; font-size: 8pt; font-weight: bold; display: inline-block; width: 52pt; vertical-align: top; }
         .label:after { content: ' :'; color: #555; }
-        .value { color: #000; font-size: 9pt; display: inline; }
+        .value { color: #000; font-size: 9pt; font-weight: 600; display: inline; }
         .items-table { page-break-inside: auto; }
         .items-table thead { display: table-header-group; }
         .items-table th { color: #000; background: #FFFFFF; border-top: 0; border-bottom: 1pt solid #000; padding: 5pt 4pt; text-align: left; font-size: 8pt; }
