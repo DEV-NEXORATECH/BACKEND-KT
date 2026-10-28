@@ -3,7 +3,9 @@
 <head>
     <meta charset="utf-8">
     <style>
+        @if(file_exists(public_path('fonts/Montserrat-Variable.ttf')))
         @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; src: url('{{ public_path('fonts/Montserrat-Variable.ttf') }}') format('truetype'); }
+        @endif
         @page { size: A4 portrait; margin: 16mm 18mm; }
         * { box-sizing: border-box; }
         body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; color: #000; font-size: 9pt; line-height: 1.35; }

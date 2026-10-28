@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <title>Laporan Laba Rugi (Profit & Loss)</title>
     <style>
+        @if(file_exists(public_path('fonts/Montserrat-Variable.ttf')))
         @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; src: url('{{ public_path('fonts/Montserrat-Variable.ttf') }}') format('truetype'); }
+        @endif
         * { margin: 0; padding: 0; box-sizing: border-box; }
         @page { size: A4 portrait; margin: 16mm 18mm; }
         body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; }
