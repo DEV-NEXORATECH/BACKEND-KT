@@ -7,6 +7,7 @@ use App\Models\Procurement\PurchaseRequest;
 use App\Models\Accounting\Journal;
 use App\Models\Timesheet\TimesheetEntry;
 use App\Models\User;
+use App\Models\Master\HolidayCalendar;
 use App\Notifications\ApprovalReminderNotification;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -23,6 +24,8 @@ class ProcessApprovalEscalations extends Command
         $cutoff = Carbon::now()->subDays($days);
 
         $this->info("Processing escalations for items pending > {$days} days (before {$cutoff->toDateString()})...");
+
+        $this->processCashAdvanceReminders();
 
         // Gather all overdue pending items
         $overdueItems = collect();
@@ -143,5 +146,35 @@ class ProcessApprovalEscalations extends Command
         $this->info("Sent {$notifiedCount} reminder notifications successfully.");
 
         return self::SUCCESS;
+    }
+
+    private function processCashAdvanceReminders(): void
+    {
+        $today = Carbon::today();
+        $holidaySet = array_flip(HolidayCalendar::query()->where('is_active', true)->pluck('date')->map(fn ($date) => Carbon::parse($date)->toDateString())->all());
+        ExpenseRequest::query()->where('expense_type', 'cash_advance')->whereIn('status', ['posted', 'paid'])->whereNotNull('settlement_due_date')->with('requester')->get()->each(function (ExpenseRequest $expense) use ($today, $holidaySet) {
+            $due = Carbon::parse($expense->settlement_due_date);
+            if ($due->lt($today) && $expense->settlement_state !== 'overdue') {
+                $expense->update(['settlement_state' => 'overdue', 'settlement_status' => 'overdue']);
+            }
+            $workingDays = $this->workingDaysBetween($today, $due, $holidaySet);
+            if (! in_array($workingDays, [0, 3], true)) return;
+            $alreadySent = \App\Models\Notification::query()->where('user_id', $expense->requester_id)->where('action_url', '/expenses-approvals/expenses')->where('message', 'like', "%{$expense->request_number}%")->whereDate('created_at', $today)->exists();
+            if (! $alreadySent) {
+                \App\Models\Notification::create(['user_id' => $expense->requester_id, 'title' => $workingDays === 0 ? 'Settlement due today' : 'Settlement due in 3 working days', 'message' => "{$expense->request_number} settlement is due on {$due->toDateString()}.", 'type' => 'alert', 'action_url' => '/expenses-approvals/expenses']);
+            }
+        });
+    }
+
+    private function workingDaysBetween(Carbon $from, Carbon $to, array $holidaySet): int
+    {
+        if ($to->lt($from)) return -1;
+        $cursor = $from->copy();
+        $days = 0;
+        while ($cursor->lt($to)) {
+            $cursor->addDay();
+            if (! $cursor->isWeekend() && ! isset($holidaySet[$cursor->toDateString()])) $days++;
+        }
+        return $days;
     }
 }

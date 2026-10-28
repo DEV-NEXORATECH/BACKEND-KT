@@ -13,6 +13,9 @@ use App\Models\Finance\TaxTransaction;
 use App\Models\Master\BankAccount;
 use App\Models\Notification;
 use App\Models\Master\ChartOfAccount;
+use App\Models\Master\BudgetLine;
+use App\Models\Master\ExpenseCategory;
+use App\Models\Master\HolidayCalendar;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Budget\BudgetMonitoringService;
 use App\Services\Settings\SystemPolicyService;
@@ -88,6 +91,7 @@ class ExpenseRequestController extends Controller
     public function store(Request $request): JsonResponse
     {
         $payload = $this->validatePayload($request);
+        $this->applyFinanceRules($payload);
         if (! $this->canAccessAll($request)) {
             $payload['requester_id'] = $request->user()->id;
         }
@@ -121,6 +125,19 @@ class ExpenseRequestController extends Controller
     public function submit(Request $request, ExpenseRequest $expenseRequest, SystemPolicyService $policies, ApprovalWorkflowService $workflow): JsonResponse
     {
         $this->authorizeScope($request, $expenseRequest);
+        $rules = [
+            'expense_type' => $expenseRequest->expense_type,
+            'payment_type' => $expenseRequest->payment_type,
+            'currency_code' => $expenseRequest->currency_code,
+            'exchange_rate' => $expenseRequest->exchange_rate,
+            'activity_start_date' => $expenseRequest->activity_start_date?->toDateString(),
+            'activity_end_date' => $expenseRequest->activity_end_date?->toDateString(),
+            'settlement_due_date' => $expenseRequest->settlement_due_date?->toDateString(),
+            'category_mismatch_reason' => $expenseRequest->category_mismatch_reason,
+            'lines' => $expenseRequest->lines->map(fn ($line) => ['amount' => $line->amount, 'budget_line_id' => $line->budget_line_id, 'expense_category_id' => $line->expense_category_id])->all(),
+        ];
+        $this->applyFinanceRules($rules);
+        $expenseRequest->update(collect($rules)->only(['settlement_due_date', 'category_mismatch_flag'])->all());
         $this->ensureReceiptIfRequired($expenseRequest, $policies);
         $workflow->start('expense', $expenseRequest, (float) $expenseRequest->total_amount, $request->user()->id);
 
@@ -171,6 +188,9 @@ class ExpenseRequestController extends Controller
             throw ValidationException::withMessages(['status' => 'Expense harus diverifikasi Finance untuk approval.']);
         }
         $approval = $workflow->approve('expense', $expenseRequest, $request->user(), $request->input('notes'));
+        if ($approval['managed'] && $approval['next_level'] === 4 && ! $expenseRequest->voucher_number) {
+            $this->assignVoucherNumber($expenseRequest);
+        }
         if ($approval['managed'] && ! $approval['completed']) {
             return response()->json(['success' => true, 'message' => "Approval tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
         }
@@ -266,6 +286,20 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         if ($expenseRequest->expense_type === 'cash_advance') {
             $expenseRequest->update(['status' => 'posted', 'settlement_state' => 'outstanding', 'settlement_status' => 'outstanding']);
             return response()->json(['success' => true, 'message' => 'Cash Advance siap dibayar; jurnal Staff Advance dibuat saat disbursement.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
+        }
+
+        if ($expenseRequest->expense_type === 'loan') {
+            $loanReceivable = $this->loanReceivableAccount();
+            $payableAccount = ChartOfAccount::where('account_type', 'liability')->where('is_header', false)->first();
+            if (! $loanReceivable || ! $payableAccount) throw ValidationException::withMessages(['account' => 'Employee Loan Receivable and payable COA must be configured before posting a loan.']);
+            $journal = DB::transaction(function () use ($expenseRequest, $loanReceivable, $payableAccount) {
+                $journal = Journal::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'journal_number' => 'LOAN-'.now()->format('YmdHis').'-'.random_int(100, 999), 'journal_date' => $expenseRequest->request_date, 'journal_type' => 'accrual', 'reference' => $expenseRequest->voucher_number ?: $expenseRequest->request_number, 'description' => 'Employee loan '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now(), 'source_type' => 'employee_loan', 'source_id' => $expenseRequest->id]);
+                $journal->lines()->create(['account_id' => $loanReceivable->id, 'line_description' => 'Employee Loan Receivable '.$expenseRequest->request_number, 'debit' => $expenseRequest->total_amount, 'credit' => 0, 'line_order' => 1]);
+                $journal->lines()->create(['account_id' => $payableAccount->id, 'line_description' => 'Employee loan payable '.$expenseRequest->request_number, 'debit' => 0, 'credit' => $expenseRequest->total_amount, 'line_order' => 2]);
+                $expenseRequest->update(['status' => 'posted', 'journal_id' => $journal->id, 'loan_receivable_journal_id' => $journal->id]);
+                return $journal;
+            });
+            return response()->json(['success' => true, 'message' => 'Loan posted to Employee Loan Receivable.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
         }
 
         $payable = ChartOfAccount::where('account_type', 'liability')->where('is_header', false)->first();
@@ -621,9 +655,12 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'attachments' => ['nullable', 'array'],
             'attachments.*' => ['string', 'max:255'],
             'expense_type' => ['required', 'in:reimbursement,supplier_payment,loan,cash_advance,settlement_advance'],
+            'payment_type' => ['nullable', 'in:Transfer,Petty Cash'],
             'funding_mode' => ['nullable', 'in:solo,joint'],
             'request_date' => ['required', 'date'],
             'settlement_due_date' => ['nullable', 'date', 'after_or_equal:request_date'],
+            'activity_start_date' => ['nullable', 'date'],
+            'activity_end_date' => ['nullable', 'date', 'after_or_equal:activity_start_date'],
             'parent_expense_request_id' => ['nullable', 'integer', 'exists:expense_requests,id'],
             'currency_code' => ['nullable', 'string', 'max:10'],
             'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
@@ -638,7 +675,77 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'lines.*.budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
             'lines.*.description' => ['required', 'string', 'max:255'],
             'lines.*.amount' => ['required', 'numeric', 'min:0.01'],
+            'category_mismatch_reason' => ['nullable', 'string', 'max:1000'],
         ]);
+    }
+
+    private function applyFinanceRules(array &$payload): void
+    {
+        $payload['payment_type'] = $payload['payment_type'] ?? 'Transfer';
+        $payload['currency_code'] = strtoupper($payload['currency_code'] ?? 'IDR');
+        if ($payload['currency_code'] === 'IDR') $payload['exchange_rate'] = 1;
+
+        $total = collect($payload['lines'])->sum(fn (array $line) => (float) ($line['amount'] ?? 0));
+        if ($payload['payment_type'] === 'Petty Cash' && $total > 500000) {
+            throw ValidationException::withMessages(['payment_type' => 'Petty Cash is limited to Rp 500,000 per transaction.']);
+        }
+
+        if ($payload['expense_type'] === 'cash_advance') {
+            if (empty($payload['activity_start_date']) || empty($payload['activity_end_date'])) {
+                throw ValidationException::withMessages(['activity_start_date' => 'Activity start and end dates are required for Cash Advance.']);
+            }
+            $payload['settlement_due_date'] = $this->addWorkingDays($payload['activity_end_date'], 14);
+        }
+        if ($payload['expense_type'] === 'settlement_advance') {
+            if (empty($payload['parent_expense_request_id']) || ! ExpenseRequest::query()->whereKey($payload['parent_expense_request_id'])->where('expense_type', 'cash_advance')->exists()) {
+                throw ValidationException::withMessages(['parent_expense_request_id' => 'Settlement Advance must reference an existing Cash Advance.']);
+            }
+        }
+
+        $mismatch = false;
+        foreach ($payload['lines'] as $index => &$line) {
+            $amount = (float) ($line['amount'] ?? 0);
+            if ($amount <= 0) throw ValidationException::withMessages(["lines.{$index}.amount" => 'Expense line amount must be greater than zero.']);
+            if (! empty($line['budget_line_id'])) {
+                $budget = BudgetLine::with('glAccount')->findOrFail($line['budget_line_id']);
+                if (! $budget->glAccount || strtolower((string) $budget->glAccount->account_type) !== 'expense' || $budget->glAccount->is_header) {
+                    throw ValidationException::withMessages(["lines.{$index}.budget_line_id" => 'Budget Line must be linked to an active expense CoA.']);
+                }
+                if (! empty($line['expense_category_id'])) {
+                    $category = ExpenseCategory::find($line['expense_category_id']);
+                    if ($category?->cost_type && $budget->cost_type && strcasecmp($category->cost_type, $budget->cost_type) !== 0) $mismatch = true;
+                }
+            }
+        }
+        unset($line);
+        if ($mismatch && empty($payload['category_mismatch_reason'])) {
+            throw ValidationException::withMessages(['category_mismatch_reason' => 'Explain why the expense category does not match the Budget Line cost type.']);
+        }
+        $payload['category_mismatch_flag'] = $mismatch;
+    }
+
+    private function addWorkingDays(string $date, int $days): string
+    {
+        $cursor = \Illuminate\Support\Carbon::parse($date);
+        $holidays = HolidayCalendar::query()->where('is_active', true)->whereBetween('date', [$cursor->copy()->addDay(), $cursor->copy()->addDays($days * 3 + 14)])->pluck('date')->map(fn ($value) => \Illuminate\Support\Carbon::parse($value)->toDateString())->all();
+        $holidaySet = array_flip($holidays);
+        while ($days > 0) {
+            $cursor->addDay();
+            if ($cursor->isWeekend() || isset($holidaySet[$cursor->toDateString()])) continue;
+            $days--;
+        }
+        return $cursor->toDateString();
+    }
+
+    private function assignVoucherNumber(ExpenseRequest $expense): void
+    {
+        $grantCode = strtoupper((string) ($expense->grantAgreement?->grant_no ?? $expense->grantAgreement?->agreement_number ?? 'GEN'));
+        $grantCode = preg_replace('/[^A-Z0-9]+/', '-', $grantCode) ?: 'GEN';
+        $year = now()->format('Y');
+        $month = now()->format('m');
+        $prefix = "CDV-{$grantCode}-{$year}-{$month}-";
+        $last = ExpenseRequest::query()->where('voucher_number', 'like', $prefix.'%')->lockForUpdate()->pluck('voucher_number')->map(fn ($value) => (int) substr((string) $value, -3))->max() ?? 0;
+        $expense->update(['voucher_number' => $prefix.str_pad((string) ($last + 1), 3, '0', STR_PAD_LEFT)]);
     }
 
     private function staffAdvanceAccount(): ?ChartOfAccount
@@ -648,6 +755,15 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 ->orWhere('name', 'like', '%staff%receivable%')
                 ->orWhere('name', 'like', '%piutang%staff%');
         })->first();
+    }
+
+    private function loanReceivableAccount(): ?ChartOfAccount
+    {
+        return ChartOfAccount::query()->where('is_header', false)->where('account_type', 'asset')->where(function ($query) {
+            $query->where('name', 'like', '%employee%loan%receivable%')
+                ->orWhere('name', 'like', '%loan%receivable%')
+                ->orWhere('name', 'like', '%piutang%pinjaman%');
+        })->first() ?: $this->staffAdvanceAccount();
     }
 
     private function canAccessAll(Request $request): bool
@@ -732,6 +848,12 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'project_name' => $expense->project?->name,
             'department_name' => $expense->department?->name,
             'expense_type' => $expense->expense_type,
+            'payment_type' => $expense->payment_type ?? 'Transfer',
+            'voucher_number' => $expense->voucher_number,
+            'activity_start_date' => $expense->activity_start_date?->toDateString(),
+            'activity_end_date' => $expense->activity_end_date?->toDateString(),
+            'category_mismatch_flag' => (bool) $expense->category_mismatch_flag,
+            'category_mismatch_reason' => $expense->category_mismatch_reason,
             'funding_mode' => $expense->funding_mode ?? 'solo',
             'donor_id' => $expense->donor_id,
             'second_donor_id' => $expense->second_donor_id,

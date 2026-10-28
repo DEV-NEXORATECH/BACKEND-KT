@@ -14,6 +14,14 @@ class ApprovalWorkflowService
     public function start(string $module, Model $entity, float $amount, ?int $submittedBy = null): ?ApprovalWorkflowRun
     {
         $matrices = $this->matricesFor($module, $entity, $amount);
+        if ($module === 'expense' && $submittedBy) {
+            $requester = User::with('employee')->find($submittedBy);
+            if ($requester) {
+                $matrices = $matrices->reject(fn ($matrix) => ($matrix->user_id && (int) $matrix->user_id === (int) $submittedBy)
+                    || ($matrix->employee_id && (int) $matrix->employee_id === (int) $requester->employee_id)
+                    || ($matrix->role_id && (int) $matrix->role_id === (int) $requester->role_id))->values();
+            }
+        }
         if ($matrices->isEmpty()) return null;
 
         return DB::transaction(function () use ($module, $entity, $matrices, $submittedBy) {

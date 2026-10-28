@@ -47,6 +47,7 @@ use App\Http\Controllers\Api\Master\ExchangeRateController;
 use App\Http\Controllers\Api\Master\FiscalYearController;
 use App\Http\Controllers\Api\Master\AccountingPeriodController;
 use App\Http\Controllers\Api\Master\ChartOfAccountController;
+use App\Http\Controllers\Api\Master\HolidayCalendarController;
 use App\Http\Controllers\Api\Master\AccountCategoryController;
 use App\Http\Controllers\Api\Master\TaxController;
 use App\Http\Controllers\Api\Master\CustomerController;
@@ -428,6 +429,7 @@ Route::middleware('auth:sanctum')->group(function () {
             'document-types' => DocumentTypeController::class,
             'asset-categories' => AssetCategoryController::class,
             'approval-matrices' => ApprovalMatrixController::class,
+            'holidays' => HolidayCalendarController::class,
         ];
         Route::post('accounting-periods/{id}/close', [AccountingPeriodController::class, 'close'])->middleware('permission:settings.manage');
         Route::post('accounting-periods/{id}/reopen', [AccountingPeriodController::class, 'reopen'])->middleware('permission:settings.manage');

@@ -14,7 +14,7 @@ class ExpenseCategory extends Model
 
     protected $table = 'expense_categories';
 
-    protected $fillable = ['parent_id', 'code', 'name', 'default_gl_account_id', 'is_taxable', 'requires_receipt', 'requires_advance_settlement', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['parent_id', 'code', 'name', 'cost_type', 'default_gl_account_id', 'is_taxable', 'requires_receipt', 'requires_advance_settlement', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
