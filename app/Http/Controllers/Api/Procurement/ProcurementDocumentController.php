@@ -189,8 +189,8 @@ class ProcurementDocumentController extends Controller
             ],
         ])->setPaper('a4', 'portrait');
 
-        // DomPDF page counters are drawn by the canvas so they remain accurate
-        // across multi-page procurement documents.
+        // Keep page numbering in the shared footer. The Blade template owns the
+        // layout; the canvas only adds the dynamic page counter once.
         $pdf->getDomPDF()->render();
         $pdf->getDomPDF()->getCanvas()->page_text(510, 820, 'Page {PAGE_NUM} of {PAGE_COUNT}', null, 8, [71 / 255, 85 / 255, 105 / 255]);
 

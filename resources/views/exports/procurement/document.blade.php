@@ -9,22 +9,23 @@
         @page { size: A4 portrait; margin: 16mm 18mm; }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: 'Montserrat', sans-serif; color: #000; font-size: 9pt; font-weight: 400; line-height: 1.35; }
-        .header { width: 100%; padding-bottom: 12pt; margin-bottom: 15pt; }
+        .header { width: 100%; height: 44mm; padding-bottom: 0; margin-bottom: 0; }
         .header-table { width: 100%; border-collapse: collapse; }
         .header-table td { vertical-align: top; }
-        .company { width: 50%; color: #000; font-size: 9pt; font-weight: 700; }
+        .company { width: 50%; color: #000; font-size: 9pt; font-weight: 400; }
         .company img { display: block; width: 42mm; height: 23mm; object-fit: contain; object-position: left top; }
-        .company-name { display: block; font-size: 8pt; font-weight: 700; margin-top: 5pt; }
+        .company-name { display: block; font-size: 8pt; font-weight: 400; margin-top: 5pt; }
         .company-meta { display: block; color: #000; font-size: 7.5pt; font-weight: 400; max-width: 250px; margin-top: 1pt; }
-        .document { width: 52%; text-align: right; }
+        .document { width: 52%; padding-top: 6mm; text-align: right; }
         .document-title { color: #000; font-size: 15pt; font-weight: 700; line-height: 1.15; }
         .document-meta { color: #000; font-size: 8pt; font-weight: 400; margin-top: 4pt; }
         .section-title { color: #000; font-size: 10pt; font-weight: 700; margin: 14pt 0 7pt; padding-bottom: 0; }
         .details-table, .items-table, .summary-table { width: 100%; border-collapse: collapse; }
-        .details-table td { width: 50%; padding: 4pt 12pt 4pt 0; border: 0; vertical-align: top; }
-        .label { color: #000; font-size: 8pt; font-weight: 700; display: inline-block; width: 62pt; vertical-align: top; }
+        .details-table td { width: 50%; padding: 4pt 0; border: 0; vertical-align: top; }
+        /* Match the Expense PDF's wide label column and value start position. */
+        .label { color: #000; font-size: 9pt; font-weight: 700; display: inline-block; width: 39mm; vertical-align: top; }
         .label:after { content: ' :'; color: #555; }
-        .value { color: #000; font-size: 9pt; font-weight: 400; display: inline; }
+        .value { color: #000; font-size: 9.5pt; font-weight: 400; display: inline; }
         .items-table { page-break-inside: auto; }
         .items-table thead { display: table-header-group; }
         .items-table th { color: #000; background: #FFFFFF; border-top: 0; border-bottom: 1pt solid #000; padding: 5pt 4pt; text-align: left; font-size: 8pt; font-weight: 700; }
@@ -42,7 +43,6 @@
         .footer-table td { width: 33.33%; }
         .footer-table td:nth-child(2) { text-align: center; }
         .footer-table td:last-child { text-align: right; }
-        .page-number:after { content: counter(page) ' of ' counter(pages); }
     </style>
 </head>
 <body>
@@ -87,6 +87,6 @@
         <div class="section-title">NOTES / JUSTIFICATION</div><div class="notes">{{ $details['Notes'] ?? ($details['Justification'] ?? ($details['Description'] ?? '')) }}</div>
     @endif
 
-    <div class="footer"><table class="footer-table"><tr><td>Kaoem Telapak ERP</td><td>Generated {{ $generatedAt }}</td><td>Page <span class="page-number"></span></td></tr></table></div>
+    <div class="footer"><table class="footer-table"><tr><td>Kaoem Telapak / Procurement</td><td></td><td></td></tr></table></div>
 </body>
 </html>
