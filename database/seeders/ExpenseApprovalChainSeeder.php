@@ -15,7 +15,6 @@ class ExpenseApprovalChainSeeder extends Seeder
             'budget-holder' => 'Budget Holder',
             'finance-officer' => 'Finance Officer',
             'finance-manager' => 'Finance Manager',
-            'president' => 'President',
         ];
         $roleIds = [];
         foreach ($roles as $slug => $name) {
@@ -30,7 +29,6 @@ class ExpenseApprovalChainSeeder extends Seeder
             ['role' => 'budget-holder', 'title' => 'Budget Holder', 'description' => 'Project budget holder approval.'],
             ['role' => 'finance-officer', 'title' => 'Finance Officer', 'description' => 'Finance document and budget review.'],
             ['role' => 'finance-manager', 'title' => 'Finance Manager', 'description' => 'Finance Manager verification.'],
-            ['role' => 'president', 'title' => 'President', 'description' => 'Final approval by the President.'],
         ];
         foreach ($chain as $index => $stage) {
             ApprovalMatrix::create([
