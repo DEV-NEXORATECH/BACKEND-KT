@@ -208,7 +208,8 @@ class ApprovalWorkflowService
             $isAllowed = collect($names)->contains(function ($name) use ($allowedBudgetHolders) {
                 $normalized = preg_replace('/\s+/', ' ', trim((string) $name));
                 return in_array($normalized, $allowedBudgetHolders, true)
-                    || str_contains($normalized, 'sand ika ariansyah');
+                    || str_contains($normalized, 'sandika ariansyah')
+                    || str_contains($normalized, 'megumi');
             });
             if (! $isAllowed) return false;
         }
