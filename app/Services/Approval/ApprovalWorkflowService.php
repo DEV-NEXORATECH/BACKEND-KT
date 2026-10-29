@@ -180,6 +180,24 @@ class ApprovalWorkflowService
         }
 
         $matrix = $action->approvalMatrix;
+        if ($matrix?->role && in_array($matrix->role->slug, ['budget-holder', 'budget-holder-project-manager'], true)) {
+            // Only the configured budget holders may approve at this stage.
+            // The President may be one of them, but is not a mandatory final stage.
+            $allowedBudgetHolders = [
+                'denny bhatara',
+                'abil ahmad akbar',
+                'sarah megumi',
+                'sarah rosemery megumi w',
+                'sandika ariansyah',
+            ];
+            $names = array_map('strtolower', array_filter([$user->name, $user->employee?->name]));
+            $isAllowed = collect($names)->contains(function ($name) use ($allowedBudgetHolders) {
+                $normalized = preg_replace('/\s+/', ' ', trim((string) $name));
+                return in_array($normalized, $allowedBudgetHolders, true)
+                    || str_contains($normalized, 'sand ika ariansyah');
+            });
+            if (! $isAllowed) return false;
+        }
         if ($matrix?->is_conditional_project_manager) {
             $project = $entity && method_exists($entity, 'project') ? $entity->project : null;
             $projectManagerName = $project?->manager_name;
