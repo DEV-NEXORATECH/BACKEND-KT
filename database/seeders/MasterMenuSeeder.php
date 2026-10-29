@@ -48,11 +48,6 @@ class MasterMenuSeeder extends Seeder
             ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 18, 'children' => [
                 ['title' => 'Donor & Grant Terintegrasi', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 180],
             ]],
-            ['title' => 'Budget & Forecast', 'slug' => 'master-budget-reporting', 'sort_order' => 19, 'children' => [
-                ['title' => 'Budget Categories', 'slug' => 'master-budget-categories', 'path' => '/master-data/budget-categories', 'sort_order' => 193],
-                ['title' => 'Reporting Categories', 'slug' => 'master-reporting-categories', 'path' => '/master-data/reporting-categories', 'sort_order' => 195],
-                ['title' => 'Reporting Dimensions', 'slug' => 'master-reporting-dimensions', 'path' => '/master-data/reporting-dimensions', 'sort_order' => 191],
-            ]],
             ['title' => 'Expenses', 'slug' => 'master-expenses', 'sort_order' => 20, 'children' => [
                 ['title' => 'Expense Categories', 'slug' => 'master-expense-categories', 'path' => '/master-data/expense-categories', 'sort_order' => 201],
                 ['title' => 'Document Types', 'slug' => 'master-expense-types', 'path' => '/master-data/document-types', 'sort_order' => 202],
@@ -99,6 +94,15 @@ class MasterMenuSeeder extends Seeder
         // single integrated master page. Disable legacy duplicate entries.
         Menu::whereIn('slug', ['master-donors', 'master-grant-agreements', 'master-budget-codes', 'master-sof'])
             ->update(['is_active' => false]);
+
+        // Budget and Forecast is a functional module, not Master Data.
+        // Keep the configuration tables available to the budget module, but
+        // remove their duplicate navigation from the Master Data sidebar.
+        Menu::whereIn('slug', [
+            'master-budget-reporting', 'master-budget-categories',
+            'master-reporting-categories', 'master-reporting-dimensions',
+            'master-budget-lines',
+        ])->update(['is_active' => false]);
 
         // Keep the functional Donor & Grant navigation in sync when this
         // standalone menu seeder is run without RoleSeeder first.
