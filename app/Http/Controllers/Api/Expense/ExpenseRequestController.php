@@ -714,7 +714,11 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'lines.*.expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
             'lines.*.budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
             'lines.*.description' => ['required', 'string', 'max:255'],
-            'lines.*.amount' => ['required', 'numeric', 'min:0.01'],
+            'lines.*.quantity' => ['nullable', 'numeric', 'gt:0'],
+            'lines.*.unit' => ['nullable', 'string', 'max:40'],
+            'lines.*.frequency' => ['nullable', 'numeric', 'gt:0'],
+            'lines.*.unit_price' => ['nullable', 'numeric', 'gt:0'],
+            'lines.*.amount' => ['nullable', 'numeric', 'min:0'],
             'category_mismatch_reason' => ['nullable', 'string', 'max:1000'],
         ]);
     }
@@ -744,6 +748,9 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
         $mismatch = false;
         foreach ($payload['lines'] as $index => &$line) {
+            if (isset($line['quantity'], $line['frequency'], $line['unit_price']) && $line['quantity'] !== null && $line['frequency'] !== null && $line['unit_price'] !== null) {
+                $line['amount'] = round((float) $line['quantity'] * (float) $line['frequency'] * (float) $line['unit_price'], 2);
+            }
             $amount = (float) ($line['amount'] ?? 0);
             if ($amount <= 0) throw ValidationException::withMessages(["lines.{$index}.amount" => 'Expense line amount must be greater than zero.']);
             if (! empty($line['budget_line_id'])) {
@@ -1002,6 +1009,10 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'budget_line_id' => $line->budget_line_id,
                 'budget_line_code' => $line->budgetLine?->line_code,
                 'description' => $line->description,
+                'quantity' => $line->quantity,
+                'unit' => $line->unit,
+                'frequency' => $line->frequency,
+                'unit_price' => $line->unit_price,
                 'amount' => $line->amount,
             ])->values(),
         ];
