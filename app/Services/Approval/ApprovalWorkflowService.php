@@ -173,6 +173,13 @@ class ApprovalWorkflowService
             return true;
         }
 
+        // The requester/preparer must never approve their own expense or settlement,
+        // even when an old workflow action already contains a matching role/user.
+        $requesterId = $entity?->getAttribute('requester_id') ?? $entity?->getAttribute('submitted_by');
+        if ($requesterId && (int) $requesterId === (int) $user->id) {
+            return false;
+        }
+
         $matrix = $action->approvalMatrix;
         if ($matrix?->is_conditional_project_manager) {
             $project = $entity && method_exists($entity, 'project') ? $entity->project : null;

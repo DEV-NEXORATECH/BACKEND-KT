@@ -32,7 +32,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ExpenseRequestController extends Controller
 {
-    private array $with = ['requester:id,name,email', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
+    private array $with = ['requester:id,name,email', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'parentExpenseRequest:id,request_number,total_amount,paid_amount,settlement_due_date', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
 
     public function index(Request $request): JsonResponse
     {
@@ -977,6 +977,16 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'settlement_state' => $expense->settlement_state ?? $expense->settlement_status,
             'settlement_status' => $expense->settlement_status,
             'settlement_journal_id' => $expense->settlement_journal_id,
+            'parent_expense_request_id' => $expense->parent_expense_request_id,
+            'parent_expense_request' => $expense->parentExpenseRequest ? [
+                'id' => $expense->parentExpenseRequest->id,
+                'request_number' => $expense->parentExpenseRequest->request_number,
+                'total_amount' => $expense->parentExpenseRequest->total_amount,
+                'paid_amount' => $expense->parentExpenseRequest->paid_amount,
+                'settlement_due_date' => $expense->parentExpenseRequest->settlement_due_date?->toDateString(),
+            ] : null,
+            'cash_advance_requested_amount' => $expense->parentExpenseRequest ? (float) ($expense->parentExpenseRequest->paid_amount ?: $expense->parentExpenseRequest->total_amount) : null,
+            'settlement_difference' => $expense->parentExpenseRequest ? round((float) ($expense->actual_expense_amount ?? $expense->total_amount ?? 0) - (float) ($expense->parentExpenseRequest->paid_amount ?: $expense->parentExpenseRequest->total_amount), 2) : null,
             'settlement_due_date' => $expense->settlement_due_date?->toDateString(),
             'decision_notes' => $expense->decision_notes,
             'submitted_at' => $expense->submitted_at?->toISOString(),

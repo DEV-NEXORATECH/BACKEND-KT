@@ -41,6 +41,7 @@ class ExpenseRequest extends Model
     public function project(): BelongsTo { return $this->belongsTo(Project::class); }
     public function department(): BelongsTo { return $this->belongsTo(Department::class); }
     public function journal(): BelongsTo { return $this->belongsTo(Journal::class); }
+    public function parentExpenseRequest(): BelongsTo { return $this->belongsTo(self::class, 'parent_expense_request_id'); }
     public function settlementJournal(): BelongsTo { return $this->belongsTo(Journal::class, 'settlement_journal_id'); }
     public function cashAdvanceReturns(): HasMany { return $this->hasMany(CashAdvanceReturn::class); }
     public function cashAdvanceReimbursements(): HasMany { return $this->hasMany(CashAdvanceReimbursement::class); }
