@@ -169,15 +169,14 @@ class ApprovalWorkflowService
 
     private function matchesApprover($action, User $user, ?Model $entity = null): bool
     {
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
         // The requester/preparer must never approve their own expense or settlement,
         // even when an old workflow action already contains a matching role/user.
         $requesterId = $entity?->getAttribute('requester_id') ?? $entity?->getAttribute('submitted_by');
         if ($requesterId && (int) $requesterId === (int) $user->id) {
             return false;
+        }
+        if ($this->isSuperAdmin($user)) {
+            return true;
         }
 
         $matrix = $action->approvalMatrix;
