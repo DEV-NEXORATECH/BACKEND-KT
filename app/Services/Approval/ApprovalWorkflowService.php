@@ -162,9 +162,23 @@ class ApprovalWorkflowService
 
         if (! $highestLevel) return collect();
 
-        return $scopeMatrix(ApprovalMatrix::query())
+        $matrices = $scopeMatrix(ApprovalMatrix::query())
             ->where('level', '<=', $highestLevel)
             ->orderBy('level')->orderBy('id')->get();
+
+        $matrices = $matrices->filter(function ($matrix) use ($amount, $entity) {
+            if ((int) $matrix->level !== 1) return true;
+            $title = strtolower((string) $matrix->approver_title);
+            if (! $entity->getAttribute('project_id') && str_contains($title, 'denny')) return $amount <= 267000000;
+            return (float) $matrix->min_amount <= $amount
+                && ($matrix->max_amount === null || (float) $matrix->max_amount >= $amount);
+        })->values();
+
+        if (! $entity->getAttribute('project_id')) {
+            $matrices = $matrices->reject(fn ($matrix) => str_contains(strtolower((string) $matrix->approver_title), 'abil'));
+        }
+
+        return $matrices;
     }
 
     private function matchesApprover($action, User $user, ?Model $entity = null): bool
