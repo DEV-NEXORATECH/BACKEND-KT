@@ -271,6 +271,9 @@ abstract class BaseMasterController extends Controller
         $columns = array_values(array_filter($model->getFillable(), fn ($column) => ! in_array($column, [
             'id', 'created_at', 'updated_at', 'deleted_at', 'created_by', 'updated_by', 'deleted_by',
         ], true)));
+        if ($this->modelClass === \App\Models\Master\BudgetLine::class) {
+            $columns = array_map(static fn ($column) => $column === 'gl_account_id' ? 'coa_code' : $column, $columns);
+        }
         if (in_array(strtolower((string) $request->query('format')), ['xlsx', 'excel'], true)) {
             return $exportService->template(class_basename($this->modelClass), $columns);
         }
@@ -324,6 +327,8 @@ abstract class BaseMasterController extends Controller
                 $mapped = $normalized.'_id';
             } elseif ($normalized === 'active' && isset($fillable['is_active'])) {
                 $mapped = 'is_active';
+            } elseif ($this->modelClass === \App\Models\Master\BudgetLine::class && in_array($normalized, ['coa_code', 'co_a_code'], true)) {
+                $mapped = 'coa_code';
             }
             $headerMap[] = $mapped;
         }
@@ -346,6 +351,28 @@ abstract class BaseMasterController extends Controller
             }
             $payload = array_filter($payload, static fn ($value) => $value !== null && $value !== '');
             if (! $payload) continue;
+
+            if ($this->modelClass === \App\Models\Master\BudgetLine::class) {
+                $coaCode = trim((string) ($payload['coa_code'] ?? $payload['co_a_code'] ?? ''));
+                if ($coaCode === '') {
+                    $errors[] = ['row' => $created + $skipped + 2, 'message' => 'CoA Code is required for every Budget Line.'];
+                    $skipped++;
+                    continue;
+                }
+                $coa = \App\Models\Master\ChartOfAccount::query()
+                    ->where('code', $coaCode)
+                    ->where('is_active', true)
+                    ->where('is_header', false)
+                    ->where('account_type', 'expense')
+                    ->first();
+                if (! $coa) {
+                    $errors[] = ['row' => $created + $skipped + 2, 'message' => "CoA Code {$coaCode} does not exist or is not an active expense account."];
+                    $skipped++;
+                    continue;
+                }
+                $payload['gl_account_id'] = $coa->id;
+                unset($payload['coa_code'], $payload['co_a_code']);
+            }
 
             $identityColumn = null;
             $identityValue = null;

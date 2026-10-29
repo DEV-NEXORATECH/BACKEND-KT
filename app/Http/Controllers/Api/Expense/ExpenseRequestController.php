@@ -135,6 +135,13 @@ class ExpenseRequestController extends Controller
             'activity_end_date' => $expenseRequest->activity_end_date?->toDateString(),
             'settlement_due_date' => $expenseRequest->settlement_due_date?->toDateString(),
             'category_mismatch_reason' => $expenseRequest->category_mismatch_reason,
+            'funding_mode' => $expenseRequest->funding_mode,
+            'funding_allocations' => $expenseRequest->fundings->map(fn ($funding) => [
+                'donor_id' => $funding->donor_id,
+                'program_id' => $funding->program_id,
+                'budget_line_id' => $funding->budget_line_id,
+                'amount' => $funding->amount,
+            ])->all(),
             'lines' => $expenseRequest->lines->map(fn ($line) => ['amount' => $line->amount, 'budget_line_id' => $line->budget_line_id, 'expense_category_id' => $line->expense_category_id])->all(),
         ];
         $this->applyFinanceRules($rules);
@@ -751,6 +758,25 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             }
         }
         unset($line);
+        $allocations = $payload['funding_allocations'] ?? [];
+        if (($payload['funding_mode'] ?? 'solo') === 'joint') {
+            if (count($allocations) < 2) {
+                throw ValidationException::withMessages(['funding_allocations' => 'Co-Funding requires at least two funding allocations.']);
+            }
+            $allocationTotal = 0.0;
+            foreach ($allocations as $index => $allocation) {
+                if (empty($allocation['donor_id']) && empty($allocation['program_id'])) {
+                    throw ValidationException::withMessages(["funding_allocations.{$index}" => 'Each allocation must have a donor or program.']);
+                }
+                if (empty($allocation['budget_line_id'])) {
+                    throw ValidationException::withMessages(["funding_allocations.{$index}.budget_line_id" => 'Each allocation must have a Budget Line.']);
+                }
+                $allocationTotal += (float) ($allocation['amount'] ?? 0);
+            }
+            if (abs($allocationTotal - $total) > 0.01) {
+                throw ValidationException::withMessages(['funding_allocations' => 'The funding allocation total must equal the expense Amount.']);
+            }
+        }
         if ($mismatch && empty($payload['category_mismatch_reason'])) {
             throw ValidationException::withMessages(['category_mismatch_reason' => 'Explain why the expense category does not match the Budget Line cost type.']);
         }
@@ -817,10 +843,41 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
     private function ensureReceiptIfRequired(ExpenseRequest $expenseRequest, SystemPolicyService $policies): void
     {
-        if ($policies->requiresExpenseReceipt() && empty($expenseRequest->attachments)) {
+        $attachments = collect((array) $expenseRequest->attachments)->map(function ($attachment) {
+            if (is_array($attachment)) return strtolower((string) ($attachment['name'] ?? $attachment['path'] ?? ''));
+            return strtolower((string) $attachment);
+        })->filter()->values();
+        if ($attachments->isEmpty()) {
             throw ValidationException::withMessages([
-                'attachments' => 'Lampiran/receipt wajib diunggah sebelum expense diajukan.',
+                'attachments' => 'At least one supporting document is required before submission.',
             ]);
+        }
+
+        $has = static fn (array $terms) => $attachments->contains(fn ($name) => collect($terms)->contains(fn ($term) => str_contains($name, $term)));
+        $required = match ($expenseRequest->expense_type) {
+            'reimbursement' => [
+                'receipt' => $has(['receipt', 'nota', 'kwitansi', 'proof']),
+                'tor_invitation' => $has(['tor', 'terms', 'invitation', 'undangan']),
+            ],
+            'supplier_payment' => [
+                'invoice' => $has(['invoice', 'faktur', 'bill', 'tagihan']),
+                'tor_sow' => $has(['tor', 'sow', 'terms', 'scope']),
+            ],
+            'loan' => ['loan_agreement' => $has(['loan', 'agreement', 'perjanjian'])],
+            'cash_advance' => ['activity_plan' => $has(['activity', 'plan', 'tor', 'terms', 'proposal'])],
+            'settlement_advance' => [
+                'settlement_evidence' => $has(['settlement', 'actual', 'realization', 'realisasi', 'receipt', 'nota', 'kwitansi']),
+            ],
+            default => [],
+        };
+        $missing = array_keys(array_filter($required, static fn ($present) => ! $present));
+        if ($missing) {
+            throw ValidationException::withMessages([
+                'attachments' => 'Required supporting documents are missing: '.implode(', ', str_replace('_', ' ', $missing)).'.',
+            ]);
+        }
+        if ($policies->requiresExpenseReceipt() && ! $has(['receipt', 'nota', 'kwitansi', 'invoice', 'faktur', 'proof'])) {
+            throw ValidationException::withMessages(['attachments' => 'A receipt or invoice is required before submission.']);
         }
     }
 
