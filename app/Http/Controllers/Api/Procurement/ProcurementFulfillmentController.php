@@ -470,6 +470,7 @@ class ProcurementFulfillmentController extends Controller
             'supplier_acceptance_name' => $po->supplier_acceptance_name,
             'supplier_acceptance_title' => $po->supplier_acceptance_title,
             'status' => $po->status,
+            'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('po', $po, request()->user()),
             'total_amount' => $po->total_amount,
             'lines' => $po->lines,
         ];
@@ -512,6 +513,7 @@ class ProcurementFulfillmentController extends Controller
             'invoice_date' => $invoice->invoice_date?->toDateString(),
             'due_date' => $invoice->due_date?->toDateString(),
             'status' => $invoice->status,
+            'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('ap', $invoice, request()->user()),
             'match_status' => $invoice->match_status,
             'total_amount' => $invoice->total_amount,
             'lines' => $invoice->lines,

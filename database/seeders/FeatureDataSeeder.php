@@ -231,17 +231,32 @@ class FeatureDataSeeder extends Seeder
         foreach ([['value' => 'bar', 'label' => 'Bar Chart'], ['value' => 'line', 'label' => 'Line Chart'], ['value' => 'donut', 'label' => 'Donut Chart'], ['value' => 'table', 'label' => 'Data Table']] as $row) {
             $put('report_chart_types', ['value' => $row['value']], ['label' => $row['label'], 'enabled' => true]);
         }
+        // Seed one live three-level approval chain for web testing. Level 1
+        // is pending, while levels 2 and 3 remain queued until the previous
+        // level is approved. The workflow service advances current_level and
+        // records action_by/action_at for every completed stage.
         $entity = 'App\\Models\\Expense\\ExpenseRequest';
-        $run = $put('approval_workflow_runs', ['module' => 'expense', 'approvable_type' => $entity, 'approvable_id' => $expenseIds[0] ?? 1], ['status' => 'in_progress', 'current_level' => 1, 'submitted_by' => $finance->id ?? $user->id]);
-        $matrix = DB::table('approval_matrices')->where('module', 'expense')->orderBy('level')->first();
-        $put('approval_workflow_actions', ['approval_workflow_run_id' => $run, 'level' => 1], [
-            'approval_matrix_id' => $matrix?->id,
-            'role_id' => $matrix?->role_id,
-            'user_id' => $matrix?->user_id,
-            'employee_id' => $matrix?->employee_id,
-            'status' => 'pending',
-            'notes' => 'Awaiting approval after Finance Verification.',
-        ]);
+        $run = $put('approval_workflow_runs', ['module' => 'expense', 'approvable_type' => $entity, 'approvable_id' => $expenseIds[0] ?? 1], ['status' => 'in_progress', 'current_level' => 1, 'submitted_by' => $finance->id ?? $user->id, 'completed_at' => null]);
+        $matrices = DB::table('approval_matrices')
+            ->where('module', 'expense')
+            ->where('is_active', true)
+            ->where('level', '<=', 3)
+            ->orderBy('level')
+            ->orderBy('id')
+            ->get()
+            ->unique('level');
+        foreach ($matrices as $matrix) {
+            $put('approval_workflow_actions', ['approval_workflow_run_id' => $run, 'level' => $matrix->level], [
+                'approval_matrix_id' => $matrix->id,
+                'role_id' => $matrix->role_id,
+                'user_id' => $matrix->user_id,
+                'employee_id' => $matrix->employee_id,
+                'status' => (int) $matrix->level === 1 ? 'pending' : 'queued',
+                'action_by' => null,
+                'action_at' => null,
+                'notes' => (int) $matrix->level === 1 ? 'Awaiting approval after Finance Verification.' : 'Queued until the previous approval level is completed.',
+            ]);
+        }
         foreach ([['module' => 'Procurement', 'action' => 'created', 'entity_type' => 'PurchaseRequest', 'entity_id' => 1], ['module' => 'Expenses', 'action' => 'submitted', 'entity_type' => 'ExpenseRequest', 'entity_id' => $expenseIds[0] ?? 1], ['module' => 'Accounting', 'action' => 'posted', 'entity_type' => 'Journal', 'entity_id' => 1], ['module' => 'Timesheet', 'action' => 'approved', 'entity_type' => 'TimesheetEntry', 'entity_id' => 2]] as $row) {
             DB::table('audit_logs')->updateOrInsert(
                 ['module' => $row['module'], 'action' => $row['action'], 'entity_type' => $row['entity_type'], 'entity_id' => $row['entity_id']],

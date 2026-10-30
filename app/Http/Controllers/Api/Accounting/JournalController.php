@@ -431,6 +431,7 @@ class JournalController extends Controller
             'currency_code' => $journal->currency?->code,
             'exchange_rate' => $journal->exchange_rate,
             'status' => $journal->status,
+            'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('journal', $journal, request()->user()),
             'total_debit' => $journal->total_debit,
             'total_credit' => $journal->total_credit,
             'lines' => $journal->lines->map(fn ($line) => [

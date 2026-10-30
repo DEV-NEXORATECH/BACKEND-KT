@@ -406,6 +406,8 @@ class TaxTransactionController extends Controller
 
     private function format(TaxTransaction $item): array
     {
+        $approval = app(ApprovalWorkflowService::class)->progressFor('tax_transaction', $item, request()->user());
+
         return [
             'id' => $item->id,
             'fiscal_year_id' => $item->fiscal_year_id,
@@ -428,6 +430,8 @@ class TaxTransactionController extends Controller
             'e_faktur_number' => $item->e_faktur_number,
             'e_bupot_number' => $item->e_bupot_number,
             'status' => $item->status,
+            'approval' => $approval,
+            'approval_progress' => $approval,
             'notes' => $item->notes,
         ];
     }

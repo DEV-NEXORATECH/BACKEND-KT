@@ -152,6 +152,34 @@ class FiscalYearDemoSeeder extends Seeder
             }
         }
 
+        // Every fiscal year must have the reusable approval chain. This is
+        // intentionally repeated here as well as in MasterDataSeeder so an
+        // operator can safely run only ProcessDataSeeder after deployment.
+        if (Schema::hasTable('approval_matrices')) {
+            $approvalTemplates = DB::table('approval_matrices')
+                ->where('fiscal_year_id', $fy2026)
+                ->whereNull('project_id')
+                ->get();
+            foreach ($approvalTemplates as $template) {
+                $payload = (array) $template;
+                unset($payload['id'], $payload['created_at'], $payload['updated_at']);
+                foreach ([$fy2025, $fy2027] as $targetFiscalYear) {
+                    $payload['fiscal_year_id'] = $targetFiscalYear;
+                    DB::table('approval_matrices')->updateOrInsert([
+                        'module' => $template->module,
+                        'level' => $template->level,
+                        'min_amount' => $template->min_amount,
+                        'max_amount' => $template->max_amount,
+                        'fiscal_year_id' => $targetFiscalYear,
+                        'donor_id' => $template->donor_id,
+                        'department_id' => $template->department_id,
+                        'user_id' => $template->user_id,
+                        'employee_id' => $template->employee_id,
+                    ], array_merge($payload, ['created_at' => $now, 'updated_at' => $now]));
+                }
+            }
+        }
+
         $clone = static function (string $table, array $sourceKeys, array $targetKeys, array $overrides = []) use ($now): ?int {
             if (! Schema::hasTable($table)) return null;
             $source = DB::table($table)->where($sourceKeys)->first();
@@ -255,22 +283,34 @@ class FiscalYearDemoSeeder extends Seeder
                 'description' => $expenseFixture['description'],
             ]);
         }
-        $clone('purchase_requests', ['pr_number' => 'PR-2026-001'], ['pr_number' => 'PR-2025-001'], [
+        $pr2025 = $clone('purchase_requests', ['pr_number' => 'PR-2026-001'], ['pr_number' => 'PR-2025-001'], [
             'pr_number' => 'PR-2025-001', 'fiscal_year_id' => $fy2025, 'request_date' => '2025-02-05',
             'project_id' => $project2025, 'justification' => 'Procure field mapping equipment and workshop supplies for 2025.',
         ]);
-        $clone('purchase_orders', ['po_number' => 'PO-2026-001'], ['po_number' => 'PO-2025-001'], [
-            'po_number' => 'PO-2025-001', 'fiscal_year_id' => $fy2025, 'po_date' => '2025-02-08',
+        $rfq2025 = $clone('rfqs', ['rfq_number' => 'RFQ-2026-001'], ['rfq_number' => 'RFQ-2025-001'], [
+            'rfq_number' => 'RFQ-2025-001', 'fiscal_year_id' => $fy2025, 'purchase_request_id' => $pr2025,
+            'rfq_date' => '2025-02-06', 'submission_deadline' => '2025-02-12',
+        ]);
+        $quotation2025 = $clone('vendor_quotations', ['quotation_number' => 'QTN-2026-001'], ['quotation_number' => 'QTN-2025-001'], [
+            'quotation_number' => 'QTN-2025-001', 'rfq_id' => $rfq2025, 'quotation_date' => '2025-02-10',
+        ]);
+        $cba2025 = $clone('comparative_bid_analyses', ['cba_number' => 'CBA-2026-001'], ['cba_number' => 'CBA-2025-001'], [
+            'cba_number' => 'CBA-2025-001', 'rfq_id' => $rfq2025, 'selected_quotation_id' => $quotation2025,
+            'analysis_date' => '2025-02-12',
+        ]);
+        $po2025 = $clone('purchase_orders', ['po_number' => 'PO-2026-001'], ['po_number' => 'PO-2025-001'], [
+            'po_number' => 'PO-2025-001', 'fiscal_year_id' => $fy2025, 'purchase_request_id' => $pr2025, 'rfq_id' => $rfq2025, 'cba_id' => $cba2025,
+            'po_date' => '2025-02-08',
             'contract_number' => 'CTR-2025-001', 'contract_date' => '2025-02-08',
         ]);
         $clone('goods_receipts', ['grn_number' => 'GRN-2026-001'], ['grn_number' => 'GRN-2025-001'], [
-            'grn_number' => 'GRN-2025-001', 'fiscal_year_id' => $fy2025, 'receipt_date' => '2025-02-20',
+            'grn_number' => 'GRN-2025-001', 'fiscal_year_id' => $fy2025, 'purchase_order_id' => $po2025, 'receipt_date' => '2025-02-20',
         ]);
         $clone('supplier_invoices', ['invoice_number' => 'INV-VND-2026-001'], ['invoice_number' => 'INV-VND-2025-001'], [
-            'invoice_number' => 'INV-VND-2025-001', 'fiscal_year_id' => $fy2025, 'invoice_date' => '2025-02-21', 'due_date' => '2025-03-23',
+            'invoice_number' => 'INV-VND-2025-001', 'fiscal_year_id' => $fy2025, 'purchase_order_id' => $po2025, 'invoice_date' => '2025-02-21', 'due_date' => '2025-03-23',
         ]);
         $clone('supplier_contract_notifications', ['scn_number' => 'SCN-2026-001'], ['scn_number' => 'SCN-2025-001'], [
-            'scn_number' => 'SCN-2025-001', 'fiscal_year_id' => $fy2025, 'notification_date' => '2025-02-25',
+            'scn_number' => 'SCN-2025-001', 'fiscal_year_id' => $fy2025, 'purchase_request_id' => $pr2025, 'purchase_order_id' => $po2025, 'notification_date' => '2025-02-25',
             'subject' => 'Supplier contract notification for 2025.', 'receiving_location' => 'Head Office Bogor',
             'donor_name' => 'Ford Foundation', 'acceptable_for_payment' => true, 'receipt_by_name' => 'Riki Suryandi',
             'receipt_by_position' => 'Procurement & Adm Officer', 'requester_name' => 'Syaifani Auliana Havid',
@@ -363,6 +403,17 @@ class FiscalYearDemoSeeder extends Seeder
             'pr_number' => 'PR-2027-001', 'fiscal_year_id' => $fy2027, 'request_date' => '2027-02-05',
             'justification' => 'Procure field mapping equipment and workshop supplies for 2027.',
         ]);
+        $rfq2027 = $clone('rfqs', ['rfq_number' => 'RFQ-2026-001'], ['rfq_number' => 'RFQ-2027-001'], [
+            'rfq_number' => 'RFQ-2027-001', 'fiscal_year_id' => $fy2027, 'purchase_request_id' => $pr2027,
+            'rfq_date' => '2027-02-06', 'submission_deadline' => '2027-02-12',
+        ]);
+        $quotation2027 = $clone('vendor_quotations', ['quotation_number' => 'QTN-2026-001'], ['quotation_number' => 'QTN-2027-001'], [
+            'quotation_number' => 'QTN-2027-001', 'rfq_id' => $rfq2027, 'quotation_date' => '2027-02-10',
+        ]);
+        $cba2027 = $clone('comparative_bid_analyses', ['cba_number' => 'CBA-2026-001'], ['cba_number' => 'CBA-2027-001'], [
+            'cba_number' => 'CBA-2027-001', 'rfq_id' => $rfq2027, 'selected_quotation_id' => $quotation2027,
+            'analysis_date' => '2027-02-12',
+        ]);
         $sourcePrId = DB::table('purchase_requests')->where('pr_number', 'PR-2026-001')->value('id');
         $sourcePrLine = $sourcePrId ? DB::table('purchase_request_lines')->where('purchase_request_id', $sourcePrId)->first() : null;
         $prLine2027 = null;
@@ -378,7 +429,7 @@ class FiscalYearDemoSeeder extends Seeder
             $prLine2027 = DB::table('purchase_request_lines')->where(['purchase_request_id' => $pr2027, 'item_description' => $line['item_description']])->value('id');
         }
         $po2027 = $clone('purchase_orders', ['po_number' => 'PO-2026-001'], ['po_number' => 'PO-2027-001'], [
-            'po_number' => 'PO-2027-001', 'fiscal_year_id' => $fy2027, 'purchase_request_id' => $pr2027,
+            'po_number' => 'PO-2027-001', 'fiscal_year_id' => $fy2027, 'purchase_request_id' => $pr2027, 'rfq_id' => $rfq2027, 'cba_id' => $cba2027,
             'po_date' => '2027-02-08', 'contract_number' => 'CTR-2027-001', 'contract_date' => '2027-02-08',
         ]);
         $sourcePoId = DB::table('purchase_orders')->where('po_number', 'PO-2026-001')->value('id');

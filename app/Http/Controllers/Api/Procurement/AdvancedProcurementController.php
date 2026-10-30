@@ -358,6 +358,7 @@ class AdvancedProcurementController extends Controller
             'panelist_3_name' => $cba->panelist_3_name,
             'bid_comparison' => $cba->bid_comparison,
             'status' => $cba->status,
+            'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('cba', $cba, request()->user()),
         ];
     }
 }

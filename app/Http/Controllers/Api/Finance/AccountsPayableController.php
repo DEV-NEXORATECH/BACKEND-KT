@@ -748,6 +748,7 @@ class AccountsPayableController extends Controller
             'status' => $invoice->status,
             'match_status' => $invoice->match_status,
             'approval_status' => $approval?->status,
+            'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('ap', $invoice, request()->user()),
             'total_amount' => $invoice->total_amount,
             'paid_amount' => $invoice->paid_amount,
             'outstanding_amount' => round((float) $invoice->total_amount - (float) $invoice->paid_amount, 2),

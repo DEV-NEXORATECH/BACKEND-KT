@@ -1496,6 +1496,78 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
+        // TAX TRANSACTIONS: every PPh/PPN/e-Bupot/e-Faktur transaction must
+        // pass a tax review before it can be reported to DJP. The rule is
+        // intentionally year-scoped and is copied to the other fiscal years
+        // by the cloning block below.
+        ApprovalMatrix::updateOrCreate([
+            'module' => 'tax_transaction',
+            'level' => 1,
+            'min_amount' => 0,
+            'max_amount' => null,
+            'fiscal_year_id' => $fy2026->id,
+        ], [
+            'role_id' => $roleFinanceManager->id,
+            'approver_title' => 'Tax Reviewer / Finance Manager',
+            'is_conditional_project_manager' => false,
+            'description' => 'Review transaksi PPh, PPN, e-Bupot, dan e-Faktur sebelum pelaporan pajak.',
+            'is_active' => true,
+        ]);
+
+        // ACCOUNTING: posting and closing actions are controlled by the same
+        // approval center. Read-only screens such as Dashboard, COA and GL
+        // intentionally do not receive an approval rule.
+        foreach ([
+            ['journal', 'Journal Reviewer / Finance Manager', 'Journal posting and adjustment review.'],
+            ['ap', 'AP Reviewer / Finance Manager', 'Supplier invoice posting review before Accounts Payable is recognized.'],
+            ['ar', 'AR Reviewer / Finance Manager', 'Customer invoice posting review before Accounts Receivable is recognized.'],
+            ['bank_reconciliation', 'Bank Reconciliation Reviewer / Finance Manager', 'Review bank matching and reconciliation before finalizing the bank status.'],
+            ['asset', 'Fixed Asset Reviewer / Finance Manager', 'Review fixed asset capitalization before the capitalization journal is posted.'],
+            ['asset_disposal', 'Fixed Asset Reviewer / Finance Manager', 'Review fixed asset disposal before the disposal journal is posted.'],
+        ] as [$module, $title, $description]) {
+            ApprovalMatrix::updateOrCreate([
+                'module' => $module,
+                'level' => 1,
+                'min_amount' => 0,
+                'max_amount' => 50000000,
+                'fiscal_year_id' => $fy2026->id,
+            ], [
+                'role_id' => $roleFinanceManager->id,
+                'approver_title' => $title,
+                'is_conditional_project_manager' => false,
+                'description' => $description,
+                'is_active' => true,
+            ]);
+
+            ApprovalMatrix::updateOrCreate([
+                'module' => $module,
+                'level' => 2,
+                'min_amount' => 50000001,
+                'max_amount' => null,
+                'fiscal_year_id' => $fy2026->id,
+            ], [
+                'role_id' => $roleDirector->id,
+                'approver_title' => 'Executive Director',
+                'is_conditional_project_manager' => false,
+                'description' => $description.' Nilai di atas Rp 50 Juta memerlukan persetujuan Executive Director.',
+                'is_active' => true,
+            ]);
+        }
+
+        ApprovalMatrix::updateOrCreate([
+            'module' => 'period_closing',
+            'level' => 1,
+            'min_amount' => 0,
+            'max_amount' => null,
+            'fiscal_year_id' => $fy2026->id,
+        ], [
+            'role_id' => $roleFinanceManager->id,
+            'approver_title' => 'Finance Manager / Period Closing Reviewer',
+            'is_conditional_project_manager' => false,
+            'description' => 'Review kelengkapan jurnal dan rekonsiliasi sebelum periode akuntansi ditutup.',
+            'is_active' => true,
+        ]);
+
         // CASH ADVANCE: Tier 1 (Rp 0 - Rp 10 Jt) -> Level 1: Project Manager
         ApprovalMatrix::updateOrCreate([
             'module' => 'cash_advance',
@@ -1610,29 +1682,31 @@ class MasterDataSeeder extends Seeder
             ]);
         }
 
-        // Approval rules are year-scoped. Copy the reusable 2026 rules to 2027
-        // so switching the fiscal-year selector does not leave the new year
-        // without an approval workflow. Project-specific 2026 rules are kept
-        // on their original project and are not copied to another project.
+        // Approval rules are year-scoped. Copy the reusable 2026 rules to
+        // 2025 and 2027 so switching the fiscal-year selector never leaves a
+        // year without an approval workflow. Project-specific rules stay on
+        // their original project and are not copied to another project.
         ApprovalMatrix::query()
             ->where('fiscal_year_id', $fy2026->id)
             ->whereNull('project_id')
             ->get()
-            ->each(function (ApprovalMatrix $matrix) use ($fy2027) {
+            ->each(function (ApprovalMatrix $matrix) use ($fy2025, $fy2027) {
                 $attributes = $matrix->getAttributes();
                 unset($attributes['id'], $attributes['created_at'], $attributes['updated_at']);
-                $attributes['fiscal_year_id'] = $fy2027->id;
-                ApprovalMatrix::updateOrCreate([
-                    'module' => $matrix->module,
-                    'level' => $matrix->level,
-                    'min_amount' => $matrix->min_amount,
-                    'max_amount' => $matrix->max_amount,
-                    'fiscal_year_id' => $fy2027->id,
-                    'donor_id' => $matrix->donor_id,
-                    'department_id' => $matrix->department_id,
-                    'user_id' => $matrix->user_id,
-                    'employee_id' => $matrix->employee_id,
-                ], $attributes);
+                foreach ([$fy2025, $fy2027] as $targetFiscalYear) {
+                    $attributes['fiscal_year_id'] = $targetFiscalYear->id;
+                    ApprovalMatrix::updateOrCreate([
+                        'module' => $matrix->module,
+                        'level' => $matrix->level,
+                        'min_amount' => $matrix->min_amount,
+                        'max_amount' => $matrix->max_amount,
+                        'fiscal_year_id' => $targetFiscalYear->id,
+                        'donor_id' => $matrix->donor_id,
+                        'department_id' => $matrix->department_id,
+                        'user_id' => $matrix->user_id,
+                        'employee_id' => $matrix->employee_id,
+                    ], $attributes);
+                }
             });
 
         // 18. Real Database Transactions for Over-Budget & Warning Alerts

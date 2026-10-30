@@ -169,6 +169,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/v1/project-assignments/{projectAssignment}', [ProjectAssignmentController::class, 'destroy'])->middleware('permission:master-data.manage');
 
     Route::prefix('v1/approval-center')->group(function () {
+        Route::get('/history/{module}/{id}', [ApprovalCenterController::class, 'history']);
         Route::get('/pending', [ApprovalCenterController::class, 'pending'])->middleware('approval-center');
         Route::get('/my-submissions', [ApprovalCenterController::class, 'mySubmissions']);
         Route::post('/batch-action', [ApprovalCenterController::class, 'batchAction'])->middleware('approval-center');

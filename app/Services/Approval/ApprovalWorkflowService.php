@@ -164,6 +164,14 @@ class ApprovalWorkflowService
                 'label' => $action->approvalMatrix?->approver_title ?: ($action->approvalMatrix?->role?->name ?: 'Approval Level '.$action->level),
                 'status' => $action->status,
                 'approver_name' => $action->actionBy?->name ?: $action->actionBy?->employee?->name,
+                'approver_position' => $action->actionBy?->employee?->position_name
+                    ?: $action->actionBy?->employee?->position
+                    ?: $action->actionBy?->employee?->positionMaster?->name
+                    ?: $action->approvalMatrix?->approver_title
+                    ?: ($action->approvalMatrix?->role?->name ?? null),
+                'signature_url' => $action->actionBy?->employee?->signature_path
+                    ? url($action->actionBy->employee->signature_path)
+                    : null,
                 'approved_at' => $action->action_at?->toISOString(),
             ])->values()->all(),
         ];
@@ -171,7 +179,7 @@ class ApprovalWorkflowService
 
     private function runFor(string $module, Model $entity): ?ApprovalWorkflowRun
     {
-        return ApprovalWorkflowRun::query()->with(['actions.approvalMatrix.role', 'actions.actionBy.employee'])->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])->first();
+        return ApprovalWorkflowRun::query()->with(['actions.approvalMatrix.role', 'actions.actionBy.employee.positionMaster'])->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])->first();
     }
 
     private function matricesFor(string $module, Model $entity, float $amount)

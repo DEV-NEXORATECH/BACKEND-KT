@@ -62,4 +62,6 @@ class TimesheetEntry extends Model
     public function activity(): BelongsTo { return $this->belongsTo(Activity::class); }
     public function department(): BelongsTo { return $this->belongsTo(Department::class); }
     public function supervisor(): BelongsTo { return $this->belongsTo(User::class, 'supervisor_id'); }
+    public function submittedBy(): BelongsTo { return $this->belongsTo(User::class, 'submitted_by'); }
+    public function approvedBy(): BelongsTo { return $this->belongsTo(User::class, 'approved_by'); }
 }

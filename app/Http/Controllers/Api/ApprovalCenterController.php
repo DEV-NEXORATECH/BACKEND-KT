@@ -38,6 +38,42 @@ use Illuminate\Support\Facades\DB;
 
 class ApprovalCenterController extends Controller
 {
+    /** Return the approval history for a document from any supported module. */
+    public function history(Request $request, string $module, int $id): JsonResponse
+    {
+        $types = [
+            'expense' => ExpenseRequest::class,
+            'pr' => PurchaseRequest::class,
+            'po' => PurchaseOrder::class,
+            'cba' => ComparativeBidAnalysis::class,
+            'scn' => SupplierContractNotification::class,
+            'journal' => Journal::class,
+            'ap' => SupplierInvoice::class,
+            'ar' => CustomerInvoice::class,
+            'timesheet' => TimesheetEntry::class,
+            'asset' => FixedAsset::class,
+            'asset_disposal' => FixedAsset::class,
+            'tax_transaction' => TaxTransaction::class,
+            'bank_reconciliation' => BankTransaction::class,
+            'period_closing' => AccountingPeriod::class,
+        ];
+        abort_unless(isset($types[$module]), 404, 'Modul approval tidak ditemukan.');
+        $model = $types[$module];
+        $entity = $model::query()->findOrFail($id);
+        $run = ApprovalWorkflowRun::query()->with(['actions.actionBy.employee', 'actions.approvalMatrix.role'])
+            ->where(['module' => $module, 'approvable_type' => $model, 'approvable_id' => $id])->first();
+        if (! $run) return response()->json(['success' => true, 'data' => ['module' => $module, 'document_id' => $id, 'status' => $entity->getAttribute('status') ?: 'draft', 'current_level' => null, 'steps' => []]]);
+        $workflow = app(\App\Services\Approval\ApprovalWorkflowService::class);
+        $progress = $workflow->progressFor($module, $entity, $request->user());
+        return response()->json(['success' => true, 'data' => [
+            'module' => $module, 'document_id' => $id, 'status' => $run->status, 'current_level' => $run->current_level, 'current_stage' => $progress['current_stage'],
+            // progressFor applies the visibility rule: requesters and regular
+            // users see reached stages only, while Super Admin can inspect the
+            // complete chain including queued future stages.
+            'steps' => $progress['steps'],
+        ]]);
+    }
+
     /**
      * Get pending items needing approval across all ERP modules.
      */

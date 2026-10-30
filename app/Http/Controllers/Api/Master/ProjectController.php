@@ -24,7 +24,7 @@ class ProjectController extends BaseMasterController
         // Projects use a many-to-many fiscal-year pivot rather than a direct
         // fiscal_year_id column, so handle the options dropdown explicitly.
         if ($request->boolean('options') && $request->filled('fiscal_year_id')) {
-            $projects = Project::query()
+            $projects = Project::query()->withoutGlobalScope('fiscal_year_context')
                 ->with($this->defaultWith)
                 ->where('is_active', true)
                 ->whereHas('fiscalYears', fn ($query) => $query->whereKey($request->integer('fiscal_year_id')))

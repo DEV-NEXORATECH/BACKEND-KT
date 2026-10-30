@@ -413,6 +413,7 @@ class PurchaseRequestController extends Controller
             'vendor_name' => $purchaseRequest->vendor?->name,
             'justification' => $purchaseRequest->justification,
             'status' => $purchaseRequest->status,
+            'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('procurement', $purchaseRequest, request()->user()),
             'decision_notes' => $purchaseRequest->decision_notes,
             'total_amount' => $purchaseRequest->total_amount,
             'lines' => $purchaseRequest->lines->map(fn ($line) => [

@@ -7,6 +7,7 @@ use App\Models\Procurement\Contract;
 use App\Services\Rbac\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
 class ContractController extends Controller
@@ -169,6 +170,9 @@ class ContractController extends Controller
 
     public function activate(Contract $contract): JsonResponse
     {
+        if ($contract->status !== 'draft') {
+            throw ValidationException::withMessages(['status' => 'Kontrak hanya dapat diaktifkan dari status draft.']);
+        }
         $contract->update(['status' => 'active']);
 
         return response()->json([
@@ -180,6 +184,9 @@ class ContractController extends Controller
 
     public function terminate(Contract $contract): JsonResponse
     {
+        if ($contract->status !== 'active') {
+            throw ValidationException::withMessages(['status' => 'Kontrak hanya dapat dihentikan dari status active.']);
+        }
         $contract->update(['status' => 'terminated']);
 
         return response()->json([

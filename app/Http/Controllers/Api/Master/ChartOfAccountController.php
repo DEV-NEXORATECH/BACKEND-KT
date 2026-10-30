@@ -25,7 +25,7 @@ class ChartOfAccountController extends BaseMasterController
             return parent::index($request);
         }
 
-        $query = ChartOfAccount::with($this->defaultWith)
+        $query = ChartOfAccount::withoutGlobalScope('fiscal_year_context')->with($this->defaultWith)
             ->withSum(['journalLines as posted_debit_total' => function ($query) {
                 $query->whereHas('journal', fn ($journal) => $journal->where('status', 'posted'));
             }], 'debit')
@@ -33,6 +33,9 @@ class ChartOfAccountController extends BaseMasterController
                 $query->whereHas('journal', fn ($journal) => $journal->where('status', 'posted'));
             }], 'credit');
 
+        if ($request->filled('fiscal_year_id')) {
+            $query->where('fiscal_year_id', $request->integer('fiscal_year_id'));
+        }
         $query->applyFilters($request, $this->searchableColumns);
         $perPage = min(100, max(1, (int) $request->query('per_page', 10)));
         $paginated = $query->paginate($perPage);

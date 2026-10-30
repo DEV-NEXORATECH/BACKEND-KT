@@ -373,6 +373,7 @@ class AccountsReceivableController extends Controller
             'currency_code' => $invoice->currency_code,
             'status' => $invoice->status,
             'approval_status' => $approval?->status,
+            'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('ar', $invoice, request()->user()),
             'total_amount' => $invoice->total_amount,
             'received_amount' => $invoice->received_amount,
             'outstanding_amount' => round((float) $invoice->total_amount - (float) $invoice->received_amount, 2),

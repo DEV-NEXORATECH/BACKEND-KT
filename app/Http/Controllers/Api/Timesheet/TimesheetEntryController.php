@@ -31,6 +31,12 @@ class TimesheetEntryController extends Controller
         'program:id,code,name',
         'department:id,code,name',
         'supervisor:id,name,email',
+        'submittedBy:id,name,email,employee_id',
+        'submittedBy.employee:id,name,position,position_id,signature_path',
+        'submittedBy.employee.positionMaster:id,name',
+        'approvedBy:id,name,email,employee_id',
+        'approvedBy.employee:id,name,position,position_id,signature_path',
+        'approvedBy.employee.positionMaster:id,name',
         'fiscalYear:id,year,name',
     ];
 
@@ -685,10 +691,21 @@ class TimesheetEntryController extends Controller
             'journal_id' => $entry->journal_id,
             'supplier_invoice_id' => $entry->supplier_invoice_id,
             'submitted_at' => $entry->submitted_at?->toIso8601String(),
+            'submitted_by_user' => $entry->submittedBy ? [
+                'name' => $entry->submittedBy->name,
+                'position' => $entry->submittedBy->employee?->positionMaster?->name ?: $entry->submittedBy->employee?->position,
+                'signature_url' => $entry->submittedBy->employee?->signature_path ? url($entry->submittedBy->employee->signature_path) : null,
+            ] : null,
             'approved_at' => $entry->approved_at?->toIso8601String(),
+            'approved_by_user' => $entry->approvedBy ? [
+                'name' => $entry->approvedBy->name,
+                'position' => $entry->approvedBy->employee?->positionMaster?->name ?: $entry->approvedBy->employee?->position,
+                'signature_url' => $entry->approvedBy->employee?->signature_path ? url($entry->approvedBy->employee->signature_path) : null,
+            ] : null,
             'rejected_at' => $entry->rejected_at?->toIso8601String(),
             'posted_at' => $entry->posted_at?->toIso8601String(),
             'decision_notes' => $entry->decision_notes,
+            'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('timesheet', $entry, request()->user()),
         ];
     }
 }
