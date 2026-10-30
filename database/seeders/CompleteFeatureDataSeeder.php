@@ -24,7 +24,12 @@ class CompleteFeatureDataSeeder extends Seeder
             ?? DB::table('projects')->orderBy('id')->first();
         $budgetLine = DB::table('budget_lines')->where('line_code', 'BL-FORD-1.1')->first()
             ?? DB::table('budget_lines')->orderBy('id')->first();
-        $expense = DB::table('expense_requests')->orderBy('id')->first();
+        // Settlement/return records must belong to a cash advance, not an
+        // arbitrary reimbursement or supplier payment.
+        $expense = DB::table('expense_requests')
+            ->where('expense_type', 'cash_advance')
+            ->orderBy('id')
+            ->first();
         $purchaseOrder = DB::table('purchase_orders')->orderBy('id')->first();
         $goodsReceipt = DB::table('goods_receipts')->orderBy('id')->first();
         $vendor = DB::table('vendors')->where('code', 'VND-HOTEL-01')->first()

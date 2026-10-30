@@ -104,12 +104,35 @@ class FeatureDataSeeder extends Seeder
         $expenseIds = [];
         foreach ($expenseRows as $row) {
             $expenseIds[] = $put('expense_requests', ['request_number' => $row['ref']], [
-                'external_request_id' => 'SEED-'.$row['ref'], 'requester_id' => $finance->id ?? $user->id, 'donor_id' => $donor?->id, 'grant_agreement_id' => $grant->id, 'program_id' => $program?->id, 'project_id' => $project->id, 'department_id' => $dept?->id, 'funding_source_id' => $grant->funding_source_id ?? null, 'expense_type' => $row['type'], 'request_date' => '2026-03-'.str_pad((string) (10 + count($expenseIds)), 2, '0', STR_PAD_LEFT), 'currency_code' => 'IDR', 'exchange_rate' => 1, 'description' => $row['description'], 'status' => $row['status'], 'paid_amount' => in_array($row['status'], ['approved', 'paid'], true) ? $row['amount'] : 0, 'settled_amount' => $row['type'] === 'settlement_advance' ? $row['amount'] : 0, 'settlement_status' => $row['type'] === 'cash_advance' ? 'outstanding' : ($row['type'] === 'settlement_advance' ? 'settled' : 'not_applicable'), 'settlement_due_date' => '2026-05-31', 'submitted_by' => $finance->id ?? $user->id, 'submitted_at' => $now, 'approved_by' => in_array($row['status'], ['approved', 'paid'], true) ? $budgetHolder->id : null, 'approved_at' => in_array($row['status'], ['approved', 'paid'], true) ? $now : null, 'verified_by' => $finance->id ?? $user->id, 'verified_at' => $now, 'created_by' => $user->id,
+                'fiscal_year_id' => $fy?->id, 'external_request_id' => 'SEED-'.$row['ref'], 'requester_id' => $finance->id ?? $user->id, 'donor_id' => $donor?->id, 'grant_agreement_id' => $grant->id, 'program_id' => $program?->id, 'project_id' => $project->id, 'department_id' => $dept?->id, 'funding_source_id' => $grant->funding_source_id ?? null, 'expense_type' => $row['type'], 'request_date' => '2026-03-'.str_pad((string) (10 + count($expenseIds)), 2, '0', STR_PAD_LEFT), 'currency_code' => 'IDR', 'exchange_rate' => 1, 'description' => $row['description'], 'status' => $row['status'], 'paid_amount' => $row['status'] === 'paid' ? $row['amount'] : 0, 'settled_amount' => $row['type'] === 'settlement_advance' ? $row['amount'] : 0, 'settlement_status' => $row['type'] === 'cash_advance' ? 'outstanding' : ($row['type'] === 'settlement_advance' ? 'settled' : 'not_applicable'), 'settlement_due_date' => '2026-05-31', 'submitted_by' => $finance->id ?? $user->id, 'submitted_at' => $now, 'approved_by' => in_array($row['status'], ['approved', 'paid'], true) ? $budgetHolder->id : null, 'approved_at' => in_array($row['status'], ['approved', 'paid'], true) ? $now : null, 'verified_by' => $finance->id ?? $user->id, 'verified_at' => $now, 'created_by' => $user->id,
             ]);
         }
         foreach ($expenseIds as $index => $expenseId) {
             $row = $expenseRows[$index];
             $put('expense_request_lines', ['expense_request_id' => $expenseId, 'description' => $row['description']], ['expense_category_id' => $expenseCategory?->id, 'budget_line_id' => $budgetLine?->id, 'amount' => $row['amount'], 'line_order' => 1]);
+        }
+        if ($bank && $paymentMethod && ($expenseIds[2] ?? null)) {
+            $expensePayment = $put('payments', ['payment_number' => 'PAY-EXP-2026-003'], [
+                'fiscal_year_id' => $fy?->id,
+                'expense_request_id' => $expenseIds[2],
+                'bank_account_id' => $bank->id,
+                'payment_method_id' => $paymentMethod->id,
+                'payment_date' => '2026-03-20',
+                'amount' => 6000000,
+                'reference' => 'TRF-EXP-20260320-003',
+                'status' => 'paid',
+                'created_by' => $user->id,
+            ]);
+            $put('bank_transactions', ['bank_account_id' => $bank->id, 'reference' => 'TRF-EXP-20260320-003'], [
+                'payment_id' => $expensePayment,
+                'fiscal_year_id' => $fy?->id,
+                'transaction_date' => '2026-03-20',
+                'description' => 'Payment cash advance EXP-2026-003',
+                'debit' => 6000000,
+                'credit' => 0,
+                'status' => 'reconciled',
+                'created_by' => $user->id,
+            ]);
         }
 
         // Keep approved expenses backed by completed approval workflows so
