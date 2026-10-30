@@ -13,6 +13,7 @@ use App\Models\Finance\TaxTransaction;
 use App\Models\Master\BankAccount;
 use App\Models\Notification;
 use App\Models\AuditLog;
+use App\Models\ApprovalWorkflowRun;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\ExpenseCategory;
@@ -32,7 +33,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ExpenseRequestController extends Controller
 {
-    private array $with = ['requester:id,name,email', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'parentExpenseRequest:id,request_number,total_amount,paid_amount,settlement_due_date', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
+    private array $with = ['requester.employee', 'approvedBy.employee', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'parentExpenseRequest:id,request_number,total_amount,paid_amount,settlement_due_date', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
 
     public function index(Request $request): JsonResponse
     {
@@ -905,6 +906,19 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
     private function format(ExpenseRequest $expense): array
     {
         $expense->loadMissing($this->with);
+        $approvalHistory = ApprovalWorkflowRun::query()
+            ->with(['actions.actionBy.employee', 'actions.approvalMatrix.role'])
+            ->where(['module' => 'expense', 'approvable_type' => ExpenseRequest::class, 'approvable_id' => $expense->id])
+            ->first()?->actions
+            ->filter(fn ($action) => $action->status === 'approved')
+            ->map(fn ($action) => [
+                'stage' => $action->approvalMatrix?->approver_title ?: ($action->approvalMatrix?->role?->name ?: 'Approval Level '.$action->level),
+                'approver_name' => $action->actionBy?->name ?: $action->actionBy?->employee?->name,
+                'approver_position' => $action->actionBy?->employee?->position_name ?: $action->approvalMatrix?->approver_title,
+                'signature_url' => $action->actionBy?->employee?->signature_path ? url($action->actionBy->employee->signature_path) : null,
+                'approved_at' => $action->action_at?->toISOString(),
+                'status' => $action->status,
+            ])->values()->all() ?? [];
         $returnedAmount = $expense->relationLoaded('cashAdvanceReturns')
             ? (float) $expense->cashAdvanceReturns->where('status', 'received')->sum('return_amount')
             : (float) $expense->cashAdvanceReturns()->where('status', 'received')->sum('return_amount');
@@ -915,6 +929,12 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'request_number' => $expense->request_number,
             'external_request_id' => $expense->external_request_id,
             'requester_name' => $expense->requester?->name,
+            'requester_position' => $expense->requester?->employee?->position_name ?: $expense->requester?->employee?->position,
+            'requester_signature_url' => $expense->requester?->employee?->signature_path ? url($expense->requester->employee->signature_path) : null,
+            'approver_name' => $expense->approvedBy?->name,
+            'approver_position' => $expense->approvedBy?->employee?->position_name ?: $expense->approvedBy?->employee?->position,
+            'approver_signature_url' => $expense->approvedBy?->employee?->signature_path ? url($expense->approvedBy->employee->signature_path) : null,
+            'approval_history' => $approvalHistory,
             'donor' => $expense->donor ? ['id' => $expense->donor->id, 'code' => $expense->donor->code, 'name' => $expense->donor->name] : null,
             'second_donor' => $expense->secondDonor ? ['id' => $expense->secondDonor->id, 'code' => $expense->secondDonor->code, 'name' => $expense->secondDonor->name] : null,
             'grant' => $expense->grantAgreement ? ['id' => $expense->grantAgreement->id, 'number' => $expense->grantAgreement->grant_no ?? $expense->grantAgreement->agreement_number ?? null, 'title' => $expense->grantAgreement->agreement_name ?? $expense->grantAgreement->title ?? null] : null,

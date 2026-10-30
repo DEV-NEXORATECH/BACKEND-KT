@@ -20,6 +20,7 @@ class Employee extends Model
         'position_id', 'position', 'employment_type', 'contract_total_fee', 'contract_total_days',
         'daily_cost_rate', 'hourly_cost_rate', 'default_rate_scheme',
         'bank_name', 'bank_account_number', 'bank_account_holder',
+        'signature_path',
         'project_bank_name', 'project_bank_account_number',
         'is_active', 'created_by', 'updated_by', 'deleted_by'
     ];

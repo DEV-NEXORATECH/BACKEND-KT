@@ -1193,6 +1193,24 @@ class MasterDataSeeder extends Seeder
 
         ];
 
+        $signatureByEmployeeId = [
+            'ID00012' => 'signatures/abil-achmad-akbar.png',
+            'ID00026' => 'signatures/agetha-tri-lestari.png',
+            'ID00030' => 'signatures/ayu-perwitosari.png',
+            'ID00004' => 'signatures/denny-bhatara.jpg',
+            'ID00005' => 'signatures/munip.png',
+            'ID00022' => 'signatures/renaldi-sastra-kusumah-aji.png',
+            'ID00015' => 'signatures/riki-suryandi.png',
+            'ID00002' => 'signatures/sarah-rosemery-megumi.png',
+            'ID00027' => 'signatures/winda-apriyani.png',
+            'ID00019' => 'signatures/ziadatunnisa-ilmi-latifa.png',
+            'ID00017' => 'signatures/zufar-fauzan-erimant.png',
+            'ID00035' => 'signatures/irbah-miftakhul-huda.png',
+            'ID00034' => 'signatures/arif-candra-prasetya.png',
+            'ID00037' => 'signatures/winda-astuti.png',
+            'ID00038' => 'signatures/kwee-viena-lestari-tanjung.jpeg',
+        ];
+
         foreach ($employeesList as $empData) {
             $position = Position::withTrashed()->updateOrCreate([
                 'name' => $empData['position'],
@@ -1204,7 +1222,7 @@ class MasterDataSeeder extends Seeder
             ]);
             Employee::updateOrCreate(
                 ['employee_id_number' => $empData['employee_id_number']],
-                [...$empData, 'position_id' => $position->id, 'is_active' => true]
+                [...$empData, 'signature_path' => $signatureByEmployeeId[$empData['employee_id_number']] ?? null, 'position_id' => $position->id, 'is_active' => true]
             );
         }
 

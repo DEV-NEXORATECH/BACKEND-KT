@@ -15,6 +15,7 @@ class EmployeeResource extends JsonResource
         return [
             ...parent::toArray($request),
             'position_name' => $this->positionMaster?->name ?? $this->position,
+            'signature_url' => $this->signature_path ? url($this->signature_path) : null,
         ];
     }
 }

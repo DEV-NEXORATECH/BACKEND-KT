@@ -17,6 +17,7 @@ class FeatureDataSeeder extends Seeder
         $user = DB::table('users')->where('email', 'admin@kaoemtelapak.test')->first()
             ?? DB::table('users')->orderBy('id')->first();
         $finance = DB::table('users')->where('email', 'syaifani.havid@kaoemtelapak.org')->first() ?? $user;
+        $budgetHolder = DB::table('users')->where('email', 'abil.akbar@kaoemtelapak.org')->first() ?? $user;
         $project = DB::table('projects')->where('code', 'PRJ-2026-FORD-01')->first();
         $project2 = DB::table('projects')->where('code', 'PRJ-2027-FORD-01')->first() ?? $project;
         $grant = DB::table('grant_agreements')->where('grant_no', 'GRT-2026-FORD-01')->first();
@@ -102,12 +103,31 @@ class FeatureDataSeeder extends Seeder
         $expenseIds = [];
         foreach ($expenseRows as $row) {
             $expenseIds[] = $put('expense_requests', ['request_number' => $row['ref']], [
-                'external_request_id' => 'SEED-'.$row['ref'], 'requester_id' => $finance->id ?? $user->id, 'donor_id' => $donor?->id, 'grant_agreement_id' => $grant->id, 'program_id' => $program?->id, 'project_id' => $project->id, 'department_id' => $dept?->id, 'funding_source_id' => $grant->funding_source_id ?? null, 'expense_type' => $row['type'], 'request_date' => '2026-03-'.str_pad((string) (10 + count($expenseIds)), 2, '0', STR_PAD_LEFT), 'currency_code' => 'IDR', 'exchange_rate' => 1, 'description' => $row['description'], 'status' => $row['status'], 'paid_amount' => in_array($row['status'], ['approved', 'paid'], true) ? $row['amount'] : 0, 'settled_amount' => $row['type'] === 'settlement_advance' ? $row['amount'] : 0, 'settlement_status' => $row['type'] === 'cash_advance' ? 'outstanding' : ($row['type'] === 'settlement_advance' ? 'settled' : 'not_applicable'), 'settlement_due_date' => '2026-05-31', 'submitted_by' => $finance->id ?? $user->id, 'submitted_at' => $now, 'approved_by' => in_array($row['status'], ['approved', 'paid'], true) ? $user->id : null, 'approved_at' => in_array($row['status'], ['approved', 'paid'], true) ? $now : null, 'verified_by' => $finance->id ?? $user->id, 'verified_at' => $now, 'created_by' => $user->id,
+                'external_request_id' => 'SEED-'.$row['ref'], 'requester_id' => $finance->id ?? $user->id, 'donor_id' => $donor?->id, 'grant_agreement_id' => $grant->id, 'program_id' => $program?->id, 'project_id' => $project->id, 'department_id' => $dept?->id, 'funding_source_id' => $grant->funding_source_id ?? null, 'expense_type' => $row['type'], 'request_date' => '2026-03-'.str_pad((string) (10 + count($expenseIds)), 2, '0', STR_PAD_LEFT), 'currency_code' => 'IDR', 'exchange_rate' => 1, 'description' => $row['description'], 'status' => $row['status'], 'paid_amount' => in_array($row['status'], ['approved', 'paid'], true) ? $row['amount'] : 0, 'settled_amount' => $row['type'] === 'settlement_advance' ? $row['amount'] : 0, 'settlement_status' => $row['type'] === 'cash_advance' ? 'outstanding' : ($row['type'] === 'settlement_advance' ? 'settled' : 'not_applicable'), 'settlement_due_date' => '2026-05-31', 'submitted_by' => $finance->id ?? $user->id, 'submitted_at' => $now, 'approved_by' => in_array($row['status'], ['approved', 'paid'], true) ? $budgetHolder->id : null, 'approved_at' => in_array($row['status'], ['approved', 'paid'], true) ? $now : null, 'verified_by' => $finance->id ?? $user->id, 'verified_at' => $now, 'created_by' => $user->id,
             ]);
         }
         foreach ($expenseIds as $index => $expenseId) {
             $row = $expenseRows[$index];
             $put('expense_request_lines', ['expense_request_id' => $expenseId, 'description' => $row['description']], ['expense_category_id' => $expenseCategory?->id, 'budget_line_id' => $budgetLine?->id, 'amount' => $row['amount'], 'line_order' => 1]);
+        }
+
+        // Keep one approved expense backed by a completed approval workflow so
+        // the approval-center PDF can be tested with real approver names,
+        // timestamps, and seeded employee signatures.
+        $approvedExpenseId = $expenseIds[1] ?? null;
+        if ($approvedExpenseId) {
+            $workflowEntity = 'App\\Models\\Expense\\ExpenseRequest';
+            $matrices = DB::table('approval_matrices')->where('module', 'expense')->where('is_active', true)->orderBy('level')->orderBy('id')->get();
+            $runId = $put('approval_workflow_runs', ['module' => 'expense', 'approvable_type' => $workflowEntity, 'approvable_id' => $approvedExpenseId], [
+                'status' => 'approved', 'current_level' => (int) ($matrices->max('level') ?: 1), 'submitted_by' => $finance->id ?? $user->id, 'completed_at' => $now,
+            ]);
+            foreach ($matrices as $matrix) {
+                $put('approval_workflow_actions', ['approval_workflow_run_id' => $runId, 'approval_matrix_id' => $matrix->id], [
+                    'level' => $matrix->level, 'role_id' => $matrix->role_id, 'user_id' => $matrix->user_id,
+                    'employee_id' => $matrix->employee_id, 'status' => 'approved', 'action_by' => $budgetHolder->id,
+                    'action_at' => $now, 'notes' => 'Seeded approved workflow for PDF testing.',
+                ]);
+            }
         }
 
         // Procurement chain: PR -> PO -> GRN -> supplier invoice -> payment -> bank movement -> SCN.
