@@ -30,6 +30,7 @@ use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierContractNotification;
 use App\Models\Procurement\SupplierInvoice;
+use App\Models\Procurement\ProcurementWaiver;
 use App\Models\ProjectAssignment;
 use App\Models\Timesheet\TimesheetEntry;
 use Illuminate\Http\JsonResponse;
@@ -59,22 +60,24 @@ class ApprovalCenterController extends Controller
             'settlement' => ExpenseRequest::class,
             'budget_reallocation' => BudgetReallocation::class,
             'payment' => ExpenseRequest::class,
+            'waiver' => ProcurementWaiver::class,
         ];
         abort_unless(isset($types[$module]), 404, 'Modul approval tidak ditemukan.');
         $model = $types[$module];
         $entity = $model::query()->findOrFail($id);
+        $workflowModule = $module === 'pr' ? 'procurement' : $module;
         $run = ApprovalWorkflowRun::query()->with(['actions.actionBy.employee', 'actions.approvalMatrix.role', 'events.actor.employee.positionMaster'])
-            ->where(['module' => $module, 'approvable_type' => $model, 'approvable_id' => $id])->first();
-        if (! $run) return response()->json(['success' => true, 'data' => ['module' => $module, 'document_id' => $id, 'status' => $entity->getAttribute('status') ?: 'draft', 'current_level' => null, 'steps' => []]]);
+            ->where(['module' => $workflowModule, 'approvable_type' => $model, 'approvable_id' => $id])->first();
         $workflow = app(\App\Services\Approval\ApprovalWorkflowService::class);
-        $progress = $workflow->progressFor($module, $entity, $request->user());
+        $progress = $workflow->progressFor($workflowModule, $entity, $request->user());
+        $events = $run?->events ?? collect();
         return response()->json(['success' => true, 'data' => [
-            'module' => $module, 'document_id' => $id, 'status' => $run->status, 'current_level' => $run->current_level, 'current_stage' => $progress['current_stage'],
+            'module' => $module, 'document_id' => $id, 'status' => ($progress['status'] ?? $entity->getAttribute('status')) ?: 'draft', 'current_level' => $progress['current_level'], 'current_stage' => $progress['current_stage'],
             // progressFor applies the visibility rule: requesters and regular
             // users see reached stages only, while Super Admin can inspect the
             // complete chain including queued future stages.
             'steps' => $progress['steps'],
-            'events' => $run->events->map(fn ($event) => [
+            'events' => $events->map(fn ($event) => [
                 'event' => $event->event,
                 'version' => $event->version,
                 'from_level' => $event->from_level,
@@ -109,15 +112,17 @@ class ApprovalCenterController extends Controller
             'settlement' => ExpenseRequest::class, 'period_closing' => AccountingPeriod::class,
             'budget_reallocation' => BudgetReallocation::class,
             'payment' => ExpenseRequest::class,
+            'waiver' => ProcurementWaiver::class,
         ];
         abort_unless(isset($types[$data['module']]), 404, 'Modul approval tidak ditemukan.');
         $model = $types[$data['module']];
+        $workflowModule = $data['module'] === 'pr' ? 'procurement' : $data['module'];
         if ($data['module'] === 'payment') {
             $model = ($data['entity_type'] ?? '') === SupplierInvoice::class ? SupplierInvoice::class : ExpenseRequest::class;
         }
         $entity = $model::query()->findOrFail($data['id']);
         $result = app(\App\Services\Approval\ApprovalWorkflowService::class)->returnToLevel(
-            $data['module'], $entity, $request->user(), (int) $data['target_level'], $data['notes']
+            $workflowModule, $entity, $request->user(), (int) $data['target_level'], $data['notes']
         );
 
         return response()->json(['success' => true, 'message' => $result['message'], 'data' => $result]);
@@ -461,6 +466,31 @@ class ApprovalCenterController extends Controller
             }
         }
 
+        // Procurement waivers use the same sequential approval chain as PRs.
+        if (! $moduleFilter || $moduleFilter === 'waiver') {
+            if ($user->hasAnyPermission(['procurement.pr.approve'])) {
+                $waivers = ProcurementWaiver::with(['project', 'vendor'])
+                    ->whereIn('status', ['pending', 'submitted'])
+                    ->latest('id')->get()
+                    ->map(fn (ProcurementWaiver $waiver) => [
+                        'id' => $waiver->id,
+                        'module' => 'waiver',
+                        'module_label' => 'Procurement Waiver / Justification',
+                        'reference_number' => $waiver->waiver_number ?? 'WVR-'.$waiver->id,
+                        'request_date' => $waiver->date?->toDateString() ?? $waiver->created_at?->toDateString(),
+                        'title_summary' => $waiver->description ?? $waiver->justification ?? 'Permohonan waiver procurement',
+                        'amount' => (float) $waiver->total_amount,
+                        'currency' => 'IDR',
+                        'requester_name' => 'Procurement Staff',
+                        'department_name' => null,
+                        'project_name' => $waiver->project?->name ?? $waiver->project_name,
+                        'status' => $waiver->status,
+                        'created_at' => $waiver->created_at?->toISOString(),
+                    ]);
+                $items = $items->concat($waivers);
+            }
+        }
+
         // 10. Fixed Assets
         if (! $moduleFilter || $moduleFilter === 'asset') {
             if ($user->hasAnyPermission(['asset.capitalize'])) {
@@ -632,6 +662,7 @@ class ApprovalCenterController extends Controller
         $arController = app(AccountsReceivableController::class);
         $budgetReallocationController = app(BudgetReallocationController::class);
         $periodController = app(AccountingPeriodController::class);
+        $waiverController = app(\App\Http\Controllers\Api\Procurement\ProcurementWaiverController::class);
 
         foreach ($validated['items'] as $item) {
             $module = $item['module'];
@@ -692,6 +723,19 @@ class ApprovalCenterController extends Controller
                                 $scnController->issue($request, $scn, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
                                 $scnController->cancel($scn);
+                            }
+                            $processedCount++;
+                        }
+                        break;
+
+                    case 'waiver':
+                        $waiver = ProcurementWaiver::find($id);
+                        if ($waiver) {
+                            $request->merge(['notes' => $validated['notes'] ?? null]);
+                            if ($action === 'approve') {
+                                $waiverController->approve($request, $waiver, app(\App\Services\Approval\ApprovalWorkflowService::class));
+                            } else {
+                                $waiverController->reject($request, $waiver, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             }
                             $processedCount++;
                         }
@@ -869,6 +913,7 @@ class ApprovalCenterController extends Controller
             'period_closing' => 'settings.manage',
             'budget_reallocation' => 'budget.approve',
             'payment' => 'ap.pay',
+            'waiver' => 'procurement.pr.approve',
         };
     }
 }

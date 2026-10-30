@@ -51,6 +51,7 @@ class ApprovalMatrixResource extends JsonResource
             'user_name' => $this->user?->name,
             'employee_id' => $this->employee_id,
             'employee_name' => $this->employee?->name,
+            'employee_position' => $this->employee?->position,
             'approver_title' => $this->approver_title,
             'approver_display' => $approverLabel,
             'project_id' => $this->project_id,

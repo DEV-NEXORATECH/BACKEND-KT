@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Procurement;
 use App\Http\Controllers\Controller;
 use App\Models\Procurement\ProcurementWaiver;
 use App\Models\Procurement\PurchaseRequest;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -213,8 +214,19 @@ class ProcurementWaiverController extends Controller
         ]);
     }
 
-    public function approve(Request $request, ProcurementWaiver $waiver): JsonResponse
+    public function approve(Request $request, ProcurementWaiver $waiver, ApprovalWorkflowService $workflow): JsonResponse
     {
+        $run = $workflow->start('waiver', $waiver, (float) $waiver->total_amount, $request->user()?->id);
+        if ($run) {
+            $approval = $workflow->approve('waiver', $waiver, $request->user(), $request->input('notes'));
+            if (! $approval['completed']) {
+                return response()->json([
+                    'success' => true,
+                    'message' => "Waiver approval tahap selesai. Menunggu approver level {$approval['next_level']}.",
+                    'data' => $waiver->fresh($this->with),
+                ]);
+            }
+        }
         $waiver->update([
             'status' => 'approved',
             'approved_by' => $request->user()?->id,
@@ -233,8 +245,9 @@ class ProcurementWaiverController extends Controller
         ]);
     }
 
-    public function reject(Request $request, ProcurementWaiver $waiver): JsonResponse
+    public function reject(Request $request, ProcurementWaiver $waiver, ApprovalWorkflowService $workflow): JsonResponse
     {
+        $workflow->reject('waiver', $waiver, $request->user(), $request->input('notes') ?: 'Waiver ditolak.');
         $waiver->update([
             'status' => 'rejected',
             'notes' => $request->input('notes'),

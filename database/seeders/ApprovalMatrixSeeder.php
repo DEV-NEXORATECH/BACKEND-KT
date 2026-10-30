@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Master\ApprovalMatrix;
 use App\Models\Master\FiscalYear;
 use App\Models\Role;
+use App\Models\User;
 use App\Models\ApprovalWorkflowAction;
 use App\Models\ApprovalWorkflowRun;
 use Illuminate\Database\Seeder;
@@ -29,10 +30,22 @@ class ApprovalMatrixSeeder extends Seeder
 
         $roles = [
             'project' => Role::firstOrCreate(['slug' => 'project-manager'], ['name' => 'Project Manager']),
+            'finance_officer' => Role::firstOrCreate(['slug' => 'finance-officer'], ['name' => 'Finance Officer']),
             'finance' => Role::firstOrCreate(['slug' => 'finance-manager'], ['name' => 'Finance Manager']),
-            'director' => Role::firstOrCreate(['slug' => 'executive-director'], ['name' => 'Executive Director']),
-            'board' => Role::firstOrCreate(['slug' => 'board-director'], ['name' => 'Board of Trustees']),
         ];
+
+        // Bind the seeded approval chain to the real login accounts and their
+        // employee records so web/PWA previews show the actual approver.
+        $approvers = collect([
+            'abil' => 'abil.akbar@kaoemtelapak.org',
+            'denny' => 'denny.bhatara@kaoemtelapak.org',
+            'sarah' => 'sarah.megumi@kaoemtelapak.org',
+            'riki' => 'riki.suryandi@kaoemtelapak.org',
+            'winda' => 'winda.apriani@kaoemtelapak.org',
+            'siti' => 'siti@contoh.org',
+            'budi' => 'budi@contoh.org',
+            'syaifani' => 'syaifani.havid@kaoemtelapak.org',
+        ])->mapWithKeys(fn (string $email, string $key) => [$key => User::with('employee')->where('email', $email)->first()]);
 
         // Only generic rows are replaced. Donor/project/department-specific
         // overrides remain intact and continue to take precedence.
@@ -45,6 +58,7 @@ class ApprovalMatrixSeeder extends Seeder
             'cba' => 'Competitive Bid Analysis',
             'po' => 'Purchase Order',
             'scn' => 'Supplier Contract Notification',
+            'waiver' => 'Procurement Waiver / Justification',
             'ap' => 'Supplier Invoice / Accounts Payable',
             'payment' => 'Payment',
             'ar' => 'Customer Invoice / Accounts Receivable',
@@ -56,6 +70,32 @@ class ApprovalMatrixSeeder extends Seeder
             'tax_transaction' => 'Tax Transaction',
             'timesheet' => 'Timesheet',
             'budget_reallocation' => 'Budget Reallocation',
+        ];
+
+        // Deliberately vary the seeded approvers by module for UAT. The
+        // approval order remains level 1 -> level 2 -> level 3, while each
+        // transaction family can be tested with a different chain.
+        $moduleApprovers = [
+            'expense' => ['abil', 'winda', 'syaifani'],
+            'cash_advance' => ['denny', 'siti', 'syaifani'],
+            'reimbursement' => ['sarah', 'winda', 'budi'],
+            'settlement' => ['denny', 'siti', 'syaifani'],
+            'procurement' => ['denny', 'winda', 'syaifani'],
+            'cba' => ['riki', 'winda', 'budi'],
+            'po' => ['sarah', 'winda', 'syaifani'],
+            'scn' => ['riki', 'siti', 'budi'],
+            'waiver' => ['denny', 'winda', 'syaifani'],
+            'ap' => ['riki', 'siti', 'syaifani'],
+            'payment' => ['sarah', 'winda', 'syaifani'],
+            'ar' => ['denny', 'siti', 'budi'],
+            'journal' => ['sarah', 'winda', 'syaifani'],
+            'bank_reconciliation' => ['denny', 'siti', 'syaifani'],
+            'asset' => ['abil', 'winda', 'syaifani'],
+            'asset_disposal' => ['denny', 'siti', 'syaifani'],
+            'period_closing' => ['sarah', 'winda', 'syaifani'],
+            'tax_transaction' => ['denny', 'siti', 'syaifani'],
+            'timesheet' => ['abil', 'siti', 'syaifani'],
+            'budget_reallocation' => ['denny', 'winda', 'syaifani'],
         ];
 
         ApprovalMatrix::query()
@@ -75,14 +115,15 @@ class ApprovalMatrixSeeder extends Seeder
 
         $levels = [
             [1, 0, $roles['project'], 'Project Manager / Budget Holder'],
-            [2, 5000001, $roles['finance'], 'Finance Manager'],
-            [3, 25000001, $roles['director'], 'Executive Director'],
-            [4, 100000001, $roles['board'], 'Board of Trustees'],
+            [2, 5000001, $roles['finance_officer'], 'Finance Officer'],
+            [3, 25000001, $roles['finance'], 'Finance Manager'],
         ];
 
         foreach ($years as $year => $fiscalYearId) {
             foreach ($modules as $module => $label) {
                 foreach ($levels as [$level, $minAmount, $role, $title]) {
+                    $approverKey = $moduleApprovers[$module][$level - 1] ?? null;
+                    $approver = $approverKey ? $approvers->get($approverKey) : null;
                     ApprovalMatrix::create([
                         'fiscal_year_id' => $fiscalYearId,
                         'module' => $module,
@@ -90,6 +131,8 @@ class ApprovalMatrixSeeder extends Seeder
                         'min_amount' => $minAmount,
                         'max_amount' => null,
                         'role_id' => $role->id,
+                        'user_id' => $approver?->id,
+                        'employee_id' => $approver?->employee_id,
                         'approver_title' => $title,
                         'is_conditional_project_manager' => $level === 1,
                         'description' => sprintf('%s level %d untuk nominal mulai Rp %s. Level approval sebelumnya wajib selesai lebih dahulu.', $label, $level, number_format($minAmount, 0, ',', '.')),

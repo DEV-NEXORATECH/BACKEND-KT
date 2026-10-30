@@ -217,6 +217,27 @@ class ApprovalWorkflowService
                     ])->values()->all(),
                 ];
             }
+            if ($matrices->isNotEmpty()) {
+                return [
+                    'status' => $entity->getAttribute('status') ?: 'draft',
+                    'current_level' => 1,
+                    'current_stage' => $matrices->first()?->approver_title ?: ($matrices->first()?->role?->name ?? 'Approval Level 1'),
+                    'completed_count' => 0,
+                    'total_count' => $matrices->count(),
+                    'steps' => $matrices->map(function ($matrix, $index) {
+                        $approver = $matrix->user?->name ?: $matrix->employee?->name;
+                        return [
+                            'level' => (int) $matrix->level,
+                            'label' => $matrix->approver_title ?: ($matrix->role?->name ?: 'Approval Level '.$matrix->level),
+                            'status' => $index === 0 ? 'pending' : 'upcoming',
+                            'approver_name' => $approver,
+                            'approver_position' => $matrix->employee?->position ?: $matrix->approver_title ?: $matrix->role?->name,
+                            'signature_url' => $matrix->employee?->signature_path ? url($matrix->employee->signature_path) : null,
+                            'approved_at' => null,
+                        ];
+                    })->values()->all(),
+                ];
+            }
             return [
                 'status' => $entity->getAttribute('status') ?: 'draft',
                 'current_level' => null,
@@ -256,7 +277,10 @@ class ApprovalWorkflowService
                 'level' => (int) $action->level,
                 'label' => $matrix?->approver_title ?: ($matrix?->role?->name ?: 'Approval Level '.$action->level),
                 'status' => $action->status,
-                'approver_name' => $action->actionBy?->name ?: $action->actionBy?->employee?->name,
+                'approver_name' => $action->actionBy?->name
+                    ?: $action->actionBy?->employee?->name
+                    ?: $matrix?->user?->name
+                    ?: $matrix?->employee?->name,
                 'approver_position' => $action->actionBy?->employee?->position_name
                     ?: $action->actionBy?->employee?->position
                     ?: $action->actionBy?->employee?->positionMaster?->name
@@ -273,7 +297,12 @@ class ApprovalWorkflowService
 
     private function runFor(string $module, Model $entity): ?ApprovalWorkflowRun
     {
-        return ApprovalWorkflowRun::query()->with(['actions.approvalMatrix.role', 'actions.actionBy.employee.positionMaster'])->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])->first();
+        return ApprovalWorkflowRun::query()->with([
+            'actions.approvalMatrix.role',
+            'actions.approvalMatrix.user.employee.positionMaster',
+            'actions.approvalMatrix.employee.positionMaster',
+            'actions.actionBy.employee.positionMaster',
+        ])->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])->first();
     }
 
     private function matricesFor(string $module, Model $entity, float $amount)
