@@ -276,7 +276,14 @@ class ExpenseRequestController extends Controller
     public function verify(Request $request, ExpenseRequest $expenseRequest): JsonResponse
     {
         if ($expenseRequest->status !== 'submitted') throw ValidationException::withMessages(['status' => 'Expense harus submitted untuk verifikasi.']);
-        $expenseRequest->update(['status' => 'verified', 'verified_by' => $request->user()->id, 'verified_at' => now(), 'decision_notes' => $request->input('notes')]);
+        $checklist = $request->input('checklist', []);
+        $requiredChecks = ['document_complete', 'budget_available', 'coa_valid', 'funding_valid', 'supporting_document_attached'];
+        $missingChecks = collect($requiredChecks)->filter(fn ($key) => ($checklist[$key] ?? false) !== true)->values()->all();
+        if ($missingChecks) {
+            throw ValidationException::withMessages(['checklist' => 'Semua checklist Finance wajib dicentang sebelum verifikasi.']);
+        }
+        $cdv = $expenseRequest->cdv_number ?: sprintf('CDV-%s-%06d', $expenseRequest->fiscalYear?->year ?: now()->year, $expenseRequest->id);
+        $expenseRequest->forceFill(['status' => 'verified', 'verified_by' => $request->user()->id, 'verified_at' => now(), 'verification_checklist' => json_encode($checklist), 'cdv_number' => $cdv, 'decision_notes' => $request->input('notes')])->save();
         return response()->json(['success' => true, 'message' => 'Expense berhasil diverifikasi Finance.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
     }
 
@@ -978,6 +985,8 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'expense_type' => $expense->expense_type,
             'payment_type' => $expense->payment_type ?? 'Transfer',
             'voucher_number' => $expense->voucher_number,
+            'cdv_number' => $expense->cdv_number,
+            'verification_checklist' => is_array($expense->verification_checklist) ? $expense->verification_checklist : (json_decode((string) $expense->verification_checklist, true) ?: []),
             'activity_start_date' => $expense->activity_start_date?->toDateString(),
             'activity_end_date' => $expense->activity_end_date?->toDateString(),
             'category_mismatch_flag' => (bool) $expense->category_mismatch_flag,
