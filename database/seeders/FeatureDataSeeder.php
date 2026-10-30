@@ -99,6 +99,7 @@ class FeatureDataSeeder extends Seeder
             ['ref' => 'EXP-2026-002', 'type' => 'supplier_payment', 'status' => 'approved', 'amount' => 4200000, 'description' => 'Printing and workshop materials.'],
             ['ref' => 'EXP-2026-003', 'type' => 'cash_advance', 'status' => 'paid', 'amount' => 6000000, 'description' => 'Field activity cash advance for West Kalimantan.'],
             ['ref' => 'EXP-2026-004', 'type' => 'settlement_advance', 'status' => 'verified', 'amount' => 2750000, 'description' => 'Settlement of field travel advance.'],
+            ['ref' => 'EXP-2026-005', 'type' => 'reimbursement', 'status' => 'approved', 'amount' => 3150000, 'description' => 'Approved field coordination and local transport reimbursement.'],
         ];
         $expenseIds = [];
         foreach ($expenseRows as $row) {
@@ -111,13 +112,14 @@ class FeatureDataSeeder extends Seeder
             $put('expense_request_lines', ['expense_request_id' => $expenseId, 'description' => $row['description']], ['expense_category_id' => $expenseCategory?->id, 'budget_line_id' => $budgetLine?->id, 'amount' => $row['amount'], 'line_order' => 1]);
         }
 
-        // Keep one approved expense backed by a completed approval workflow so
-        // the approval-center PDF can be tested with real approver names,
+        // Keep approved expenses backed by completed approval workflows so
+        // the approval center and PDF can be tested with real approver names,
         // timestamps, and seeded employee signatures.
-        $approvedExpenseId = $expenseIds[1] ?? null;
-        if ($approvedExpenseId) {
+        $seedCompletedExpenseWorkflow = function (?int $approvedExpenseId, float $approvedAmount) use ($put, $now, $user, $finance, $budgetHolder): void {
+            if (! $approvedExpenseId) {
+                return;
+            }
             $workflowEntity = 'App\\Models\\Expense\\ExpenseRequest';
-            $approvedAmount = 4200000;
             $matrixQuery = DB::table('approval_matrices')
                 ->where('module', 'expense')
                 ->where('is_active', true)
@@ -154,7 +156,9 @@ class FeatureDataSeeder extends Seeder
                     'action_at' => $now, 'notes' => 'Seeded approved workflow for PDF testing.',
                 ]);
             }
-        }
+        };
+        $seedCompletedExpenseWorkflow($expenseIds[1] ?? null, 4200000);
+        $seedCompletedExpenseWorkflow($expenseIds[4] ?? null, 3150000);
 
         // Procurement chain: PR -> PO -> GRN -> supplier invoice -> payment -> bank movement -> SCN.
         if ($vendor && $budgetLine) {
