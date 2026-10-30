@@ -32,20 +32,23 @@ class ExpenseChartOfAccountsSeeder extends Seeder
 
         $created = [];
         foreach ($accounts as $account) {
-            $parentId = $account['parent_code'] ? (($created[$account['parent_code']] ?? null)?->id ?? ChartOfAccount::where('code', $account['parent_code'])->value('id')) : null;
-            $created[$account['code']] = ChartOfAccount::withTrashed()->updateOrCreate(
-                ['code' => $account['code']],
-                [
-                    'name' => $account['name'],
-                    'account_type' => $account['account_type'],
-                    'normal_balance' => $account['normal_balance'],
-                    'level' => $account['level'],
-                    'is_header' => $account['is_header'],
-                    'parent_id' => $parentId,
-                    'is_active' => true,
-                    'deleted_at' => null,
-                ],
-            );
+            $parentId = $account['parent_code']
+                ? (($created[$account['parent_code']] ?? null)?->id
+                    ?? ChartOfAccount::withoutGlobalScopes()->withTrashed()->where('code', $account['parent_code'])->value('id'))
+                : null;
+            $coa = ChartOfAccount::withoutGlobalScopes()->withTrashed()->firstOrNew(['code' => $account['code']]);
+            $coa->fill([
+                'name' => $account['name'],
+                'account_type' => $account['account_type'],
+                'normal_balance' => $account['normal_balance'],
+                'level' => $account['level'],
+                'is_header' => $account['is_header'],
+                'parent_id' => $parentId,
+                'is_active' => true,
+                'deleted_at' => null,
+            ]);
+            $coa->save();
+            $created[$account['code']] = $coa;
         }
 
         $lineMappings = [
@@ -55,7 +58,7 @@ class ExpenseChartOfAccountsSeeder extends Seeder
             'BL-FORD-2027-1.1' => '5100',
         ];
         foreach ($lineMappings as $lineCode => $coaCode) {
-            $coaId = $created[$coaCode]?->id ?? ChartOfAccount::where('code', $coaCode)->value('id');
+            $coaId = $created[$coaCode]?->id ?? ChartOfAccount::withoutGlobalScopes()->withTrashed()->where('code', $coaCode)->value('id');
             if ($coaId) BudgetLine::where('line_code', $lineCode)->update(['gl_account_id' => $coaId, 'cost_type' => $coaCode]);
         }
 
@@ -65,7 +68,7 @@ class ExpenseChartOfAccountsSeeder extends Seeder
             'BCAT-300' => '5300',
         ];
         foreach ($categoryMappings as $code => $coaCode) {
-            $coaId = $created[$coaCode]?->id ?? ChartOfAccount::where('code', $coaCode)->value('id');
+            $coaId = $created[$coaCode]?->id ?? ChartOfAccount::withoutGlobalScopes()->withTrashed()->where('code', $coaCode)->value('id');
             if ($coaId) ExpenseCategory::where('code', $code)->update(['default_gl_account_id' => $coaId, 'cost_type' => $coaCode]);
         }
 
@@ -83,7 +86,7 @@ class ExpenseChartOfAccountsSeeder extends Seeder
                 throw new RuntimeException("Budget Line {$line->line_code} belum memiliki mapping COA eksplisit untuk kategori {$categoryCode}. Tambahkan mapping sebelum menjalankan seeder.");
             }
             $coaCode = $coaByCategory[$categoryCode];
-            $coaId = $created[$coaCode]?->id ?? ChartOfAccount::where('code', $coaCode)->value('id');
+            $coaId = $created[$coaCode]?->id ?? ChartOfAccount::withoutGlobalScopes()->withTrashed()->where('code', $coaCode)->value('id');
             if (! $coaId) throw new RuntimeException("COA {$coaCode} untuk Budget Line {$line->line_code} tidak ditemukan.");
             $line->update(['gl_account_id' => $coaId, 'cost_type' => $coaCode]);
         });
