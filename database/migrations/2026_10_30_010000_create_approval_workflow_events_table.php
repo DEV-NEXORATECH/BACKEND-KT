@@ -21,7 +21,9 @@ return new class extends Migration {
             $table->text('notes')->nullable();
             $table->json('metadata')->nullable();
             $table->timestamps();
-            $table->index(['approval_workflow_run_id', 'created_at']);
+            // MySQL limits identifier names to 64 characters. The default
+            // generated name is longer than that for this table.
+            $table->index(['approval_workflow_run_id', 'created_at'], 'approval_events_run_created_idx');
         });
     }
 
