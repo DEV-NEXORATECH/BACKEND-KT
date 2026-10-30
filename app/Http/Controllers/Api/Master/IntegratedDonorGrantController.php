@@ -9,6 +9,7 @@ use App\Models\Master\GrantAgreement;
 use App\Models\Master\Project;
 use App\Models\Master\ProjectLogframe;
 use App\Models\Master\ProjectWorkplan;
+use App\Models\Master\GrantReportingDeadline;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,6 +27,7 @@ class IntegratedDonorGrantController extends Controller
             'frameworks' => 'array', 'frameworks.*.level' => 'required|in:impact,outcome,output,activity', 'frameworks.*.code' => 'required|string|max:50', 'frameworks.*.description' => 'required|string', 'frameworks.*.indicator' => 'nullable|string|max:255', 'frameworks.*.baseline' => 'nullable|numeric', 'frameworks.*.target' => 'nullable|numeric',
             'workplans' => 'array', 'workplans.*.activity' => 'required|string|max:255', 'workplans.*.output_code' => 'nullable|string|max:100', 'workplans.*.start_date' => 'nullable|date', 'workplans.*.end_date' => 'nullable|date', 'workplans.*.status' => 'nullable|string|max:50', 'workplans.*.baseline' => 'nullable|numeric',
             'budgets' => 'array', 'budgets.*.line_code' => 'required|string|max:50', 'budgets.*.description' => 'required|string|max:255', 'budgets.*.budget_category_id' => 'required|exists:budget_categories,id', 'budgets.*.total_amount' => 'required|numeric|min:0',
+            'deadlines' => 'array', 'deadlines.*.report_type' => 'required|string|max:100', 'deadlines.*.period_label' => 'nullable|string|max:100', 'deadlines.*.due_date' => 'required|date', 'deadlines.*.status' => 'nullable|string|max:50', 'deadlines.*.notes' => 'nullable|string', 'deadlines.*.reminder_days' => 'nullable|integer',
         ]);
 
         $result = DB::transaction(function () use ($data, $donor) {
@@ -42,7 +44,23 @@ class IntegratedDonorGrantController extends Controller
             foreach ($data['workplans'] ?? [] as $workplan) ProjectWorkplan::create(array_merge($workplan, ['project_id' => $project->id, 'grant_agreement_id' => $grant->id, 'donor_id' => $donor->id]));
             foreach ($data['budgets'] ?? [] as $budget) BudgetLine::create(array_merge($budget, ['project_id' => $project->id, 'grant_agreement_id' => $grant->id, 'currency_id' => $grant->currency_id, 'proposal_period' => 'annual', 'unit_price' => $budget['total_amount'], 'quantity' => 1, 'is_active' => true]));
 
-            return $donor->fresh()->load(['grantAgreements.currency', 'grantAgreements.projects.logframes', 'grantAgreements.projects.workplans', 'grantAgreements.projects.budgetLines']);
+            if (isset($data['deadlines'])) {
+                GrantReportingDeadline::where('grant_agreement_id', $grant->id)->delete();
+                $today = now()->toDateString();
+                foreach ($data['deadlines'] as $deadline) {
+                    GrantReportingDeadline::create([
+                        'grant_agreement_id' => $grant->id,
+                        'report_type' => $deadline['report_type'],
+                        'period_label' => $deadline['period_label'] ?? null,
+                        'due_date' => $deadline['due_date'],
+                        'status' => $deadline['status'] ?? ($deadline['due_date'] < $today ? 'overdue' : 'upcoming'),
+                        'notes' => $deadline['notes'] ?? null,
+                        'reminder_days' => $deadline['reminder_days'] ?? 7,
+                    ]);
+                }
+            }
+
+            return $donor->fresh()->load(['grantAgreements.currency', 'grantAgreements.reportingDeadlines', 'grantAgreements.projects.logframes', 'grantAgreements.projects.workplans', 'grantAgreements.projects.budgetLines']);
         });
         return response()->json(['success' => true, 'message' => 'Integrated Donor & Grant record updated.', 'data' => $result]);
     }
@@ -51,6 +69,7 @@ class IntegratedDonorGrantController extends Controller
     {
         DB::transaction(function () use ($donor) {
             foreach ($donor->grantAgreements as $grant) {
+                GrantReportingDeadline::where('grant_agreement_id', $grant->id)->delete();
                 foreach ($grant->projects as $project) {
                     ProjectLogframe::where('project_id', $project->id)->delete();
                     ProjectWorkplan::where('project_id', $project->id)->delete();
@@ -147,6 +166,13 @@ class IntegratedDonorGrantController extends Controller
             'budgets.*.document_path' => 'nullable|string|max:255',
             'budgets.*.budget_category_id' => 'required|exists:budget_categories,id',
             'budgets.*.total_amount' => 'required|numeric|min:0',
+            'deadlines' => 'array',
+            'deadlines.*.report_type' => 'required|string|max:100',
+            'deadlines.*.period_label' => 'nullable|string|max:100',
+            'deadlines.*.due_date' => 'required|date',
+            'deadlines.*.status' => 'nullable|string|max:50',
+            'deadlines.*.notes' => 'nullable|string',
+            'deadlines.*.reminder_days' => 'nullable|integer',
             'documents' => 'nullable|array',
             'documents.agreement_document' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
             'documents.proposal' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
@@ -238,8 +264,22 @@ class IntegratedDonorGrantController extends Controller
                 ]));
             }
 
+            $today = now()->toDateString();
+            foreach ($data['deadlines'] ?? [] as $deadline) {
+                GrantReportingDeadline::create([
+                    'grant_agreement_id' => $grant->id,
+                    'report_type' => $deadline['report_type'],
+                    'period_label' => $deadline['period_label'] ?? null,
+                    'due_date' => $deadline['due_date'],
+                    'status' => $deadline['status'] ?? ($deadline['due_date'] < $today ? 'overdue' : 'upcoming'),
+                    'notes' => $deadline['notes'] ?? null,
+                    'reminder_days' => $deadline['reminder_days'] ?? 7,
+                ]);
+            }
+
                 return $donor->load([
                     'grantAgreements.currency',
+                    'grantAgreements.reportingDeadlines',
                     'grantAgreements.projects.logframes',
                     'grantAgreements.projects.workplans',
                     'grantAgreements.projects.budgetLines',
