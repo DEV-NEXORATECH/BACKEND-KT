@@ -45,9 +45,7 @@ class ApprovalCenterController extends Controller
     {
         $user = $request->user();
         $roleSlug = strtolower((string) ($user->role?->slug ?? ''));
-        if (in_array($roleSlug, ['super-admin', 'super_admin', 'superadmin'], true) || (bool) ($user->is_super_admin ?? false)) {
-            return response()->json(['success' => true, 'data' => [], 'message' => 'Super Admin tidak memerlukan approval.']);
-        }
+        $isSuperAdmin = in_array($roleSlug, ['super-admin', 'super_admin', 'superadmin'], true) || (bool) ($user->is_super_admin ?? false);
         $moduleFilter = $request->query('module');
         $items = collect();
 
@@ -453,11 +451,23 @@ class ApprovalCenterController extends Controller
             ->filter(fn ($action) => $approvalService->userCanApproveAction($action, $user, $action->run?->approvable))
             ->mapWithKeys(fn ($action) => ["{$action->run->module}:{$action->run->approvable_type}:{$action->run->approvable_id}" => true]);
 
-        $sortedItems = $items->filter(function (array $item) use ($moduleMap, $typeMap, $activeRuns, $allowedRuns) {
+        $sortedItems = $items->filter(function (array $item) use ($moduleMap, $typeMap, $activeRuns, $allowedRuns, $isSuperAdmin) {
             if (! isset($moduleMap[$item['module']])) return true;
+            if ($isSuperAdmin) return true;
             $type = $item['entity_type'] ?? $typeMap[$item['module']];
             $key = "{$moduleMap[$item['module']]}:{$type}:{$item['id']}";
             return ! isset($activeRuns[$key]) || isset($allowedRuns[$key]);
+        })->map(function (array $item) use ($moduleMap, $typeMap, $user, $isSuperAdmin) {
+            if (! isset($moduleMap[$item['module']])) return $item;
+            $type = $item['entity_type'] ?? $typeMap[$item['module']];
+            $entity = $type::query()->find($item['id']);
+            if ($entity) {
+                $item['approval_progress'] = app(\App\Services\Approval\ApprovalWorkflowService::class)
+                    ->progressFor($moduleMap[$item['module']], $entity, $user);
+                $item['current_approval_stage'] = $item['approval_progress']['current_stage'];
+                $item['current_approval_level'] = $item['approval_progress']['current_level'];
+            }
+            return $item;
         })->sortByDesc('created_at')->values();
 
         return response()->json([
@@ -465,6 +475,32 @@ class ApprovalCenterController extends Controller
             'count' => $sortedItems->count(),
             'data' => $sortedItems,
         ]);
+    }
+
+    /** Requests submitted by the signed-in user, with only the reached
+     * approval stages visible. Super Admin receives the complete chain. */
+    public function mySubmissions(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $roleSlug = strtolower((string) ($user->role?->slug ?? ''));
+        $isSuperAdmin = in_array($roleSlug, ['super-admin', 'super_admin', 'superadmin'], true) || (bool) ($user->is_super_admin ?? false);
+        $query = ApprovalWorkflowRun::query()->with('actions.approvalMatrix.role')->latest('id');
+        if (! $isSuperAdmin) $query->where('submitted_by', $user->id);
+        $workflow = app(\App\Services\Approval\ApprovalWorkflowService::class);
+        $data = $query->get()->map(function (ApprovalWorkflowRun $run) use ($workflow, $user, $isSuperAdmin) {
+            $entity = $run->approvable;
+            if (! $entity) return null;
+            return [
+                'id' => $entity->getKey(),
+                'module' => $run->module,
+                'entity_type' => $run->approvable_type,
+                'reference_number' => $entity->request_number ?? $entity->pr_number ?? $entity->po_number ?? $entity->invoice_number ?? $entity->journal_number ?? $entity->asset_code ?? $entity->reference ?? ('#'.$entity->getKey()),
+                'requester_name' => method_exists($entity, 'requester') ? $entity->requester?->name : null,
+                'status' => $run->status,
+                'approval_progress' => $workflow->progressFor($run->module, $entity, $user),
+            ];
+        })->filter()->values();
+        return response()->json(['success' => true, 'data' => $data]);
     }
 
     /**

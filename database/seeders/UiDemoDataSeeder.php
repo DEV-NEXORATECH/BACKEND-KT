@@ -32,6 +32,9 @@ class UiDemoDataSeeder extends Seeder
         $vendor = DB::table('vendors')->where('code', 'VND-HOTEL-01')->first()
             ?? DB::table('vendors')->orderBy('id')->first();
         $employee = DB::table('employees')->orderBy('id')->first();
+        $procurementEmployee = DB::table('employees')->where('employee_id_number', 'ID00015')->first() ?? $employee;
+        $budgetHolderEmployee = DB::table('employees')->where('employee_id_number', 'ID00004')->first() ?? $employee;
+        $financeEmployee = DB::table('employees')->where('employee_id_number', 'ID00023')->first() ?? $employee;
         $bank = DB::table('bank_accounts')->orderBy('id')->first();
         $account = DB::table('chart_of_accounts')->orderBy('id')->first();
 
@@ -111,6 +114,20 @@ class UiDemoDataSeeder extends Seeder
             if ($customer) {
                 $invoice = $put('customer_invoices', ['invoice_number' => 'AR-2026-001'], ['customer_id' => $customer, 'project_id' => $project->id, 'donor_id' => $donor?->id, 'program_id' => $program?->id, 'invoice_date' => '2026-03-20', 'due_date' => '2026-04-19', 'currency_code' => 'IDR', 'exchange_rate' => 1, 'status' => 'partially_received', 'total_amount' => 12500000, 'received_amount' => 5000000, 'description' => 'Reimbursement claim for community mapping program.', 'created_by' => $user->id]);
                 $put('customer_invoice_lines', ['customer_invoice_id' => $invoice, 'description' => 'Community mapping program reimbursement'], ['revenue_account_id' => $account?->id, 'budget_line_id' => $budgetLine?->id, 'quantity' => 1, 'unit_price' => 12500000, 'total_amount' => 12500000, 'line_order' => 1]);
+                foreach ([2025, 2026, 2027] as $membershipYear) {
+                    $membershipFiscalYear = DB::table('fiscal_years')->where('year', $membershipYear)->first();
+                    if ($membershipFiscalYear) {
+                        $put('membership_dues', ['reference' => 'IURAN-'.$membershipYear.'-001'], [
+                            'customer_id' => $customer, 'fiscal_year_id' => $membershipFiscalYear->id,
+                            'due_date' => $membershipYear.'-06-30', 'amount' => 250000,
+                            'status' => $membershipYear === 2025 ? 'paid' : 'issued',
+                            'paid_at' => $membershipYear === 2025 ? $membershipYear.'-06-15' : null,
+                            'payment_reference' => $membershipYear === 2025 ? 'IURAN-TRF-'.$membershipYear.'-001' : null,
+                            'notes' => 'Seeded membership contribution for fiscal year '.$membershipYear.'.',
+                            'created_by' => $user->id,
+                        ]);
+                    }
+                }
             }
         }
 
@@ -133,10 +150,10 @@ class UiDemoDataSeeder extends Seeder
         // A complete RFQ/CBA trail makes procurement tabs and dashboards useful.
         $purchaseRequest = DB::table('purchase_requests')->where('pr_number', 'PR-2026-001')->first();
         if ($purchaseRequest && $vendor && Schema::hasTable('rfqs')) {
-            $rfq = $put('rfqs', ['rfq_number' => 'RFQ-2026-001'], ['purchase_request_id' => $purchaseRequest->id, 'rfq_date' => '2026-02-06', 'submission_deadline' => '2026-02-12', 'terms' => 'Submit technical and financial quotation.', 'status' => 'closed', 'created_by' => $user->id]);
+            $rfq = $put('rfqs', ['rfq_number' => 'RFQ-2026-001'], ['purchase_request_id' => $purchaseRequest->id, 'rfq_date' => '2026-02-06', 'submission_deadline' => '2026-02-12', 'terms' => 'Submit technical and financial quotation.', 'status' => 'closed', 'supplier_vendor_id' => $vendor->id, 'checked_by' => $procurementEmployee?->name, 'budget_holder_name' => $budgetHolderEmployee?->name, 'budget_holder_title' => $budgetHolderEmployee?->position, 'supplier_acceptance_name' => 'Hotel Santika Premiere Pontianak', 'supplier_acceptance_title' => 'Supplier Representative', 'supplier_contact_name' => 'Hotel Santika Premiere Pontianak', 'supplier_email' => $vendor->email ?? null, 'supplier_phone' => $vendor->phone ?? null, 'supplier_address' => $vendor->address ?? null, 'procurement_contact_name' => $procurementEmployee?->name, 'procurement_contact_email' => $procurementEmployee?->email, 'procurement_address' => 'Head Office Bogor', 'created_by' => $user->id]);
             $put('rfq_vendors', ['rfq_id' => $rfq, 'vendor_id' => $vendor->id], ['status' => 'responded']);
             $quotation = $put('vendor_quotations', ['rfq_id' => $rfq, 'vendor_id' => $vendor->id], ['quotation_number' => 'QTN-2026-001', 'quotation_date' => '2026-02-10', 'total_amount' => 8200000, 'currency_code' => 'IDR', 'terms' => '30 days payment term', 'delivery_terms' => 'Delivery within 14 days', 'technical_score' => 88, 'financial_score' => 92, 'total_score' => 90, 'status' => 'selected', 'notes' => 'Selected demo quotation.', 'created_by' => $user->id]);
-            $put('comparative_bid_analyses', ['cba_number' => 'CBA-2026-001'], ['rfq_id' => $rfq, 'analysis_date' => '2026-02-12', 'selected_vendor_id' => $vendor->id, 'selected_quotation_id' => $quotation, 'selection_reason' => 'Best combined technical and financial score.', 'status' => 'approved', 'approved_by' => $user->id, 'approved_at' => $now, 'created_by' => $user->id]);
+            $put('comparative_bid_analyses', ['cba_number' => 'CBA-2026-001'], ['rfq_id' => $rfq, 'analysis_date' => '2026-02-12', 'selected_vendor_id' => $vendor->id, 'selected_quotation_id' => $quotation, 'selection_reason' => 'Best combined technical and financial score.', 'prepared_by' => $procurementEmployee?->name, 'budget_holder_name' => $budgetHolderEmployee?->name, 'panelist_1_name' => $procurementEmployee?->name, 'panelist_2_name' => $budgetHolderEmployee?->name, 'panelist_3_name' => $financeEmployee?->name, 'status' => 'approved', 'approved_by' => $finance?->id ?? $user->id, 'approved_at' => $now, 'created_by' => $user->id]);
         }
 
         // Tax screens: provide multiple tax types and realistic transaction states.
@@ -196,15 +213,15 @@ class UiDemoDataSeeder extends Seeder
                     'status' => $row['pr_status'],
                     'submitted_by' => $finance?->id ?? $user->id,
                     'submitted_at' => $now,
-                    'approved_by' => in_array($row['pr_status'], ['approved'], true) ? $user->id : null,
+                    'approved_by' => in_array($row['pr_status'], ['approved'], true) ? ($finance?->id ?? $user->id) : null,
                     'approved_at' => in_array($row['pr_status'], ['approved'], true) ? $now : null,
                     'created_by' => $user->id,
                 ]);
                 $prLine = $put('purchase_request_lines', ['purchase_request_id' => $pr, 'item_description' => $row['item']], ['budget_line_id' => $budgetLine->id, 'quantity' => 1, 'unit_price' => $row['amount'], 'total_amount' => $row['amount'], 'line_order' => 1]);
-                $po = $put('purchase_orders', ['po_number' => 'PO-2026-'.$row['suffix']], ['purchase_request_id' => $pr, 'vendor_id' => $vendor->id, 'po_date' => '2026-03-'.(12 + (int) $row['suffix']), 'contract_number' => 'CTR-2026-'.$row['suffix'], 'contract_date' => '2026-03-'.(12 + (int) $row['suffix']), 'terms' => 'Payment within 30 days after receipt.', 'status' => $row['po_status'], 'approved_by' => $row['po_status'] !== 'draft' ? $user->id : null, 'approved_at' => $row['po_status'] !== 'draft' ? $now : null, 'created_by' => $user->id]);
+                $po = $put('purchase_orders', ['po_number' => 'PO-2026-'.$row['suffix']], ['purchase_request_id' => $pr, 'vendor_id' => $vendor->id, 'po_date' => '2026-03-'.(12 + (int) $row['suffix']), 'contract_number' => 'CTR-2026-'.$row['suffix'], 'contract_date' => '2026-03-'.(12 + (int) $row['suffix']), 'terms' => 'Payment within 30 days after receipt.', 'checked_by' => $procurementEmployee?->name, 'budget_holder_name' => $budgetHolderEmployee?->name, 'budget_holder_title' => $budgetHolderEmployee?->position, 'supplier_acceptance_name' => 'Hotel Santika Premiere Pontianak', 'supplier_acceptance_title' => 'Supplier Representative', 'status' => $row['po_status'], 'approved_by' => $row['po_status'] !== 'draft' ? ($finance?->id ?? $user->id) : null, 'approved_at' => $row['po_status'] !== 'draft' ? $now : null, 'created_by' => $user->id]);
                 $poLine = $put('purchase_order_lines', ['purchase_order_id' => $po, 'item_description' => $row['item']], ['purchase_request_line_id' => $prLine, 'budget_line_id' => $budgetLine->id, 'quantity' => 1, 'unit_price' => $row['amount'], 'total_amount' => $row['amount'], 'line_order' => 1]);
                 $grnStatus = $row['po_status'] === 'closed' ? 'received' : ($row['po_status'] === 'approved' ? 'received' : 'draft');
-                $grn = $put('goods_receipts', ['grn_number' => 'GRN-2026-'.$row['suffix']], ['purchase_order_id' => $po, 'receipt_date' => '2026-03-'.(18 + (int) $row['suffix']), 'notes' => 'Seeded goods receipt for procurement demo.', 'status' => $grnStatus, 'received_by' => $grnStatus === 'received' ? ($finance?->id ?? $user->id) : null, 'received_at' => $grnStatus === 'received' ? $now : null, 'created_by' => $user->id]);
+                $grn = $put('goods_receipts', ['grn_number' => 'GRN-2026-'.$row['suffix']], ['purchase_order_id' => $po, 'receipt_date' => '2026-03-'.(18 + (int) $row['suffix']), 'supplier_waybill_number' => 'WB-2026-'.$row['suffix'], 'receiving_location' => 'Head Office Bogor', 'donor_name' => $donor?->name, 'acceptable_for_payment' => $grnStatus === 'received', 'receipt_by_name' => $procurementEmployee?->name, 'receipt_by_position' => $procurementEmployee?->position, 'requester_name' => $finance?->name, 'requester_position' => $financeEmployee?->position, 'notes' => 'Seeded goods receipt for procurement demo.', 'status' => $grnStatus, 'received_by' => $grnStatus === 'received' ? ($finance?->id ?? $user->id) : null, 'received_at' => $grnStatus === 'received' ? $now : null, 'created_by' => $user->id]);
                 $put('goods_receipt_lines', ['goods_receipt_id' => $grn, 'purchase_order_line_id' => $poLine], ['received_quantity' => $grnStatus === 'received' ? 1 : 0]);
                 $invoice = $put('supplier_invoices', ['invoice_number' => 'INV-VND-2026-'.$row['suffix']], ['purchase_order_id' => $po, 'goods_receipt_id' => $grn, 'vendor_id' => $vendor->id, 'invoice_date' => '2026-03-'.(20 + (int) $row['suffix']), 'due_date' => '2026-04-'.(20 + (int) $row['suffix']), 'status' => $row['invoice_status'], 'match_status' => $row['invoice_status'] === 'draft' ? 'unchecked' : 'matched', 'total_amount' => $row['amount'], 'paid_amount' => $row['invoice_status'] === 'paid' ? $row['amount'] : 0, 'notes' => 'Seeded supplier invoice for procurement demo.', 'created_by' => $user->id]);
                 $put('supplier_invoice_lines', ['supplier_invoice_id' => $invoice, 'item_description' => $row['item']], ['purchase_order_line_id' => $poLine, 'quantity' => 1, 'unit_price' => $row['amount'], 'total_amount' => $row['amount']]);

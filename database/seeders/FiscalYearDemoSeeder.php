@@ -205,6 +205,19 @@ class FiscalYearDemoSeeder extends Seeder
         if ($project2027 && $program2027) {
             DB::table('projects')->where('id', $project2027)->update(['program_id' => $program2027]);
         }
+        // Keep the 2026 demo queue at four visible expense records. The old
+        // EXP-2026-002 fixture was replaced by EXP-2026-005.
+        DB::table('expense_requests')->where('request_number', 'EXP-2026-002')->update(['deleted_at' => $now]);
+        // Keep the 2026 approval-center fixture in fiscal year 2026. A prior
+        // demo version moved EXP-2026-004 to 2027, which made it disappear
+        // from Requests & Approvals when the global year was set to 2026.
+        if ($sourceProjectId) {
+            DB::table('expense_requests')->where('request_number', 'EXP-2026-004')->update([
+                'fiscal_year_id' => $fy2026,
+                'project_id' => $sourceProjectId,
+                'request_date' => '2026-03-14',
+            ]);
+        }
         if (Schema::hasTable('budget_lines')) {
             $sourceBudgetLine = DB::table('budget_lines')->where('line_code', 'BL-FORD-1.1')->first()
                 ?? DB::table('budget_lines')->orderBy('id')->first();
@@ -228,8 +241,20 @@ class FiscalYearDemoSeeder extends Seeder
         // each target uses a year-specific business reference and date.
         $clone('expense_requests', ['request_number' => 'EXP-2026-001'], ['request_number' => 'EXP-2025-001'], [
             'request_number' => 'EXP-2025-001', 'fiscal_year_id' => $fy2025, 'request_date' => '2025-03-10',
+            'project_id' => $project2025,
             'external_request_id' => 'SEED-EXP-2025-001', 'description' => 'Per diem and local transport for mapping workshop (2025).',
         ]);
+        foreach ([
+            ['source' => 'EXP-2026-004', 'target' => 'EXP-2025-002', 'date' => '2025-03-11', 'description' => 'Settlement advance awaiting approval (2025).'],
+            ['source' => 'EXP-2026-005', 'target' => 'EXP-2025-003', 'date' => '2025-03-12', 'description' => 'Approved field coordination reimbursement (2025).'],
+            ['source' => 'EXP-2026-003', 'target' => 'EXP-2025-004', 'date' => '2025-03-13', 'description' => 'Paid field activity cash advance (2025).'],
+        ] as $expenseFixture) {
+            $clone('expense_requests', ['request_number' => $expenseFixture['source']], ['request_number' => $expenseFixture['target']], [
+                'request_number' => $expenseFixture['target'], 'fiscal_year_id' => $fy2025, 'project_id' => $project2025,
+                'request_date' => $expenseFixture['date'], 'external_request_id' => 'SEED-'.$expenseFixture['target'],
+                'description' => $expenseFixture['description'],
+            ]);
+        }
         $clone('purchase_requests', ['pr_number' => 'PR-2026-001'], ['pr_number' => 'PR-2025-001'], [
             'pr_number' => 'PR-2025-001', 'fiscal_year_id' => $fy2025, 'request_date' => '2025-02-05',
             'project_id' => $project2025, 'justification' => 'Procure field mapping equipment and workshop supplies for 2025.',
@@ -246,7 +271,10 @@ class FiscalYearDemoSeeder extends Seeder
         ]);
         $clone('supplier_contract_notifications', ['scn_number' => 'SCN-2026-001'], ['scn_number' => 'SCN-2025-001'], [
             'scn_number' => 'SCN-2025-001', 'fiscal_year_id' => $fy2025, 'notification_date' => '2025-02-25',
-            'subject' => 'Supplier contract notification for 2025.',
+            'subject' => 'Supplier contract notification for 2025.', 'receiving_location' => 'Head Office Bogor',
+            'donor_name' => 'Ford Foundation', 'acceptable_for_payment' => true, 'receipt_by_name' => 'Riki Suryandi',
+            'receipt_by_position' => 'Procurement & Adm Officer', 'requester_name' => 'Syaifani Auliana Havid',
+            'requester_position' => 'Finance Manager', 'status' => 'acknowledged', 'issued_at' => $now,
         ]);
         $clone('journals', ['journal_number' => 'JV-2026-DEMO-01'], ['journal_number' => 'JV-2025-DEMO-01'], [
             'journal_number' => 'JV-2025-DEMO-01', 'fiscal_year_id' => $fy2025, 'journal_date' => '2025-03-10', 'reference' => 'EXP-2025-001',
@@ -289,13 +317,12 @@ class FiscalYearDemoSeeder extends Seeder
                 'fiscal_year_id' => $fy2025, 'project_id' => $project2025, 'vendor_id' => $seedVendorId,
                 'total_amount' => 1250000, 'description' => 'Emergency field logistics waiver 2025',
                 'justification' => 'Urgent delivery is required to meet the approved field schedule.', 'date' => '2025-03-18',
-                'status' => 'pending', 'created_by' => $userId ?? null, 'updated_at' => now(), 'created_at' => now(),
+                'donor_name' => 'Ford Foundation', 'prepared_by' => 'Riki Suryandi', 'prepared_title' => 'Procurement & Adm Officer',
+                'authorised_by' => 'Denny Bhatara', 'authorised_title' => 'Program & Operational Manager',
+                'verified_by' => 'Syaifani Auliana Havid', 'verified_title' => 'Finance Manager', 'remarks' => 'Seeded approval data for PDF testing.',
+                'status' => 'approved', 'approved_by' => $userId ?? null, 'approved_at' => now(), 'created_by' => $userId ?? null, 'updated_at' => now(), 'created_at' => now(),
             ]);
         }
-
-        DB::table('expense_requests')
-            ->where('request_number', 'EXP-2026-004')
-            ->update(['fiscal_year_id' => $fy2027, 'request_date' => '2027-03-14']);
 
         DB::table('timesheet_entries')
             ->where('description', 'Financial monitoring and reporting')
@@ -304,6 +331,7 @@ class FiscalYearDemoSeeder extends Seeder
         // Expense flow: keep the 2026 record and create a linked 2027 copy.
         $expense2027 = $clone('expense_requests', ['request_number' => 'EXP-2026-003'], ['request_number' => 'EXP-2027-001'], [
             'request_number' => 'EXP-2027-001', 'fiscal_year_id' => $fy2027, 'request_date' => '2027-03-12',
+            'project_id' => $project2027,
             'external_request_id' => 'SEED-EXP-2027-001', 'description' => 'Field activity cash advance for East Kalimantan (2027).',
         ]);
         if ($expense2027) {
@@ -317,6 +345,17 @@ class FiscalYearDemoSeeder extends Seeder
                     $line,
                 );
             }
+        }
+        foreach ([
+            ['source' => 'EXP-2026-004', 'target' => 'EXP-2027-002', 'date' => '2027-03-13', 'description' => 'Settlement advance awaiting approval (2027).'],
+            ['source' => 'EXP-2026-005', 'target' => 'EXP-2027-003', 'date' => '2027-03-14', 'description' => 'Approved field coordination reimbursement (2027).'],
+            ['source' => 'EXP-2026-001', 'target' => 'EXP-2027-004', 'date' => '2027-03-15', 'description' => 'Submitted mapping workshop reimbursement (2027).'],
+        ] as $expenseFixture) {
+            $clone('expense_requests', ['request_number' => $expenseFixture['source']], ['request_number' => $expenseFixture['target']], [
+                'request_number' => $expenseFixture['target'], 'fiscal_year_id' => $fy2027, 'project_id' => $project2027,
+                'request_date' => $expenseFixture['date'], 'external_request_id' => 'SEED-'.$expenseFixture['target'],
+                'description' => $expenseFixture['description'],
+            ]);
         }
 
         // Procurement flow: PR -> PO -> GRN -> invoice -> SCN, all separated.
@@ -363,6 +402,10 @@ class FiscalYearDemoSeeder extends Seeder
         $clone('supplier_contract_notifications', ['scn_number' => 'SCN-2026-001'], ['scn_number' => 'SCN-2027-001'], [
             'scn_number' => 'SCN-2027-001', 'fiscal_year_id' => $fy2027, 'purchase_request_id' => $pr2027,
             'purchase_order_id' => $po2027, 'notification_date' => '2027-02-25', 'subject' => 'Supplier contract notification for 2027.',
+            'receiving_location' => 'Head Office Bogor', 'donor_name' => 'Ford Foundation', 'acceptable_for_payment' => true,
+            'receipt_by_name' => 'Riki Suryandi', 'receipt_by_position' => 'Procurement & Adm Officer',
+            'requester_name' => 'Syaifani Auliana Havid', 'requester_position' => 'Finance Manager',
+            'status' => 'acknowledged', 'issued_at' => $now,
         ]);
 
         // Accounting and tax rows also have a distinct 2027 counterpart.
@@ -419,8 +462,78 @@ class FiscalYearDemoSeeder extends Seeder
                 'fiscal_year_id' => $fy2027, 'purchase_request_id' => $purchaseRequest2027, 'project_id' => $projectId,
                 'vendor_id' => $vendorId, 'total_amount' => 1250000, 'description' => 'Emergency field logistics waiver 2027',
                 'justification' => 'Urgent delivery is required to meet the approved field schedule.', 'date' => '2027-03-18',
-                'status' => 'pending', 'created_by' => $userId ?? null, 'updated_at' => now(), 'created_at' => now(),
+                'donor_name' => 'Ford Foundation', 'prepared_by' => 'Riki Suryandi', 'prepared_title' => 'Procurement & Adm Officer',
+                'authorised_by' => 'Denny Bhatara', 'authorised_title' => 'Program & Operational Manager',
+                'verified_by' => 'Syaifani Auliana Havid', 'verified_title' => 'Finance Manager', 'remarks' => 'Seeded approval data for PDF testing.',
+                'status' => 'approved', 'approved_by' => $userId ?? null, 'approved_at' => now(), 'created_by' => $userId ?? null, 'updated_at' => now(), 'created_at' => now(),
             ]);
+        }
+
+        // Secondary screens also need one connected, year-specific fixture so
+        // Budget Reallocation, Cash Advance Return, Reimbursement, PO
+        // Amendment, and Vendor Evaluation never render an empty state when
+        // the global fiscal-year selector changes.
+        $secondaryYears = [
+            2025 => ['fiscal_year_id' => $fy2025, 'project_id' => $project2025, 'expense_number' => 'EXP-2025-004', 'po_number' => 'PO-2025-001', 'budget_code' => 'BL-FOREST-2025-1'],
+            2026 => ['fiscal_year_id' => $fy2026, 'project_id' => $sourceProjectId, 'expense_number' => 'EXP-2026-003', 'po_number' => 'PO-2026-001', 'budget_code' => 'BL-FORD-1.1'],
+            2027 => ['fiscal_year_id' => $fy2027, 'project_id' => $projectId, 'expense_number' => 'EXP-2027-001', 'po_number' => 'PO-2027-001', 'budget_code' => 'BL-FOREST-2027-1'],
+        ];
+        $secondaryBankId = DB::table('bank_accounts')->orderBy('id')->value('id');
+        $secondaryEmployeeId = DB::table('employees')->orderBy('id')->value('id');
+        foreach ($secondaryYears as $year => $context) {
+            $expenseId = DB::table('expense_requests')->where('request_number', $context['expense_number'])->value('id');
+            $poId = DB::table('purchase_orders')->where('po_number', $context['po_number'])->value('id');
+            $budgetId = DB::table('budget_lines')->where('line_code', $context['budget_code'])->value('id');
+            if ($expenseId && Schema::hasTable('cash_advance_returns')) {
+                $returnId = DB::table('cash_advance_returns')->updateOrInsert(['reference_no' => 'CAR-'.$year.'-001'], [
+                    'expense_request_id' => $expenseId, 'employee_id' => $secondaryEmployeeId, 'bank_account_id' => $secondaryBankId,
+                    'return_amount' => 750000, 'payment_method' => 'bank_transfer', 'return_date' => $year.'-04-10',
+                    'status' => 'received', 'notes' => 'Unused cash advance returned after field activity.', 'created_by' => $userId ?? null,
+                    'updated_at' => $now, 'created_at' => $now,
+                ]);
+                $returnId = DB::table('cash_advance_returns')->where('reference_no', 'CAR-'.$year.'-001')->value('id');
+                if ($returnId && Schema::hasTable('bank_transactions') && $secondaryBankId) {
+                    DB::table('bank_transactions')->updateOrInsert(['reference' => 'CAR-'.$year.'-001'], [
+                        'bank_account_id' => $secondaryBankId, 'cash_advance_return_id' => $returnId,
+                        'fiscal_year_id' => $context['fiscal_year_id'], 'transaction_date' => $year.'-04-10',
+                        'description' => 'Cash advance return CAR-'.$year.'-001', 'debit' => 0, 'credit' => 750000,
+                        'status' => 'reconciled', 'created_by' => $userId ?? null, 'updated_at' => $now, 'created_at' => $now,
+                    ]);
+                }
+                if (Schema::hasTable('cash_advance_reimbursements')) {
+                    DB::table('cash_advance_reimbursements')->updateOrInsert(['expense_request_id' => $expenseId, 'amount' => 325000], [
+                        'employee_id' => $secondaryEmployeeId, 'project_id' => $context['project_id'], 'budget_line_id' => $budgetId,
+                        'status' => 'pending', 'notes' => 'Additional eligible expense from settlement.', 'created_by' => $userId ?? null,
+                        'updated_at' => $now, 'created_at' => $now,
+                    ]);
+                }
+            }
+            if ($poId && Schema::hasTable('po_amendments')) {
+                DB::table('po_amendments')->updateOrInsert(['amendment_number' => 'POA-'.$year.'-001'], [
+                    'purchase_order_id' => $poId, 'version' => 1,
+                    'changes' => json_encode(['delivery_date' => [$year.'-03-20', $year.'-03-25']]),
+                    'reason' => 'Delivery schedule adjusted by supplier.', 'status' => 'approved',
+                    'approved_by' => $userId ?? null, 'approved_at' => $now, 'created_by' => $userId ?? null,
+                    'updated_at' => $now, 'created_at' => $now,
+                ]);
+            }
+            $vendorId = DB::table('vendors')->orderBy('id')->value('id');
+            $grnId = $poId ? DB::table('goods_receipts')->where('purchase_order_id', $poId)->value('id') : null;
+            if ($vendorId && $poId && Schema::hasTable('vendor_evaluations')) {
+                DB::table('vendor_evaluations')->updateOrInsert(['vendor_id' => $vendorId, 'purchase_order_id' => $poId], [
+                    'goods_receipt_id' => $grnId, 'quality_score' => 4, 'delivery_score' => 4, 'price_score' => 5,
+                    'service_score' => 4, 'overall_score' => 4.3, 'evaluator_notes' => 'Supplier delivered according to specification.',
+                    'evaluated_by' => $userId ?? null, 'updated_at' => $now, 'created_at' => $now,
+                ]);
+            }
+            if ($context['project_id'] && $budgetId && Schema::hasTable('budget_reallocations')) {
+                DB::table('budget_reallocations')->updateOrInsert(['reference' => 'REALLOC-'.$year.'-001'], [
+                    'project_id' => $context['project_id'], 'from_budget_line_id' => $budgetId, 'to_budget_line_id' => $budgetId,
+                    'amount' => 500000, 'reason' => 'Move unused workshop allocation to community facilitation.',
+                    'status' => 'submitted', 'submitted_by' => $userId ?? null, 'submitted_at' => $now,
+                    'created_by' => $userId ?? null, 'updated_at' => $now, 'created_at' => $now,
+                ]);
+            }
         }
         $clone('customer_invoices', ['invoice_number' => 'AR-2026-001'], ['invoice_number' => 'AR-2027-001'], [
             'invoice_number' => 'AR-2027-001', 'fiscal_year_id' => $fy2027, 'invoice_date' => '2027-03-20',

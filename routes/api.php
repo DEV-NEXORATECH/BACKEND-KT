@@ -170,6 +170,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('v1/approval-center')->group(function () {
         Route::get('/pending', [ApprovalCenterController::class, 'pending'])->middleware('approval-center');
+        Route::get('/my-submissions', [ApprovalCenterController::class, 'mySubmissions']);
         Route::post('/batch-action', [ApprovalCenterController::class, 'batchAction'])->middleware('approval-center');
     });
 

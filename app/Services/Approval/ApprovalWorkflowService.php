@@ -126,9 +126,52 @@ class ApprovalWorkflowService
         return $this->matchesApprover($action, $user, $entity);
     }
 
+    /**
+     * Return the approval progress visible to the current viewer. Future
+     * queued stages are intentionally hidden from normal users; the requester
+     * can see completed stages and the current stage, while Super Admin can
+     * inspect the complete chain.
+     */
+    public function progressFor(string $module, Model $entity, ?User $viewer = null): array
+    {
+        $run = $this->runFor($module, $entity);
+        if (! $run) {
+            return [
+                'status' => $entity->getAttribute('status') ?: 'draft',
+                'current_level' => null,
+                'current_stage' => null,
+                'completed_count' => 0,
+                'total_count' => 0,
+                'steps' => [],
+            ];
+        }
+
+        $actions = $run->actions->sortBy(fn ($action) => sprintf('%08d-%08d', (int) $action->level, (int) $action->id))->values();
+        $isSuperAdmin = $viewer && $this->isSuperAdmin($viewer);
+        $visibleActions = $isSuperAdmin
+            ? $actions
+            : $actions->filter(fn ($action) => in_array($action->status, ['approved', 'pending'], true))->values();
+        $current = $actions->first(fn ($action) => (int) $action->level === (int) $run->current_level && $action->status === 'pending');
+
+        return [
+            'status' => $run->status,
+            'current_level' => $run->status === 'approved' ? null : (int) $run->current_level,
+            'current_stage' => $current?->approvalMatrix?->approver_title ?: ($current?->approvalMatrix?->role?->name ?? null),
+            'completed_count' => $actions->where('status', 'approved')->count(),
+            'total_count' => $actions->count(),
+            'steps' => $visibleActions->map(fn ($action) => [
+                'level' => (int) $action->level,
+                'label' => $action->approvalMatrix?->approver_title ?: ($action->approvalMatrix?->role?->name ?: 'Approval Level '.$action->level),
+                'status' => $action->status,
+                'approver_name' => $action->actionBy?->name ?: $action->actionBy?->employee?->name,
+                'approved_at' => $action->action_at?->toISOString(),
+            ])->values()->all(),
+        ];
+    }
+
     private function runFor(string $module, Model $entity): ?ApprovalWorkflowRun
     {
-        return ApprovalWorkflowRun::query()->with('actions.approvalMatrix')->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])->first();
+        return ApprovalWorkflowRun::query()->with(['actions.approvalMatrix.role', 'actions.actionBy.employee'])->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])->first();
     }
 
     private function matricesFor(string $module, Model $entity, float $amount)

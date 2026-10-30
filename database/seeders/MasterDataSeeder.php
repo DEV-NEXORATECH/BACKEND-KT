@@ -115,6 +115,14 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
+        $fy2025 = FiscalYear::updateOrCreate(['year' => 2025], [
+            'name' => 'Tahun Fiskal 2025',
+            'start_date' => '2025-01-01',
+            'end_date' => '2025-12-31',
+            'status' => 'open',
+            'is_active' => false,
+        ]);
+
         // Exchange Rates to Base Currency (IDR)
         $rates = [
             ['from' => $usd, 'rate' => 16250.000000],
@@ -126,6 +134,15 @@ class MasterDataSeeder extends Seeder
         ];
 
         foreach ($rates as $r) {
+            ExchangeRate::updateOrCreate([
+                'date' => '2025-01-02',
+                'from_currency_id' => $r['from']->id,
+                'to_currency_id' => $idr->id,
+            ], [
+                'rate' => $r['rate'],
+                'source' => 'Bank Indonesia JISDOR',
+                'is_active' => true,
+            ]);
             ExchangeRate::updateOrCreate([
                 'date' => '2026-01-02',
                 'from_currency_id' => $r['from']->id,
@@ -278,6 +295,17 @@ class MasterDataSeeder extends Seeder
                 'start_date' => "2026-{$monthStr}-01",
                 'end_date' => "2026-{$monthStr}-{$lastDay}",
                 'status' => $i <= 9 ? 'open' : 'open',
+                'is_active' => true,
+            ]);
+
+            $lastDay2025 = date('t', mktime(0, 0, 0, $i, 1, 2025));
+            $fy2025->periods()->updateOrCreate([
+                'period_number' => $i,
+            ], [
+                'name' => "Periode {$monthName} 2025",
+                'start_date' => "2025-{$monthStr}-01",
+                'end_date' => "2025-{$monthStr}-{$lastDay2025}",
+                'status' => 'open',
                 'is_active' => true,
             ]);
 
@@ -1193,22 +1221,26 @@ class MasterDataSeeder extends Seeder
 
         ];
 
+        // Keep the database paths aligned with the actual signature assets
+        // shipped in public/assets. These values are consumed by the approval
+        // history API and embedded into the Expense PDF.
         $signatureByEmployeeId = [
-            'ID00012' => 'signatures/abil-achmad-akbar.png',
-            'ID00026' => 'signatures/agetha-tri-lestari.png',
-            'ID00030' => 'signatures/ayu-perwitosari.png',
-            'ID00004' => 'signatures/denny-bhatara.jpg',
-            'ID00005' => 'signatures/munip.png',
-            'ID00022' => 'signatures/renaldi-sastra-kusumah-aji.png',
-            'ID00015' => 'signatures/riki-suryandi.png',
-            'ID00002' => 'signatures/sarah-rosemery-megumi.png',
-            'ID00027' => 'signatures/winda-apriyani.png',
-            'ID00019' => 'signatures/ziadatunnisa-ilmi-latifa.png',
-            'ID00017' => 'signatures/zufar-fauzan-erimant.png',
-            'ID00035' => 'signatures/irbah-miftakhul-huda.png',
-            'ID00034' => 'signatures/arif-candra-prasetya.png',
-            'ID00037' => 'signatures/winda-astuti.png',
-            'ID00038' => 'signatures/kwee-viena-lestari-tanjung.jpeg',
+            'ID00012' => 'assets/ttd Abil.png',
+            'ID00026' => 'assets/ttd Agetha.png',
+            'ID00030' => 'assets/ttd Ayu.png',
+            'ID00004' => 'assets/TTD Denny.jpg',
+            'ID00005' => 'assets/ttd Munip.png',
+            'ID00022' => 'assets/ttd Renaldi.png',
+            'ID00015' => 'assets/ttd riki.png',
+            'ID00002' => 'assets/sarah.png',
+            'ID00027' => 'assets/ttd Winda.png',
+            'ID00019' => 'assets/ttd Zia.png',
+            'ID00017' => 'assets/ttd Zufar new.png',
+            'ID00035' => 'assets/TTD Irbah.png',
+            'ID00034' => 'assets/TTD Arif.png',
+            'ID00023' => 'assets/TTD Fannii Baru.png',
+            'ID00037' => 'assets/ttd Winda Astuti.png',
+            'ID00038' => 'assets/TTD Vien.jpeg',
         ];
 
         foreach ($employeesList as $empData) {
@@ -1302,16 +1334,14 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        // Keep period-specific master records attached to the default demo
-        // fiscal year. Currency is intentionally global and is not scoped to
-        // any fiscal year.
-        $defaultFiscalYearId = $fy2026->id;
-        Donor::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
-        Employee::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
-        Vendor::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
-        ChartOfAccount::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
-        BankAccount::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
-        Tax::query()->update(['fiscal_year_id' => $defaultFiscalYearId]);
+        // These are reusable master records. Keep them global so they are
+        // available when the user switches explicitly to 2025, 2026, or 2027.
+        Donor::query()->update(['fiscal_year_id' => null]);
+        Employee::query()->update(['fiscal_year_id' => null]);
+        Vendor::query()->update(['fiscal_year_id' => null]);
+        ChartOfAccount::query()->update(['fiscal_year_id' => null]);
+        BankAccount::query()->update(['fiscal_year_id' => null]);
+        Tax::query()->update(['fiscal_year_id' => null]);
 
         // 15. Expense Categories & Document Types
         ExpenseCategory::updateOrCreate(['code' => 'EXP-PERDIEM'], [

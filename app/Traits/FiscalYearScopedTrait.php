@@ -36,9 +36,11 @@ trait FiscalYearScopedTrait
 
             $qualified = $query->getModel()->qualifyColumn('fiscal_year_id');
             if ($requestedFiscalYearId) {
-                // An explicit selection must be exact. Unassigned legacy rows
-                // must not leak into every selected fiscal year.
-                $query->where($qualified, (int) $fiscalYearId);
+                // Global master records (NULL fiscal year) are reusable in
+                // every selected year; year-specific records remain exact.
+                $query->where(function (Builder $scope) use ($qualified, $fiscalYearId) {
+                    $scope->whereNull($qualified)->orWhere($qualified, (int) $fiscalYearId);
+                });
             } else {
                 // Without an explicit selection, retain global rows while
                 // defaulting assigned records to the active fiscal year.

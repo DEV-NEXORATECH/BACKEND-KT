@@ -945,6 +945,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'approver_position' => $expense->approvedBy?->employee?->position_name ?: $expense->approvedBy?->employee?->position,
             'approver_signature_url' => $expense->approvedBy?->employee?->signature_path ? url($expense->approvedBy->employee->signature_path) : null,
             'approval_history' => $approvalHistory,
+            'approval_progress' => app(ApprovalWorkflowService::class)->progressFor('expense', $expense, request()->user()),
             'donor' => $expense->donor ? ['id' => $expense->donor->id, 'code' => $expense->donor->code, 'name' => $expense->donor->name] : null,
             'second_donor' => $expense->secondDonor ? ['id' => $expense->secondDonor->id, 'code' => $expense->secondDonor->code, 'name' => $expense->secondDonor->name] : null,
             'grant' => $expense->grantAgreement ? ['id' => $expense->grantAgreement->id, 'number' => $expense->grantAgreement->grant_no ?? $expense->grantAgreement->agreement_number ?? null, 'title' => $expense->grantAgreement->agreement_name ?? $expense->grantAgreement->title ?? null] : null,

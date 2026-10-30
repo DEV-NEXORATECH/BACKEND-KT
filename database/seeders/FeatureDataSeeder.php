@@ -96,7 +96,6 @@ class FeatureDataSeeder extends Seeder
         // Expense requests and their detail lines.
         $expenseRows = [
             ['ref' => 'EXP-2026-001', 'type' => 'reimbursement', 'status' => 'submitted', 'amount' => 1850000, 'description' => 'Per diem and local transport for mapping workshop.'],
-            ['ref' => 'EXP-2026-002', 'type' => 'supplier_payment', 'status' => 'approved', 'amount' => 4200000, 'description' => 'Printing and workshop materials.'],
             ['ref' => 'EXP-2026-003', 'type' => 'cash_advance', 'status' => 'paid', 'amount' => 6000000, 'description' => 'Field activity cash advance for West Kalimantan.'],
             ['ref' => 'EXP-2026-004', 'type' => 'settlement_advance', 'status' => 'verified', 'amount' => 2750000, 'description' => 'Settlement of field travel advance.'],
             ['ref' => 'EXP-2026-005', 'type' => 'reimbursement', 'status' => 'approved', 'amount' => 3150000, 'description' => 'Approved field coordination and local transport reimbursement.'],
@@ -111,10 +110,13 @@ class FeatureDataSeeder extends Seeder
             $row = $expenseRows[$index];
             $put('expense_request_lines', ['expense_request_id' => $expenseId, 'description' => $row['description']], ['expense_category_id' => $expenseCategory?->id, 'budget_line_id' => $budgetLine?->id, 'amount' => $row['amount'], 'line_order' => 1]);
         }
-        if ($bank && $paymentMethod && ($expenseIds[2] ?? null)) {
+        // Retire the former duplicate approved fixture so the 2026 queue has
+        // exactly four seeded expenses, one for each business-process stage.
+        DB::table('expense_requests')->where('request_number', 'EXP-2026-002')->update(['deleted_at' => $now]);
+        if ($bank && $paymentMethod && ($expenseIds[1] ?? null)) {
             $expensePayment = $put('payments', ['payment_number' => 'PAY-EXP-2026-003'], [
                 'fiscal_year_id' => $fy?->id,
-                'expense_request_id' => $expenseIds[2],
+                'expense_request_id' => $expenseIds[1],
                 'bank_account_id' => $bank->id,
                 'payment_method_id' => $paymentMethod->id,
                 'payment_date' => '2026-03-20',
@@ -180,16 +182,17 @@ class FeatureDataSeeder extends Seeder
                 ]);
             }
         };
-        $seedCompletedExpenseWorkflow($expenseIds[1] ?? null, 4200000);
-        $seedCompletedExpenseWorkflow($expenseIds[4] ?? null, 3150000);
+        $seedCompletedExpenseWorkflow($expenseIds[3] ?? null, 3150000);
 
         // Procurement chain: PR -> PO -> GRN -> supplier invoice -> payment -> bank movement -> SCN.
         if ($vendor && $budgetLine) {
-            $pr = $put('purchase_requests', ['pr_number' => 'PR-2026-001'], ['request_date' => '2026-02-05', 'requester_id' => $finance->id ?? $user->id, 'department_id' => $dept?->id, 'project_id' => $project->id, 'vendor_id' => $vendor->id, 'justification' => 'Procure field mapping equipment and workshop supplies.', 'status' => 'approved', 'submitted_by' => $finance->id ?? $user->id, 'submitted_at' => $now, 'approved_by' => $user->id, 'approved_at' => $now, 'created_by' => $user->id]);
+            $pr = $put('purchase_requests', ['pr_number' => 'PR-2026-001'], ['request_date' => '2026-02-05', 'requester_id' => $finance->id ?? $user->id, 'department_id' => $dept?->id, 'project_id' => $project->id, 'vendor_id' => $vendor->id, 'justification' => 'Procure field mapping equipment and workshop supplies.', 'status' => 'approved', 'submitted_by' => $finance->id ?? $user->id, 'submitted_at' => $now, 'approved_by' => $finance->id ?? $user->id, 'approved_at' => $now, 'created_by' => $user->id]);
             $prLine = $put('purchase_request_lines', ['purchase_request_id' => $pr, 'item_description' => 'Field mapping and workshop supplies'], ['budget_line_id' => $budgetLine->id, 'quantity' => 1, 'unit_price' => 8200000, 'total_amount' => 8200000, 'line_order' => 1]);
-            $po = $put('purchase_orders', ['po_number' => 'PO-2026-001'], ['purchase_request_id' => $pr, 'vendor_id' => $vendor->id, 'po_date' => '2026-02-08', 'terms' => 'Payment within 30 days after receipt.', 'status' => 'approved', 'approved_by' => $user->id, 'approved_at' => $now, 'created_by' => $user->id]);
+            $procurementEmployee = DB::table('employees')->where('employee_id_number', 'ID00015')->first() ?? $employee;
+            $budgetHolderEmployee = DB::table('employees')->where('employee_id_number', 'ID00004')->first() ?? $employee;
+            $po = $put('purchase_orders', ['po_number' => 'PO-2026-001'], ['purchase_request_id' => $pr, 'vendor_id' => $vendor->id, 'po_date' => '2026-02-08', 'terms' => 'Payment within 30 days after receipt.', 'checked_by' => $procurementEmployee?->name, 'budget_holder_name' => $budgetHolderEmployee?->name, 'budget_holder_title' => $budgetHolderEmployee?->position, 'supplier_acceptance_name' => 'Hotel Santika Premiere Pontianak', 'supplier_acceptance_title' => 'Supplier Representative', 'status' => 'approved', 'approved_by' => $finance->id ?? $user->id, 'approved_at' => $now, 'created_by' => $user->id]);
             $poLine = $put('purchase_order_lines', ['purchase_order_id' => $po, 'item_description' => 'Field mapping and workshop supplies'], ['purchase_request_line_id' => $prLine, 'budget_line_id' => $budgetLine->id, 'quantity' => 1, 'unit_price' => 8200000, 'total_amount' => 8200000, 'line_order' => 1]);
-            $grn = $put('goods_receipts', ['grn_number' => 'GRN-2026-001'], ['purchase_order_id' => $po, 'receipt_date' => '2026-02-20', 'notes' => 'All items received in good condition.', 'status' => 'received', 'received_by' => $finance->id ?? $user->id, 'received_at' => $now, 'created_by' => $user->id]);
+            $grn = $put('goods_receipts', ['grn_number' => 'GRN-2026-001'], ['purchase_order_id' => $po, 'receipt_date' => '2026-02-20', 'supplier_waybill_number' => 'WB-2026-001', 'receiving_location' => 'Head Office Bogor', 'donor_name' => $donor?->name, 'acceptable_for_payment' => true, 'receipt_by_name' => $procurementEmployee?->name, 'receipt_by_position' => $procurementEmployee?->position, 'requester_name' => $finance?->name, 'requester_position' => DB::table('employees')->where('employee_id_number', 'ID00023')->value('position'), 'notes' => 'All items received in good condition.', 'status' => 'received', 'received_by' => $finance->id ?? $user->id, 'received_at' => $now, 'created_by' => $user->id]);
             $put('goods_receipt_lines', ['goods_receipt_id' => $grn, 'purchase_order_line_id' => $poLine], ['received_quantity' => 1]);
             $invoice = $put('supplier_invoices', ['invoice_number' => 'INV-VND-2026-001'], ['purchase_order_id' => $po, 'goods_receipt_id' => $grn, 'vendor_id' => $vendor->id, 'invoice_date' => '2026-02-21', 'due_date' => '2026-03-23', 'status' => 'paid', 'match_status' => 'matched', 'total_amount' => 8200000, 'paid_amount' => 8200000, 'notes' => 'Matched to PO and GRN.', 'created_by' => $user->id]);
             $put('supplier_invoice_lines', ['supplier_invoice_id' => $invoice, 'item_description' => 'Field mapping and workshop supplies'], ['purchase_order_line_id' => $poLine, 'quantity' => 1, 'unit_price' => 8200000, 'total_amount' => 8200000]);
@@ -209,7 +212,7 @@ class FeatureDataSeeder extends Seeder
             $put('journal_lines', ['journal_id' => $journal, 'line_order' => 2], ['account_id' => $cashAccount->id, 'line_description' => 'Paid from operating bank account', 'debit' => 0, 'credit' => 1850000]);
         }
         if ($tax) {
-            $put('tax_transactions', ['reference' => 'TAX-2026-001'], ['tax_id' => $tax->id, 'transaction_type' => 'manual', 'source_type' => 'expense_request', 'source_id' => $expenseIds[1] ?? null, 'transaction_date' => '2026-03-15', 'direction' => 'withholding_out', 'taxable_amount' => 4200000, 'tax_rate' => $tax->rate_percent, 'tax_amount' => round(4200000 * ((float) $tax->rate_percent / 100), 2), 'net_amount' => 4200000, 'gross_amount' => 4200000, 'e_bupot_reference' => 'BUPOT-2026-001', 'status' => 'reported', 'notes' => 'Seeded withholding transaction.', 'created_by' => $user->id, 'reported_by' => $finance->id ?? $user->id, 'reported_at' => $now]);
+            $put('tax_transactions', ['reference' => 'TAX-2026-001'], ['tax_id' => $tax->id, 'transaction_type' => 'manual', 'source_type' => 'expense_request', 'source_id' => $expenseIds[1] ?? null, 'transaction_date' => '2026-03-15', 'direction' => 'withholding_out', 'taxable_amount' => 6000000, 'tax_rate' => $tax->rate_percent, 'tax_amount' => round(6000000 * ((float) $tax->rate_percent / 100), 2), 'net_amount' => 6000000, 'gross_amount' => 6000000, 'e_bupot_reference' => 'BUPOT-2026-001', 'status' => 'reported', 'notes' => 'Seeded withholding transaction.', 'created_by' => $user->id, 'reported_by' => $finance->id ?? $user->id, 'reported_at' => $now]);
         }
         if ($employee || $finance) {
             foreach ([['TS-2026-001', '2026-03-03', 8, 'Participatory mapping preparation', 'submitted'], ['TS-2026-002', '2026-03-04', 7.5, 'Community consultation facilitation', 'approved'], ['TS-2026-003', '2026-03-05', 6, 'Financial monitoring and reporting', 'draft']] as $row) {
