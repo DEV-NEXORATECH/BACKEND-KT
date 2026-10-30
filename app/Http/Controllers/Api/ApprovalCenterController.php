@@ -55,7 +55,10 @@ class ApprovalCenterController extends Controller
         if (! $moduleFilter || $moduleFilter === 'expense') {
             if ($user->hasAnyPermission(['expense.approve', 'expenses.approve', 'expenses-approvals.view'])) {
                 $expenses = ExpenseRequest::with(['requester', 'project', 'department'])
-                    ->where('status', 'submitted')
+                    // Finance Verification owns the submitted queue. The
+                    // Approval Center only receives expenses after Finance
+                    // has verified them.
+                    ->where('status', 'verified')
                     ->latest('id')
                     ->get()
                     ->map(fn (ExpenseRequest $exp) => [
@@ -519,13 +522,6 @@ class ApprovalCenterController extends Controller
                         $exp = ExpenseRequest::find($id);
                         if ($exp) {
                             if ($action === 'approve') {
-                                if ($exp->status === 'submitted') {
-                                    if (! $request->user()->hasPermission('expense.verify')) {
-                                        abort(403, 'Tidak memiliki permission expense.verify untuk memproses Finance Verification.');
-                                    }
-                                    $expenseController->verify($request, $exp);
-                                    $exp->refresh();
-                                }
                                 $expenseController->approve($request, $exp, app(\App\Services\Budget\BudgetMonitoringService::class), app(\App\Services\Settings\SystemPolicyService::class), app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
                                 $expenseController->reject($request, $exp);

@@ -33,7 +33,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ExpenseRequestController extends Controller
 {
-    private array $with = ['requester.employee', 'approvedBy.employee', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'parentExpenseRequest:id,request_number,total_amount,paid_amount,settlement_due_date', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
+    private array $with = ['requester.employee', 'verifiedBy.employee', 'approvedBy.employee', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'parentExpenseRequest:id,request_number,total_amount,paid_amount,settlement_due_date', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
 
     public function index(Request $request): JsonResponse
     {
@@ -919,6 +919,16 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'approved_at' => $action->action_at?->toISOString(),
                 'status' => $action->status,
             ])->values()->all() ?? [];
+        if ($expense->verifiedBy && $expense->verified_at) {
+            array_unshift($approvalHistory, [
+                'stage' => 'Finance Verification',
+                'approver_name' => $expense->verifiedBy->name ?: $expense->verifiedBy->employee?->name,
+                'approver_position' => $expense->verifiedBy->employee?->position_name ?: $expense->verifiedBy->employee?->position ?: 'Finance',
+                'signature_url' => $expense->verifiedBy->employee?->signature_path ? url($expense->verifiedBy->employee->signature_path) : null,
+                'approved_at' => $expense->verified_at?->toISOString(),
+                'status' => 'verified',
+            ]);
+        }
         $returnedAmount = $expense->relationLoaded('cashAdvanceReturns')
             ? (float) $expense->cashAdvanceReturns->where('status', 'received')->sum('return_amount')
             : (float) $expense->cashAdvanceReturns()->where('status', 'received')->sum('return_amount');

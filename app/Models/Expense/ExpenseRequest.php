@@ -31,6 +31,7 @@ class ExpenseRequest extends Model
     public function lines(): HasMany { return $this->hasMany(ExpenseRequestLine::class)->orderBy('line_order'); }
     public function requester(): BelongsTo { return $this->belongsTo(User::class, 'requester_id'); }
     public function approvedBy(): BelongsTo { return $this->belongsTo(User::class, 'approved_by'); }
+    public function verifiedBy(): BelongsTo { return $this->belongsTo(User::class, 'verified_by'); }
     public function donor(): BelongsTo { return $this->belongsTo(Donor::class); }
     public function secondDonor(): BelongsTo { return $this->belongsTo(Donor::class, 'second_donor_id'); }
     public function grantAgreement(): BelongsTo { return $this->belongsTo(GrantAgreement::class); }

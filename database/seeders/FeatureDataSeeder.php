@@ -204,8 +204,14 @@ class FeatureDataSeeder extends Seeder
         $entity = 'App\\Models\\Expense\\ExpenseRequest';
         $run = $put('approval_workflow_runs', ['module' => 'expense', 'approvable_type' => $entity, 'approvable_id' => $expenseIds[0] ?? 1], ['status' => 'in_progress', 'current_level' => 1, 'submitted_by' => $finance->id ?? $user->id]);
         $matrix = DB::table('approval_matrices')->where('module', 'expense')->orderBy('level')->first();
-        $role = DB::table('roles')->where('slug', 'finance-manager')->first();
-        $put('approval_workflow_actions', ['approval_workflow_run_id' => $run, 'level' => 1], ['approval_matrix_id' => $matrix?->id, 'role_id' => $role?->id, 'user_id' => $finance->id ?? $user->id, 'status' => 'pending', 'notes' => 'Awaiting Finance Manager review.']);
+        $put('approval_workflow_actions', ['approval_workflow_run_id' => $run, 'level' => 1], [
+            'approval_matrix_id' => $matrix?->id,
+            'role_id' => $matrix?->role_id,
+            'user_id' => $matrix?->user_id,
+            'employee_id' => $matrix?->employee_id,
+            'status' => 'pending',
+            'notes' => 'Awaiting approval after Finance Verification.',
+        ]);
         foreach ([['module' => 'Procurement', 'action' => 'created', 'entity_type' => 'PurchaseRequest', 'entity_id' => 1], ['module' => 'Expenses', 'action' => 'submitted', 'entity_type' => 'ExpenseRequest', 'entity_id' => $expenseIds[0] ?? 1], ['module' => 'Accounting', 'action' => 'posted', 'entity_type' => 'Journal', 'entity_id' => 1], ['module' => 'Timesheet', 'action' => 'approved', 'entity_type' => 'TimesheetEntry', 'entity_id' => 2]] as $row) {
             DB::table('audit_logs')->updateOrInsert(
                 ['module' => $row['module'], 'action' => $row['action'], 'entity_type' => $row['entity_type'], 'entity_id' => $row['entity_id']],
