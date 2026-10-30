@@ -137,8 +137,8 @@ class FeatureDataSeeder extends Seeder
             $approvalUsers = [
                 'budget-holder' => $budgetHolder,
                 'finance-officer' => DB::table('users')->where('email', 'winda.astuti@kaoemtelapak.org')->first() ?? $finance,
-                'finance-manager' => DB::table('users')->where('email', 'finance.manager@kaoemtelapak.test')->first() ?? $budgetHolder,
-                'board-director' => DB::table('users')->where('email', 'admin@kaoemtelapak.test')->first() ?? $budgetHolder,
+                'finance-manager' => DB::table('users')->where('email', 'syaifani.havid@kaoemtelapak.org')->first() ?? $finance,
+                'board-director' => DB::table('users')->where('email', 'syaifani.havid@kaoemtelapak.org')->first() ?? $finance,
             ];
             $runId = $put('approval_workflow_runs', ['module' => 'expense', 'approvable_type' => $workflowEntity, 'approvable_id' => $approvedExpenseId], [
                 'status' => 'approved', 'current_level' => (int) ($matrices->max('level') ?: 1), 'submitted_by' => $finance->id ?? $user->id, 'completed_at' => $now,
