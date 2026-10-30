@@ -23,6 +23,7 @@ class DatabaseSeeder extends Seeder
             // Users must exist before the approval matrix is created so
             // configured budget holders can be linked to their employees.
             ExpenseApprovalChainSeeder::class,
+            ApprovalMatrixSeeder::class,
             ProcessDataSeeder::class,
         ]);
     }
