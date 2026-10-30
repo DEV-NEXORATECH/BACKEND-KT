@@ -19,6 +19,8 @@ class AccountingPeriod extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'start_date' => 'date',
+        'end_date' => 'date',
     ];
 
     public function fiscalYear()

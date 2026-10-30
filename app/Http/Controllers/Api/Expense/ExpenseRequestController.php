@@ -916,7 +916,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'approver_name' => $action->actionBy?->name ?: $action->actionBy?->employee?->name,
                 'approver_position' => $action->actionBy?->employee?->position_name ?: $action->approvalMatrix?->approver_title,
                 'signature_url' => $action->actionBy?->employee?->signature_path ? url($action->actionBy->employee->signature_path) : null,
-                'approved_at' => $action->action_at?->toISOString(),
+                'approved_at' => $action->action_at ? \Illuminate\Support\Carbon::parse($action->action_at)->toISOString() : null,
                 'status' => $action->status,
             ])->values()->all() ?? [];
         if ($expense->verifiedBy && $expense->verified_at) {
@@ -925,7 +925,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'approver_name' => $expense->verifiedBy->name ?: $expense->verifiedBy->employee?->name,
                 'approver_position' => $expense->verifiedBy->employee?->position_name ?: $expense->verifiedBy->employee?->position ?: 'Finance',
                 'signature_url' => $expense->verifiedBy->employee?->signature_path ? url($expense->verifiedBy->employee->signature_path) : null,
-                'approved_at' => $expense->verified_at?->toISOString(),
+                'approved_at' => $expense->verified_at ? \Illuminate\Support\Carbon::parse($expense->verified_at)->toISOString() : null,
                 'status' => 'verified',
             ]);
         }
@@ -1026,10 +1026,10 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'settlement_difference' => $expense->parentExpenseRequest ? round((float) ($expense->actual_expense_amount ?? $expense->total_amount ?? 0) - (float) ($expense->parentExpenseRequest->paid_amount ?: $expense->parentExpenseRequest->total_amount), 2) : null,
             'settlement_due_date' => $expense->settlement_due_date?->toDateString(),
             'decision_notes' => $expense->decision_notes,
-            'submitted_at' => $expense->submitted_at?->toISOString(),
-            'rejected_at' => $expense->rejected_at?->toISOString(),
+            'submitted_at' => $expense->submitted_at ? \Illuminate\Support\Carbon::parse($expense->submitted_at)->toISOString() : null,
+            'rejected_at' => $expense->rejected_at ? \Illuminate\Support\Carbon::parse($expense->rejected_at)->toISOString() : null,
             'rejected_by' => $expense->rejected_by,
-            'approved_at' => $expense->approved_at?->toISOString(),
+            'approved_at' => $expense->approved_at ? \Illuminate\Support\Carbon::parse($expense->approved_at)->toISOString() : null,
             'approved_by' => $expense->approved_by,
             'payment_status' => ((float) $expense->paid_amount >= (float) $expense->total_amount && (float) $expense->total_amount > 0) ? 'paid' : (((float) $expense->paid_amount > 0) ? 'partial' : 'unpaid'),
             'lines' => $expense->lines->map(fn ($line) => [
