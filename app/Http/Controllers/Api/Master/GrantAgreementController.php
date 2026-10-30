@@ -16,7 +16,7 @@ class GrantAgreementController extends BaseMasterController
     protected string $storeRequestClass = StoreGrantAgreementRequest::class;
     protected string $updateRequestClass = UpdateGrantAgreementRequest::class;
     protected array $searchableColumns = ['grant_no', 'agreement_name'];
-    protected array $defaultWith = ['donor', 'fundingSource', 'currency', 'bankAccount'];
+    protected array $defaultWith = ['donor', 'fundingSource', 'currency', 'bankAccount', 'reportingDeadlines', 'projects'];
 
     public function store(\Illuminate\Http\Request $request): JsonResponse
     {
