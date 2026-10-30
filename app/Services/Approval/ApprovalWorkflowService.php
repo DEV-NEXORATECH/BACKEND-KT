@@ -3,7 +3,9 @@
 namespace App\Services\Approval;
 
 use App\Models\ApprovalWorkflowRun;
+use App\Models\ApprovalWorkflowEvent;
 use App\Models\Master\ApprovalMatrix;
+use App\Models\Master\FiscalYear;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -42,9 +44,15 @@ class ApprovalWorkflowService
                 ['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()],
                 ['status' => 'in_progress', 'current_level' => $matrices->min('level'), 'submitted_by' => $submittedBy],
             );
+            $returnedForRevision = $entity->getAttribute('status') === 'returned_for_revision';
+            if ($returnedForRevision) {
+                // Resubmission starts a fresh approval version while the old
+                // return event remains preserved in approval_workflow_events.
+                $entity->forceFill(['status' => 'draft'])->save();
+            }
             // A rejected document may be corrected and submitted again. Reset
             // the historical run actions so its next approval starts cleanly.
-            if ($run->status === 'rejected') {
+            if (in_array($run->status, ['rejected', 'returned_for_revision'], true) || $returnedForRevision) {
                 $run->actions()->delete();
                 $run->update(['status' => 'in_progress', 'current_level' => $matrices->min('level'), 'submitted_by' => $submittedBy, 'completed_at' => null]);
             }
@@ -62,7 +70,9 @@ class ApprovalWorkflowService
                 }
             }
 
-            return $run->fresh('actions');
+            $run = $run->fresh('actions');
+            $this->recordEvent($run, 'resubmitted', null, $run->current_level, $submittedBy, 'Dokumen disubmit/resubmit untuk approval.');
+            return $run;
         });
     }
 
@@ -91,6 +101,7 @@ class ApprovalWorkflowService
             $action = $actions->first(fn ($item) => $this->matchesApprover($item, $user, $run->approvable));
             if (! $action) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap approval saat ini.']);
             $action->update(['status' => 'approved', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
+            $this->recordEvent($run, 'approved', $run->current_level, $run->current_level, $user->id, $notes);
 
             if ($run->actions()->where('level', $run->current_level)->where('status', 'pending')->exists()) {
                 return ['managed' => true, 'completed' => false, 'next_level' => $run->current_level];
@@ -102,6 +113,7 @@ class ApprovalWorkflowService
                 return ['managed' => true, 'completed' => false, 'next_level' => $nextLevel];
             }
             $run->update(['status' => 'approved', 'completed_at' => now()]);
+            $this->recordEvent($run, 'completed', $run->current_level, null, $user->id, $notes);
             return ['managed' => true, 'completed' => true, 'next_level' => null];
         });
     }
@@ -118,7 +130,51 @@ class ApprovalWorkflowService
             if (! $action) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap approval saat ini.']);
             $action->update(['status' => 'rejected', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
             $run->update(['status' => 'rejected', 'completed_at' => now()]);
+            $this->recordEvent($run, 'rejected', $run->current_level, null, $user->id, $notes);
         });
+    }
+
+    public function returnToLevel(string $module, Model $entity, User $user, int $targetLevel, string $notes): array
+    {
+        if (trim($notes) === '') throw ValidationException::withMessages(['notes' => 'Alasan pengembalian wajib diisi.']);
+        return DB::transaction(function () use ($module, $entity, $user, $targetLevel, $notes) {
+            $run = ApprovalWorkflowRun::query()->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])->lockForUpdate()->first();
+            if (! $run || ! in_array($run->status, ['in_progress', 'approved'], true)) throw ValidationException::withMessages(['approval' => 'Workflow approval tidak aktif.']);
+            if ($targetLevel < 1 || $targetLevel >= (int) $run->current_level) throw ValidationException::withMessages(['target_level' => 'Dokumen hanya dapat dikembalikan ke level sebelumnya.']);
+            $run->load('actions.approvalMatrix');
+            $fromLevel = (int) $run->current_level;
+            $current = $run->actions()->where('level', $run->current_level)->whereIn('status', ['pending', 'approved'])->first();
+            if (! $current || (! $this->isSuperAdmin($user) && ! $this->matchesApprover($current, $user, $entity))) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap ini.']);
+            $current->update(['notes' => trim(($current->notes ? $current->notes."\n" : '').'Returned to level '.$targetLevel.': '.$notes), 'action_by' => $user->id, 'action_at' => now()]);
+            $run->actions()->where('level', $targetLevel)->update(['status' => 'pending', 'action_by' => null, 'action_at' => null, 'notes' => 'Returned for revision: '.$notes]);
+            $run->actions()->where('level', '>', $targetLevel)->update(['status' => 'queued', 'action_by' => null, 'action_at' => null]);
+            $run->update(['status' => 'in_progress', 'current_level' => $targetLevel, 'completed_at' => null]);
+            if ($entity->getAttribute('status')) $entity->forceFill(['status' => 'returned_for_revision'])->save();
+            $this->recordEvent($run, 'returned_for_revision', $fromLevel, $targetLevel, $user->id, $notes, [
+                'reason' => $notes,
+                'target_level' => $targetLevel,
+            ]);
+            return ['target_level' => $targetLevel, 'message' => 'Dokumen dikembalikan untuk revisi.'];
+        });
+    }
+
+    private function recordEvent(ApprovalWorkflowRun $run, string $event, ?int $fromLevel, ?int $toLevel, ?int $actorId, ?string $notes = null, array $metadata = []): void
+    {
+        $actor = $actorId ? User::with('employee.positionMaster')->find($actorId) : null;
+        $version = ((int) $run->events()->max('version')) + 1;
+        ApprovalWorkflowEvent::create([
+            'approval_workflow_run_id' => $run->id,
+            'approval_workflow_action_id' => $run->actions()->where('level', $fromLevel ?: $toLevel)->latest('id')->value('id'),
+            'event' => $event,
+            'from_level' => $fromLevel,
+            'to_level' => $toLevel,
+            'version' => $version,
+            'actor_id' => $actor?->id,
+            'actor_name' => $actor?->name,
+            'actor_position' => $actor?->employee?->position_name ?: $actor?->employee?->positionMaster?->name,
+            'notes' => $notes,
+            'metadata' => $metadata ?: null,
+        ]);
     }
 
     public function userCanApproveAction(\App\Models\ApprovalWorkflowAction $action, User $user, ?Model $entity = null): bool
@@ -171,34 +227,47 @@ class ApprovalWorkflowService
             ];
         }
 
-        $actions = $run->actions->sortBy(fn ($action) => sprintf('%08d-%08d', (int) $action->level, (int) $action->id))->values();
+        // A workflow has one approval action per level. Older seed data could
+        // contain duplicate matrix rows, so collapse legacy duplicates here
+        // without changing the stored audit records.
+        $actions = $run->actions
+            ->sortBy(fn ($action) => sprintf('%08d-%08d', (int) $action->level, (int) $action->id))
+            ->groupBy('level')
+            ->map(fn ($levelActions) => $levelActions->first())
+            ->values();
+        $amount = (float) ($entity->getAttribute('total_amount') ?? $entity->getAttribute('amount') ?? $entity->getAttribute('tax_amount') ?? $entity->getAttribute('acquisition_cost') ?? 0);
+        $fallbackMatrices = $this->matricesFor($module, $entity, $amount)->keyBy('level');
         $isSuperAdmin = $viewer && $this->isSuperAdmin($viewer);
         $visibleActions = $isSuperAdmin
             ? $actions
             : $actions->filter(fn ($action) => in_array($action->status, ['approved', 'pending'], true))->values();
         $current = $actions->first(fn ($action) => (int) $action->level === (int) $run->current_level && $action->status === 'pending');
+        $currentMatrix = $current?->approvalMatrix ?: $fallbackMatrices->get((int) $run->current_level);
 
         return [
             'status' => $run->status,
             'current_level' => $run->status === 'approved' ? null : (int) $run->current_level,
-            'current_stage' => $current?->approvalMatrix?->approver_title ?: ($current?->approvalMatrix?->role?->name ?? null),
+            'current_stage' => $currentMatrix?->approver_title ?: ($currentMatrix?->role?->name ?? null),
             'completed_count' => $actions->where('status', 'approved')->count(),
             'total_count' => $actions->count(),
-            'steps' => $visibleActions->map(fn ($action) => [
+            'steps' => $visibleActions->map(function ($action) use ($fallbackMatrices) {
+                $matrix = $action->approvalMatrix ?: $fallbackMatrices->get((int) $action->level);
+                return [
                 'level' => (int) $action->level,
-                'label' => $action->approvalMatrix?->approver_title ?: ($action->approvalMatrix?->role?->name ?: 'Approval Level '.$action->level),
+                'label' => $matrix?->approver_title ?: ($matrix?->role?->name ?: 'Approval Level '.$action->level),
                 'status' => $action->status,
                 'approver_name' => $action->actionBy?->name ?: $action->actionBy?->employee?->name,
                 'approver_position' => $action->actionBy?->employee?->position_name
                     ?: $action->actionBy?->employee?->position
                     ?: $action->actionBy?->employee?->positionMaster?->name
-                    ?: $action->approvalMatrix?->approver_title
-                    ?: ($action->approvalMatrix?->role?->name ?? null),
+                    ?: $matrix?->approver_title
+                    ?: ($matrix?->role?->name ?? null),
                 'signature_url' => $action->actionBy?->employee?->signature_path
                     ? url($action->actionBy->employee->signature_path)
                     : null,
                 'approved_at' => $action->action_at?->toISOString(),
-            ])->values()->all(),
+                ];
+            })->values()->all(),
         ];
     }
 
@@ -210,6 +279,17 @@ class ApprovalWorkflowService
     private function matricesFor(string $module, Model $entity, float $amount)
     {
         $fiscalYearId = $entity->getAttribute('fiscal_year_id');
+        if (! $fiscalYearId) {
+            $date = $entity->getAttribute('request_date')
+                ?: $entity->getAttribute('transaction_date')
+                ?: $entity->getAttribute('journal_date')
+                ?: $entity->getAttribute('created_at');
+            if ($date) {
+                $fiscalYearId = FiscalYear::query()
+                    ->where('year', \Carbon\CarbonImmutable::parse($date)->year)
+                    ->value('id');
+            }
+        }
 
         // The nominal threshold determines the highest level reached. Every
         // lower level must then be completed in sequence before that level.

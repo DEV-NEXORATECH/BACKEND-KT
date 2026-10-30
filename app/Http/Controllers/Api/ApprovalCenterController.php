@@ -56,11 +56,14 @@ class ApprovalCenterController extends Controller
             'tax_transaction' => TaxTransaction::class,
             'bank_reconciliation' => BankTransaction::class,
             'period_closing' => AccountingPeriod::class,
+            'settlement' => ExpenseRequest::class,
+            'budget_reallocation' => BudgetReallocation::class,
+            'payment' => ExpenseRequest::class,
         ];
         abort_unless(isset($types[$module]), 404, 'Modul approval tidak ditemukan.');
         $model = $types[$module];
         $entity = $model::query()->findOrFail($id);
-        $run = ApprovalWorkflowRun::query()->with(['actions.actionBy.employee', 'actions.approvalMatrix.role'])
+        $run = ApprovalWorkflowRun::query()->with(['actions.actionBy.employee', 'actions.approvalMatrix.role', 'events.actor.employee.positionMaster'])
             ->where(['module' => $module, 'approvable_type' => $model, 'approvable_id' => $id])->first();
         if (! $run) return response()->json(['success' => true, 'data' => ['module' => $module, 'document_id' => $id, 'status' => $entity->getAttribute('status') ?: 'draft', 'current_level' => null, 'steps' => []]]);
         $workflow = app(\App\Services\Approval\ApprovalWorkflowService::class);
@@ -71,7 +74,53 @@ class ApprovalCenterController extends Controller
             // users see reached stages only, while Super Admin can inspect the
             // complete chain including queued future stages.
             'steps' => $progress['steps'],
+            'events' => $run->events->map(fn ($event) => [
+                'event' => $event->event,
+                'version' => $event->version,
+                'from_level' => $event->from_level,
+                'to_level' => $event->to_level,
+                'actor_name' => $event->actor_name ?: $event->actor?->name,
+                'actor_position' => $event->actor_position ?: $event->actor?->employee?->position_name ?: $event->actor?->employee?->positionMaster?->name,
+                'notes' => $event->notes,
+                'created_at' => $event->created_at?->toISOString(),
+            ])->values(),
         ]]);
+    }
+
+    /** Return a document to an earlier approval level. A reason is mandatory. */
+    public function returnForRevision(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'module' => ['required', 'string', 'max:50'],
+            'id' => ['required', 'integer', 'min:1'],
+            'target_level' => ['required', 'integer', 'min:1'],
+            'notes' => ['required', 'string', 'min:5', 'max:2000'],
+            'entity_type' => ['nullable', 'string'],
+        ]);
+
+        $types = [
+            'expense' => ExpenseRequest::class, 'pr' => PurchaseRequest::class,
+            'procurement' => PurchaseRequest::class, 'po' => PurchaseOrder::class,
+            'cba' => ComparativeBidAnalysis::class, 'scn' => SupplierContractNotification::class,
+            'journal' => Journal::class, 'ap' => SupplierInvoice::class,
+            'ar' => CustomerInvoice::class, 'timesheet' => TimesheetEntry::class,
+            'asset' => FixedAsset::class, 'asset_disposal' => FixedAsset::class,
+            'tax_transaction' => TaxTransaction::class, 'bank_reconciliation' => BankTransaction::class,
+            'settlement' => ExpenseRequest::class, 'period_closing' => AccountingPeriod::class,
+            'budget_reallocation' => BudgetReallocation::class,
+            'payment' => ExpenseRequest::class,
+        ];
+        abort_unless(isset($types[$data['module']]), 404, 'Modul approval tidak ditemukan.');
+        $model = $types[$data['module']];
+        if ($data['module'] === 'payment') {
+            $model = ($data['entity_type'] ?? '') === SupplierInvoice::class ? SupplierInvoice::class : ExpenseRequest::class;
+        }
+        $entity = $model::query()->findOrFail($data['id']);
+        $result = app(\App\Services\Approval\ApprovalWorkflowService::class)->returnToLevel(
+            $data['module'], $entity, $request->user(), (int) $data['target_level'], $data['notes']
+        );
+
+        return response()->json(['success' => true, 'message' => $result['message'], 'data' => $result]);
     }
 
     /**

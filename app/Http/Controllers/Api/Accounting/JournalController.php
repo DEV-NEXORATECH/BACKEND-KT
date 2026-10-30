@@ -194,11 +194,11 @@ class JournalController extends Controller
 
     public function submit(Request $request, Journal $journal, ApprovalWorkflowService $workflow): JsonResponse
     {
+        $workflow->start('journal', $journal, (float) $journal->lines()->sum('debit'), $request->user()->id);
         $response = $this->transition($journal, 'draft', 'submitted', [
             'submitted_by' => $request->user()->id,
             'submitted_at' => now(),
         ], 'Journal berhasil disubmit.');
-        $workflow->start('journal', $journal, (float) $journal->lines()->sum('debit'), $request->user()->id);
         return $response;
     }
 

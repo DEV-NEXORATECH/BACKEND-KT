@@ -16,6 +16,11 @@ class ApprovalWorkflowRun extends Model
         return $this->hasMany(ApprovalWorkflowAction::class)->orderBy('level')->orderBy('id');
     }
 
+    public function events(): HasMany
+    {
+        return $this->hasMany(ApprovalWorkflowEvent::class)->latest('id');
+    }
+
     public function approvable(): MorphTo
     {
         return $this->morphTo();

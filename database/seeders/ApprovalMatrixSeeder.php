@@ -5,12 +5,25 @@ namespace Database\Seeders;
 use App\Models\Master\ApprovalMatrix;
 use App\Models\Master\FiscalYear;
 use App\Models\Role;
+use App\Models\ApprovalWorkflowAction;
+use App\Models\ApprovalWorkflowRun;
 use Illuminate\Database\Seeder;
 
 class ApprovalMatrixSeeder extends Seeder
 {
     public function run(): void
     {
+        foreach ([2025, 2026, 2027] as $year) {
+            FiscalYear::updateOrCreate(['year' => $year], [
+                'name' => 'Tahun Fiskal '.$year,
+                'calendar_code' => 'JAN-DEC',
+                'start_month' => 1,
+                'start_date' => $year.'-01-01',
+                'end_date' => $year.'-12-31',
+                'status' => 'open',
+                'is_active' => $year === 2026,
+            ]);
+        }
         $years = FiscalYear::query()->whereIn('year', [2025, 2026, 2027])->pluck('id', 'year');
         if ($years->isEmpty()) return;
 
@@ -49,6 +62,16 @@ class ApprovalMatrixSeeder extends Seeder
             ->whereIn('module', array_keys($modules))
             ->whereNull('project_id')->whereNull('donor_id')->whereNull('department_id')
             ->delete();
+
+        // Remove duplicate actions created by older matrix seeders. One
+        // document must have one action per level; otherwise the same level
+        // would appear repeatedly and require approval multiple times.
+        $runIds = ApprovalWorkflowRun::query()->whereIn('module', array_keys($modules))->pluck('id');
+        ApprovalWorkflowAction::query()->whereIn('approval_workflow_run_id', $runIds)->get()
+            ->groupBy(fn ($action) => $action->approval_workflow_run_id.'-'.$action->level)
+            ->each(function ($actions) {
+                $actions->sortBy('id')->skip(1)->each->delete();
+            });
 
         $levels = [
             [1, 0, $roles['project'], 'Project Manager / Budget Holder'],
