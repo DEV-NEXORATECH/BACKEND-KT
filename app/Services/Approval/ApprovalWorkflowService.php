@@ -136,6 +136,31 @@ class ApprovalWorkflowService
     {
         $run = $this->runFor($module, $entity);
         if (! $run) {
+            $amount = (float) ($entity->getAttribute('total_amount') ?? $entity->getAttribute('amount') ?? $entity->getAttribute('tax_amount') ?? $entity->getAttribute('acquisition_cost') ?? 0);
+            $matrices = $this->matricesFor($module, $entity, $amount);
+            $finalStatuses = ['approved', 'posted', 'paid', 'completed', 'reported', 'reconciled', 'matched', 'applied', 'active'];
+            $entityStatus = strtolower((string) ($entity->getAttribute('status') ?: 'draft'));
+            if ($matrices->isNotEmpty() && in_array($entityStatus, $finalStatuses, true)) {
+                $actor = null;
+                $actorId = $entity->getAttribute('approved_by') ?: $entity->getAttribute('posted_by') ?: $entity->getAttribute('verified_by');
+                if ($actorId) $actor = User::with('employee.positionMaster')->find($actorId);
+                return [
+                    'status' => $entity->getAttribute('status'),
+                    'current_level' => null,
+                    'current_stage' => null,
+                    'completed_count' => $matrices->count(),
+                    'total_count' => $matrices->count(),
+                    'steps' => $matrices->map(fn ($matrix) => [
+                        'level' => (int) $matrix->level,
+                        'label' => $matrix->approver_title ?: ($matrix->role?->name ?: 'Approval Level '.$matrix->level),
+                        'status' => 'approved',
+                        'approver_name' => $actor?->name,
+                        'approver_position' => $actor?->employee?->position_name ?: $actor?->employee?->positionMaster?->name ?: $matrix->approver_title,
+                        'signature_url' => $actor?->employee?->signature_path ? url($actor->employee->signature_path) : null,
+                        'approved_at' => ($approvalDate = $entity->getAttribute('approved_at') ?: $entity->getAttribute('updated_at')) ? \Carbon\CarbonImmutable::parse($approvalDate)->toISOString() : null,
+                    ])->values()->all(),
+                ];
+            }
             return [
                 'status' => $entity->getAttribute('status') ?: 'draft',
                 'current_level' => null,
