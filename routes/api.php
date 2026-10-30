@@ -387,6 +387,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('project-logframes/import', [ProjectLogframeController::class, 'import'])->middleware('permission:master-data.manage');
         Route::post('project-workplans/import', [ProjectWorkplanController::class, 'import'])->middleware('permission:master-data.manage');
         Route::apiResource('project-workplans', ProjectWorkplanController::class)->middleware('permission:master-data');
+        Route::get('grant-reporting-deadlines/summary', [GrantReportingDeadlineController::class, 'summary'])->middleware('permission:master-data.view');
+        Route::get('grant-reporting-deadlines/calendar', [GrantReportingDeadlineController::class, 'calendar'])->middleware('permission:master-data.view');
+        Route::get('grant-reporting-deadlines/download-document', [GrantReportingDeadlineController::class, 'downloadDocument'])->middleware('permission:master-data.view');
+        Route::post('grant-reporting-deadlines/generate-schedule', [GrantReportingDeadlineController::class, 'generateSchedule'])->middleware('permission:master-data.manage');
+        Route::post('grant-reporting-deadlines/{grantReportingDeadline}/submit', [GrantReportingDeadlineController::class, 'submitReport'])->middleware('permission:master-data.manage');
         Route::apiResource('grant-reporting-deadlines', GrantReportingDeadlineController::class)->middleware('permission:master-data');
         Route::get('roles', [RoleMenuController::class, 'options'])->middleware('permission:master-data.view');
         Route::get('exchange-rates/resolve', [ExchangeRateController::class, 'resolve'])->middleware('permission:master-data.view');
