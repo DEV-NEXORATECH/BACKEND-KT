@@ -130,13 +130,27 @@ class FeatureDataSeeder extends Seeder
                         || ((float) $matrix->min_amount <= $approvedAmount && ($matrix->max_amount === null || (float) $matrix->max_amount >= $approvedAmount));
                 })->values()
                 : collect();
+            // Resolve every approval stage to a real seeded user. This keeps
+            // the approval history connected to an employee record so the
+            // API can return the employee's name, position, and signature.
+            $roleSlugs = DB::table('roles')->pluck('slug', 'id');
+            $approvalUsers = [
+                'budget-holder' => $budgetHolder,
+                'finance-officer' => DB::table('users')->where('email', 'winda.astuti@kaoemtelapak.org')->first() ?? $finance,
+                'finance-manager' => DB::table('users')->where('email', 'finance.manager@kaoemtelapak.test')->first() ?? $budgetHolder,
+                'board-director' => DB::table('users')->where('email', 'admin@kaoemtelapak.test')->first() ?? $budgetHolder,
+            ];
             $runId = $put('approval_workflow_runs', ['module' => 'expense', 'approvable_type' => $workflowEntity, 'approvable_id' => $approvedExpenseId], [
                 'status' => 'approved', 'current_level' => (int) ($matrices->max('level') ?: 1), 'submitted_by' => $finance->id ?? $user->id, 'completed_at' => $now,
             ]);
             foreach ($matrices as $matrix) {
+                $roleSlug = $roleSlugs[(int) $matrix->role_id] ?? null;
+                $actionBy = $matrix->user_id
+                    ? (DB::table('users')->find($matrix->user_id) ?? $approvalUsers[$roleSlug] ?? $budgetHolder)
+                    : ($approvalUsers[$roleSlug] ?? $budgetHolder);
                 $put('approval_workflow_actions', ['approval_workflow_run_id' => $runId, 'approval_matrix_id' => $matrix->id], [
                     'level' => $matrix->level, 'role_id' => $matrix->role_id, 'user_id' => $matrix->user_id,
-                    'employee_id' => $matrix->employee_id, 'status' => 'approved', 'action_by' => $budgetHolder->id,
+                    'employee_id' => $actionBy->employee_id, 'status' => 'approved', 'action_by' => $actionBy->id,
                     'action_at' => $now, 'notes' => 'Seeded approved workflow for PDF testing.',
                 ]);
             }
