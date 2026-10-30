@@ -23,6 +23,10 @@ class ExpenseChartOfAccountsSeeder extends Seeder
             ['code' => '5400', 'name' => 'Office and Administration', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '5000'],
             ['code' => '5500', 'name' => 'Depreciation Expense', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '5000'],
             ['code' => '11510', 'name' => 'Employee Loan Receivable', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '11000'],
+            ['code' => '2000', 'name' => 'LIABILITIES', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => true, 'parent_code' => null],
+            ['code' => '2100', 'name' => 'ACCOUNTS PAYABLE', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 2, 'is_header' => true, 'parent_code' => '2000'],
+            ['code' => '2110', 'name' => 'Accounts Payable - Suppliers', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 3, 'is_header' => false, 'parent_code' => '2100'],
+            ['code' => '2120', 'name' => 'Payroll and Tax Payable', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 3, 'is_header' => false, 'parent_code' => '2100'],
         ];
 
         $created = [];
