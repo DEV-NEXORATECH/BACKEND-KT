@@ -44,6 +44,7 @@ class ExpenseApprovalChainSeeder extends Seeder
                 'max_amount' => $stage['max'] ?? null,
                 'role_id' => $stage['user'] ? null : $roleIds[$stage['role']],
                 'user_id' => $stage['user']?->id,
+                'employee_id' => $stage['user']?->employee_id,
                 'approver_title' => $stage['title'],
                 'description' => $stage['description'],
                 'is_conditional_project_manager' => false,

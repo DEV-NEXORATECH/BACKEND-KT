@@ -192,7 +192,7 @@ class UserSeeder extends Seeder
             $role = $roles->get($userData['role_slug']) 
                 ?? Role::where('slug', $userData['role_slug'])->first();
 
-            User::updateOrCreate(
+            $user = User::updateOrCreate(
                 ['email' => strtolower($userData['email'])],
                 [
                     'name' => $userData['name'],
@@ -201,6 +201,15 @@ class UserSeeder extends Seeder
                     'must_change_password' => true,
                 ]
             );
+
+            // Link application users to the seeded employee record so the
+            // latest approval/PDF flow can resolve position and signature.
+            $employee = \App\Models\Master\Employee::query()
+                ->whereRaw('LOWER(email) = ?', [strtolower($userData['email'])])
+                ->first();
+            if ($employee && (int) $user->employee_id !== (int) $employee->id) {
+                $user->update(['employee_id' => $employee->id]);
+            }
         }
     }
 }

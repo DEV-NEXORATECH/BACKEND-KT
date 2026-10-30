@@ -117,7 +117,19 @@ class FeatureDataSeeder extends Seeder
         $approvedExpenseId = $expenseIds[1] ?? null;
         if ($approvedExpenseId) {
             $workflowEntity = 'App\\Models\\Expense\\ExpenseRequest';
-            $matrices = DB::table('approval_matrices')->where('module', 'expense')->where('is_active', true)->orderBy('level')->orderBy('id')->get();
+            $approvedAmount = 4200000;
+            $matrixQuery = DB::table('approval_matrices')
+                ->where('module', 'expense')
+                ->where('is_active', true)
+                ->where('min_amount', '<=', $approvedAmount)
+                ->where(fn ($query) => $query->whereNull('max_amount')->orWhere('max_amount', '>=', $approvedAmount));
+            $highestLevel = (int) ($matrixQuery->max('level') ?: 0);
+            $matrices = $highestLevel > 0
+                ? DB::table('approval_matrices')->where('module', 'expense')->where('is_active', true)->where('level', '<=', $highestLevel)->orderBy('level')->orderBy('id')->get()->filter(function ($matrix) use ($approvedAmount) {
+                    return (int) $matrix->level !== 1
+                        || ((float) $matrix->min_amount <= $approvedAmount && ($matrix->max_amount === null || (float) $matrix->max_amount >= $approvedAmount));
+                })->values()
+                : collect();
             $runId = $put('approval_workflow_runs', ['module' => 'expense', 'approvable_type' => $workflowEntity, 'approvable_id' => $approvedExpenseId], [
                 'status' => 'approved', 'current_level' => (int) ($matrices->max('level') ?: 1), 'submitted_by' => $finance->id ?? $user->id, 'completed_at' => $now,
             ]);

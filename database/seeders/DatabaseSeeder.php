@@ -16,11 +16,13 @@ class DatabaseSeeder extends Seeder
             DepartmentSeeder::class,
             MasterDataSeeder::class,
             ExpenseChartOfAccountsSeeder::class,
-            ExpenseApprovalChainSeeder::class,
             DonorTypeSeeder::class,
             BudgetAlertThresholdSeeder::class,
             MasterMenuSeeder::class,
             UserSeeder::class,
+            // Users must exist before the approval matrix is created so
+            // configured budget holders can be linked to their employees.
+            ExpenseApprovalChainSeeder::class,
             ProcessDataSeeder::class,
         ]);
     }
