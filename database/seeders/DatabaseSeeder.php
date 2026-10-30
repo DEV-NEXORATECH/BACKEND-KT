@@ -17,7 +17,6 @@ class DatabaseSeeder extends Seeder
             MasterDataSeeder::class,
             ExpenseChartOfAccountsSeeder::class,
             DonorTypeSeeder::class,
-            BudgetAlertThresholdSeeder::class,
             MasterMenuSeeder::class,
             UserSeeder::class,
             // Users must exist before the approval matrix is created so

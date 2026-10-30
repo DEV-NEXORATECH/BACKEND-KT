@@ -6,6 +6,7 @@ use App\Models\Master\BudgetLine;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\ExpenseCategory;
 use Illuminate\Database\Seeder;
+use RuntimeException;
 
 /**
  * Seeds the expense accounts used by Expense App and links budget lines to
@@ -67,5 +68,24 @@ class ExpenseChartOfAccountsSeeder extends Seeder
             $coaId = $created[$coaCode]?->id ?? ChartOfAccount::where('code', $coaCode)->value('id');
             if ($coaId) ExpenseCategory::where('code', $code)->update(['default_gl_account_id' => $coaId, 'cost_type' => $coaCode]);
         }
+
+        // Repair every existing active Budget Line, including fiscal-year
+        // demo rows created by FiscalYearDemoSeeder. No selectable budget
+        // line may be left without a COA.
+        $coaByCategory = [
+            'BCAT-100' => '5100',
+            'BCAT-200' => '5200',
+            'BCAT-300' => '5300',
+        ];
+        BudgetLine::query()->with('budgetCategory')->whereNull('gl_account_id')->get()->each(function (BudgetLine $line) use ($created, $coaByCategory) {
+            $categoryCode = $line->budgetCategory?->code;
+            if (! $categoryCode || ! isset($coaByCategory[$categoryCode])) {
+                throw new RuntimeException("Budget Line {$line->line_code} belum memiliki mapping COA eksplisit untuk kategori {$categoryCode}. Tambahkan mapping sebelum menjalankan seeder.");
+            }
+            $coaCode = $coaByCategory[$categoryCode];
+            $coaId = $created[$coaCode]?->id ?? ChartOfAccount::where('code', $coaCode)->value('id');
+            if (! $coaId) throw new RuntimeException("COA {$coaCode} untuk Budget Line {$line->line_code} tidak ditemukan.");
+            $line->update(['gl_account_id' => $coaId, 'cost_type' => $coaCode]);
+        });
     }
 }

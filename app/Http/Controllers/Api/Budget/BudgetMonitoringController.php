@@ -27,6 +27,7 @@ class BudgetMonitoringController extends Controller
         $filters['fiscal_year_id'] = $request->query('fiscal_year_id');
 
         $query = BudgetLine::query()
+            ->where('line_code', 'not like', 'AI%')
             ->when($filters['budget_line_id'] ?? null, fn (Builder $q, $id) => $q->whereKey($id))
             ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where('project_id', $id))
             ->when($filters['grant_agreement_id'] ?? null, fn (Builder $q, $id) => $q->where('grant_agreement_id', $id))
@@ -98,10 +99,17 @@ class BudgetMonitoringController extends Controller
             ->map(function (array $item) {
                 $utilization = (float) ($item['utilization_percent'] ?? 0);
                 $over = (float) ($item['available'] ?? 0) < 0 || ($item['status'] ?? null) === 'over_budget';
-                $level = $over || $utilization > 100 ? ['label' => 'Overbudget', 'threshold' => '>100%', 'color' => '#a51f24']
-                    : ($utilization >= 100 ? ['label' => 'Habis', 'threshold' => '100%', 'color' => '#c64d53']
-                        : ($utilization >= 75 ? ['label' => 'Waspada', 'threshold' => '75%', 'color' => '#d39212']
-                            : ($utilization >= 50 ? ['label' => 'Normal', 'threshold' => '50%', 'color' => '#087dcc'] : ['label' => 'Aman', 'threshold' => '25%', 'color' => '#359b22'])));
+                if ($over || $utilization >= 110) {
+                    $level = ['label' => 'Overbudget', 'threshold' => '110%', 'color' => '#A51F24'];
+                } elseif ($utilization >= 100) {
+                    $level = ['label' => 'Kritis', 'threshold' => '100%', 'color' => '#D35400'];
+                } elseif ($utilization >= 75) {
+                    $level = ['label' => 'Waspada', 'threshold' => '75%', 'color' => '#D39212'];
+                } elseif ($utilization >= 50) {
+                    $level = ['label' => 'Normal', 'threshold' => '50%', 'color' => '#087DCC'];
+                } else {
+                    $level = ['label' => 'Aman', 'threshold' => '25%', 'color' => '#359B22'];
+                }
                 return [...$item, 'alert_level' => $level, 'recommendation' => $over ? 'Ajukan realokasi atau hentikan komitmen baru pada budget line ini.' : 'Pantau sisa saldo dan komitmen kegiatan berikutnya.'];
             })->values();
 

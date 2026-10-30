@@ -31,6 +31,12 @@ abstract class BaseMasterController extends Controller
             // active fiscal year changes. Apply year filtering explicitly.
             $query = $this->modelClass::query()->withoutGlobalScope('fiscal_year_context');
 
+            // AI alert rows are monitoring output only. They must never be
+            // exposed as operational Budget Line master data or dropdowns.
+            if ($this->modelClass === \App\Models\Master\BudgetLine::class) {
+                $query->where('line_code', 'not like', 'AI%');
+            }
+
             // An explicitly selected fiscal year must isolate period-specific
             // master records instead of falling back to the global NULL rows.
             if ($request->filled('fiscal_year_id')) {

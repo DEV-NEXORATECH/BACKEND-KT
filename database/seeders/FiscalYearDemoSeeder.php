@@ -258,6 +258,12 @@ class FiscalYearDemoSeeder extends Seeder
                     $budgetPayload['line_code'] = $budgetCode;
                     $budgetPayload['fiscal_year_id'] = str_contains($budgetCode, '2025') ? $fy2025 : $fy2027;
                     $budgetPayload['description'] = 'Field mapping and community engagement allocation '.substr($budgetCode, -4);
+                if (! $budgetPayload['gl_account_id']) {
+                    throw new \RuntimeException("Budget Line source untuk {$budgetCode} belum memiliki COA. Jalankan ExpenseChartOfAccountsSeeder terlebih dahulu.");
+                }
+                if (! $budgetPayload['cost_type']) {
+                    throw new \RuntimeException("Budget Line source untuk {$budgetCode} belum memiliki cost_type/COA mapping.");
+                }
                     $budgetPayload['created_at'] = $now;
                     $budgetPayload['updated_at'] = $now;
                     DB::table('budget_lines')->updateOrInsert(['line_code' => $budgetCode], $budgetPayload);
