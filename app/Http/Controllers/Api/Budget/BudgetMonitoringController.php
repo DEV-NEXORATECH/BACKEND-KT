@@ -34,6 +34,9 @@ class BudgetMonitoringController extends Controller
             ->when($filters['budget_category_id'] ?? null, fn (Builder $q, $id) => $q->where('budget_category_id', $id));
 
         app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'project_id', null, []);
+        if ($request->user()) {
+            app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'project_id', null, []);
+        }
 
         $filters['budget_line_ids'] = $query->pluck('id')->all();
 
@@ -44,10 +47,67 @@ class BudgetMonitoringController extends Controller
             'actual' => round($items->sum('actual'), 2),
             'committed' => round($items->sum('committed'), 2),
             'available' => round($items->sum('available'), 2),
+            'variance' => round($items->sum('variance'), 2),
+            'carried_balance' => round($items->sum('carried_balance'), 2),
         ];
         $totals['utilization_percent'] = $totals['approved_budget'] > 0
             ? round((($totals['actual'] + $totals['committed']) / $totals['approved_budget']) * 100, 2)
             : 0;
+
+        // Grouping BvA by Activity
+        $byActivity = $items->groupBy(fn ($it) => $it['activity_name'] ?: 'General Activity')
+            ->map(function ($group, $name) {
+                $approved = round($group->sum('approved_budget'), 2);
+                $actual = round($group->sum('actual'), 2);
+                $committed = round($group->sum('committed'), 2);
+                $totalSpent = round($actual + $committed, 2);
+                $variance = round($approved - $actual, 2);
+                $carried = round($approved - $totalSpent, 2);
+                $utilization = $approved > 0 ? round(($totalSpent / $approved) * 100, 2) : 0;
+                $first = $group->first();
+
+                return [
+                    'activity_name' => $name,
+                    'activity_code' => $first['activity_code'] ?? null,
+                    'sub_output_name' => $first['sub_output_name'] ?? null,
+                    'approved_budget' => $approved,
+                    'actual' => $actual,
+                    'committed' => $committed,
+                    'total_spent' => $totalSpent,
+                    'variance' => $variance,
+                    'carried_balance' => $carried,
+                    'utilization_percent' => $utilization,
+                    'status' => $carried < 0 ? 'over_budget' : ($utilization >= 90 ? 'warning' : 'healthy'),
+                    'lines_count' => $group->count(),
+                ];
+            })->values();
+
+        // Grouping BvA by Sub-Output
+        $bySubOutput = $items->groupBy(fn ($it) => $it['sub_output_name'] ?: 'General Framework')
+            ->map(function ($group, $name) {
+                $approved = round($group->sum('approved_budget'), 2);
+                $actual = round($group->sum('actual'), 2);
+                $committed = round($group->sum('committed'), 2);
+                $totalSpent = round($actual + $committed, 2);
+                $variance = round($approved - $actual, 2);
+                $carried = round($approved - $totalSpent, 2);
+                $utilization = $approved > 0 ? round(($totalSpent / $approved) * 100, 2) : 0;
+                $first = $group->first();
+
+                return [
+                    'sub_output_name' => $name,
+                    'sub_output_code' => $first['sub_output_code'] ?? null,
+                    'approved_budget' => $approved,
+                    'actual' => $actual,
+                    'committed' => $committed,
+                    'total_spent' => $totalSpent,
+                    'variance' => $variance,
+                    'carried_balance' => $carried,
+                    'utilization_percent' => $utilization,
+                    'status' => $carried < 0 ? 'over_budget' : ($utilization >= 90 ? 'warning' : 'healthy'),
+                    'lines_count' => $group->count(),
+                ];
+            })->values();
 
         $activities = Activity::query()
             ->with('project:id,code,name')
@@ -117,6 +177,9 @@ class BudgetMonitoringController extends Controller
             'success' => true,
             'message' => 'Budget monitoring berhasil dimuat.',
             'data' => $items->values(),
+            'by_line' => $items->values(),
+            'by_activity' => $byActivity,
+            'by_sub_output' => $bySubOutput,
             'totals' => $totals,
             'activities' => $activities,
             'upcoming_events' => $upcomingEvents,

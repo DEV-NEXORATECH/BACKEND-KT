@@ -21,6 +21,7 @@ class BudgetMonitoringService
                 'fiscalYear:id,year,name',
                 'budgetCategory:id,code,name',
                 'glAccount:id,code,name',
+                'activity:id,code,name',
             ])
             ->when($filters['budget_line_id'] ?? null, fn (Builder $query, $budgetLineId) => $query->whereKey($budgetLineId))
             ->when($filters['project_id'] ?? null, fn (Builder $query, $projectId) => $query->where('project_id', $projectId))
@@ -64,14 +65,29 @@ class BudgetMonitoringService
             $committed = round((float) ($commitments[$line->id] ?? 0), 2);
             $available = round($approved - $actual - $committed, 2);
             $utilization = $approved > 0 ? round((($actual + $committed) / $approved) * 100, 2) : 0;
+            $totalSpent = round($actual + $committed, 2);
+            $variance = round($approved - $actual, 2); // Budget vs Actual variance
+            $carriedBalance = round($approved - $totalSpent, 2); // Sisa dana yang terbawa (carried forward)
+            $available = $carriedBalance;
+            $utilization = $approved > 0 ? round(($totalSpent / $approved) * 100, 2) : 0;
+            $variancePercent = $approved > 0 ? round(($variance / $approved) * 100, 2) : 0;
 
             return [
                 'budget_line_id' => $line->id,
                 'line_code' => $line->line_code,
                 'description' => $line->description,
+                'sub_output_code' => $line->sub_output_code,
+                'sub_output_name' => $line->sub_output_name ?: 'General Framework',
+                'activity_code' => $line->activity_code ?: ($line->activity->code ?? null),
+                'activity_name' => $line->activity_name ?: ($line->activity->name ?? 'General Activity'),
+                'cost_category' => $line->glAccount ? "{$line->glAccount->code} - {$line->glAccount->name}" : ($line->budgetCategory->name ?? 'General Category'),
                 'approved_budget' => $approved,
                 'actual' => $actual,
                 'committed' => $committed,
+                'total_spent' => $totalSpent,
+                'variance' => $variance,
+                'variance_percent' => $variancePercent,
+                'carried_balance' => $carriedBalance,
                 'available' => $available,
                 'utilization_percent' => $utilization,
                 'status' => $available < 0 ? 'over_budget' : ($utilization >= 90 ? 'warning' : 'healthy'),
