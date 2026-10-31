@@ -28,7 +28,7 @@
     <div class="header">
         <h1>PERKUMPULAN KAOEM TELAPAK</h1>
         <h2>NERACA (BALANCE SHEET)</h2>
-        <p>Per Tanggal: {{ $as_of }}</p>
+        <p>As of: {{ $as_of }}</p>
     </div>
 
     <div class="meta">
@@ -40,7 +40,7 @@
         <thead>
             <tr>
                 <th style="width:15%">Kode Akun</th>
-                <th style="width:55%">Nama Akun</th>
+                <th style="width:55%">Account Name</th>
                 <th class="right" style="width:30%">Saldo (IDR)</th>
             </tr>
         </thead>
@@ -54,7 +54,7 @@
             </tr>
             @endforeach
             <tr class="subtotal">
-                <td colspan="2">Total Aset</td>
+                <td colspan="2">Total Assets</td>
                 <td class="right">{{ number_format($data['totals']['assets'], 2, ',', '.') }}</td>
             </tr>
 
@@ -68,7 +68,7 @@
             </tr>
             @endforeach
             <tr class="subtotal">
-                <td colspan="2">Total Liabilitas</td>
+                <td colspan="2">Total Liabilities</td>
                 <td class="right">{{ number_format($data['totals']['liabilities'], 2, ',', '.') }}</td>
             </tr>
 
@@ -83,11 +83,11 @@
             @endforeach
             <tr>
                 <td></td>
-                <td><em>Surplus/(Defisit) Periode Berjalan</em></td>
+                <td><em>Current Period Surplus/(Deficit)</em></td>
                 <td class="right"><em>{{ number_format($data['totals']['current_result'], 2, ',', '.') }}</em></td>
             </tr>
             <tr class="subtotal">
-                <td colspan="2">Total Ekuitas</td>
+                <td colspan="2">Total Equity</td>
                 <td class="right">{{ number_format($data['totals']['equity'] + $data['totals']['current_result'], 2, ',', '.') }}</td>
             </tr>
 
@@ -101,8 +101,8 @@
 
     @if (isset($data['fixed_assets']))
     <p style="font-size: 9pt; color: #555;">
-        <strong>Catatan Aset Tetap:</strong>
-        Total Akuisisi: Rp {{ number_format($data['fixed_assets']['acquisition_cost'], 0, ',', '.') }},
+        <strong>Fixed Asset Notes:</strong>
+        Total Acquisition: IDR {{ number_format($data['fixed_assets']['acquisition_cost'], 0, ',', '.') }},
         Akumulasi Penyusutan: Rp {{ number_format($data['fixed_assets']['accumulated_depreciation'], 0, ',', '.') }},
         Nilai Buku Bersih: Rp {{ number_format($data['fixed_assets']['net_book_value'], 0, ',', '.') }}
         ({{ $data['fixed_assets']['asset_count'] }} unit)

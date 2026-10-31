@@ -23,7 +23,7 @@ class AccountingPeriodService
 
         if ($period) {
             throw ValidationException::withMessages([
-                $field => 'Tanggal transaksi berada pada accounting period yang sudah closed.',
+                $field => 'The transaction date is in a closed accounting period.',
             ]);
         }
 
@@ -35,7 +35,7 @@ class AccountingPeriodService
 
         if ($closedFiscalYear) {
             throw ValidationException::withMessages([
-                $field => 'Tanggal transaksi berada pada fiscal year yang sudah closed.',
+                $field => 'The transaction date is in a closed fiscal year.',
             ]);
         }
     }

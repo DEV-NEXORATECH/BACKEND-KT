@@ -28,6 +28,24 @@ class PurchaseRequestController extends Controller
         'lines.procurementItem.unitOfMeasure:id,code,name',
     ];
 
+    public function pdf(Request $request, PurchaseRequest $purchaseRequest)
+    {
+        if (! $this->canAccessAll($request) && (int) $purchaseRequest->requester_id !== (int) $request->user()->id) {
+            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengakses purchase request user lain.');
+        }
+        $purchaseRequest->load($this->with);
+        $html = '<h1>Purchase Request '.e($purchaseRequest->request_number).'</h1>'
+            .'<p>Status: '.e($purchaseRequest->status).'</p>'
+            .'<p>Requester: '.e($purchaseRequest->requester?->name ?? '').'</p>'
+            .'<table border="1" cellpadding="5" cellspacing="0"><tr><th>Description</th><th>Amount</th></tr>'
+            .$purchaseRequest->lines->map(fn ($line) => '<tr><td>'.e($line->description ?? '').'</td><td>'.e((string) ($line->amount ?? 0)).'</td></tr>')->implode('')
+            .'</table>';
+        $filename = 'purchase-request-'.$purchaseRequest->request_number.'.pdf';
+        return response()->streamDownload(function () use ($html) {
+            echo app('dompdf.wrapper')->loadHTML('<html><body>'.$html.'</body></html>')->output();
+        }, $filename, ['Content-Type' => 'application/pdf']);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $perPage = (int) $request->query('per_page', 10);
@@ -317,7 +335,7 @@ class PurchaseRequestController extends Controller
             }
             if (blank($payload['lines'][$index]['item_description'] ?? null)) {
                 throw ValidationException::withMessages([
-                    "lines.{$index}.item_description" => 'Pilih item/service master atau isi deskripsi item.',
+                    "lines.{$index}.item_description" => 'Select an item or service from the master data, or enter an item description.',
                 ]);
             }
             $quantity = round((float) $line['quantity'], 2);

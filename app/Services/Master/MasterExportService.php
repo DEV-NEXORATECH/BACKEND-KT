@@ -36,7 +36,7 @@ class MasterExportService
                 $first = $this->flattenArray($collection->first()->toArray());
                 $rows[] = array_map(fn (string $key): string => $this->displayHeader($key), array_keys($first));
                 foreach ($collection as $item) $rows[] = array_values($this->flattenArray($item->toArray()));
-            } else $rows[] = ['Tidak ada data'];
+            } else $rows[] = ['No data'];
             $sheet->fromArray($rows, null, 'A1');
             $writer = new Xlsx($spreadsheet);
             $writer->save($path);
@@ -51,7 +51,7 @@ class MasterExportService
             $first = $this->flattenArray($collection->first()->toArray());
             fputcsv($handle, array_map(fn (string $key): string => $this->displayHeader($key), array_keys($first)));
             foreach ($collection as $item) fputcsv($handle, array_values($this->flattenArray($item->toArray())));
-        } else fputcsv($handle, ['Tidak ada data']);
+        } else fputcsv($handle, ['No data']);
         fclose($handle);
         @unlink($base);
         return [$path, "{$safeName}.csv", 'text/csv'];
@@ -83,7 +83,7 @@ class MasterExportService
         $instructions->setTitle('Instructions');
         $instructionRows = [
             ['Template', $entityName],
-            ['Cara penggunaan', 'Isi data pada sheet Input Data. Jangan mengubah urutan kolom. Tambahkan satu baris untuk setiap data baru.'],
+            ['How to use', 'Enter data in the Input Data sheet. Do not change the column order. Add one row for each new record.'],
             ['Format import', 'Excel (.xlsx/.xls) atau CSV UTF-8. Kolom tampilan yang mudah dibaca dan nama field API sama-sama diterima saat import.'],
             ['Relasi', 'Kolom bertanda (ID) diisi dengan ID data terkait.'],
             ['', ''],

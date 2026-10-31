@@ -192,7 +192,7 @@ class ProjectWorkplanController extends Controller
         if ($fallback) return (int) $fallback->id;
 
         throw ValidationException::withMessages([
-            'logframe_id' => 'Pilih Framework Output/Activity sebelum menyimpan Workplan.',
+            'logframe_id' => 'Select an Output or Activity Framework before saving the Workplan.',
         ]);
     }
 

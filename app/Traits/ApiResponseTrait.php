@@ -9,7 +9,7 @@ trait ApiResponseTrait
 {
     protected function successResponse(
         mixed $data = null,
-        string $message = 'Operasi berhasil.',
+        string $message = 'Operation completed successfully.',
         int $statusCode = Response::HTTP_OK,
         array $meta = []
     ): JsonResponse {
@@ -45,7 +45,7 @@ trait ApiResponseTrait
 
     protected function paginatedResponse(
         $paginator,
-        string $message = 'Data berhasil dimuat.'
+        string $message = 'Data loaded successfully.'
     ): JsonResponse {
         return response()->json([
             'success' => true,

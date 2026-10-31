@@ -25,6 +25,8 @@ class EndToEndDonorToReportTest extends TestCase
 {
     use RefreshDatabase;
 
+    private User $approver;
+
     public function test_donor_grant_expense_payment_reaches_general_ledger_and_report_in_same_fiscal_year(): void
     {
         [$user, $fiscalYear, $donor, $grant, $program, $project, $budgetLine, $category, $bank] = $this->fixture();
@@ -55,7 +57,7 @@ class EndToEndDonorToReportTest extends TestCase
 
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/submit")->assertOk();
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/verify")->assertOk();
-        $this->postJson("/api/v1/expenses/requests/{$expenseId}/approve")->assertOk();
+        $this->approveExpense($expenseId);
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/post")
             ->assertOk()
             ->assertJsonPath('data.status', 'posted');
@@ -98,11 +100,16 @@ class EndToEndDonorToReportTest extends TestCase
 
     private function fixture(): array
     {
-        $role = Role::create(['name' => 'E2E Finance', 'slug' => 'finance-manager']);
+        $role = Role::create(['name' => 'E2E Finance', 'slug' => 'e2e-finance']);
         foreach (['expense.view', 'expense.create', 'expense.submit', 'expense.verify', 'expense.approve', 'expense.post', 'expense.pay', 'accounting.view', 'reports.view'] as $permission) {
             $role->permissions()->attach(Permission::create(['name' => $permission, 'slug' => $permission]));
         }
         $user = User::factory()->create(['role_id' => $role->id]);
+        $approverRole = Role::create(['name' => 'E2E Super Admin', 'slug' => 'super-admin']);
+        foreach (['expense.view', 'expense.approve', 'expense.post', 'expense.pay', 'accounting.view', 'reports.view'] as $permission) {
+            $approverRole->permissions()->attach(Permission::firstOrCreate(['slug' => $permission], ['name' => $permission]));
+        }
+        $this->approver = User::factory()->create(['role_id' => $approverRole->id, 'email' => 'e2e-approver@example.test']);
         $fiscalYear = FiscalYear::create(['year' => 2026, 'name' => 'Tahun Fiskal 2026', 'start_date' => '2026-01-01', 'end_date' => '2026-12-31', 'status' => 'open', 'is_active' => true]);
         AccountingPeriod::create(['fiscal_year_id' => $fiscalYear->id, 'period_number' => 9, 'name' => 'September 2026', 'start_date' => '2026-09-01', 'end_date' => '2026-09-30', 'status' => 'open', 'is_active' => true]);
         $currency = Currency::create(['code' => 'IDR', 'name' => 'Rupiah', 'is_base_currency' => true, 'is_active' => true, 'fiscal_year_id' => $fiscalYear->id]);
@@ -120,5 +127,17 @@ class EndToEndDonorToReportTest extends TestCase
         $category = ExpenseCategory::create(['code' => 'E2E', 'name' => 'E2E Travel', 'default_gl_account_id' => $expense->id, 'is_active' => true, 'fiscal_year_id' => $fiscalYear->id]);
 
         return [$user, $fiscalYear, $donor, $grant, $program, $project, $budgetLine, $category, $bank];
+    }
+
+    private function approveExpense(int $expenseId): void
+    {
+        $status = 'verified';
+        for ($attempt = 0; $attempt < 10 && $status !== 'approved'; $attempt++) {
+            $response = $this->actingAs($this->approver, 'sanctum')
+                ->postJson("/api/v1/expenses/requests/{$expenseId}/approve")
+                ->assertOk();
+            $status = (string) $response->json('data.status');
+        }
+        $this->assertSame('approved', $status);
     }
 }

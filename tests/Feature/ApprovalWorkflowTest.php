@@ -40,7 +40,7 @@ class ApprovalWorkflowTest extends TestCase
 
     private function role(string $name, array $permissions): Role
     {
-        $role = Role::create(['name' => $name, 'slug' => str($name)->slug()->toString()]);
+        $role = Role::firstOrCreate(['slug' => str($name)->slug()->toString()], ['name' => $name]);
         foreach ($permissions as $permission) $role->permissions()->attach(Permission::firstOrCreate(['slug' => $permission], ['name' => $permission]));
         return $role;
     }

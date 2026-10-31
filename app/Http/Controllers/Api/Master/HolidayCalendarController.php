@@ -10,9 +10,9 @@ class HolidayCalendarController extends Controller
 {
     public function index(Request $request)
     {
-        $query = HolidayCalendar::query()->where('is_active', true)->orderBy('date');
+        $query = HolidayCalendar::query()->orderBy('date');
         if ($request->boolean('options')) {
-            return response()->json(['success' => true, 'data' => $query->get(['id', 'date', 'name', 'type', 'is_active'])]);
+            return response()->json(['success' => true, 'data' => $query->where('is_active', true)->get(['id', 'date', 'name', 'type', 'is_active'])]);
         }
         return response()->json(['success' => true, 'data' => $query->paginate($request->integer('per_page', 50))]);
     }
@@ -40,6 +40,14 @@ class HolidayCalendarController extends Controller
         ]);
         $data['updated_by'] = $request->user()?->id;
         $holiday->update($data);
+        return response()->json(['success' => true, 'data' => $holiday->fresh()]);
+    }
+
+    public function toggleStatus(string $id)
+    {
+        $holiday = HolidayCalendar::findOrFail($id);
+        $holiday->update(['is_active' => ! $holiday->is_active]);
+
         return response()->json(['success' => true, 'data' => $holiday->fresh()]);
     }
 

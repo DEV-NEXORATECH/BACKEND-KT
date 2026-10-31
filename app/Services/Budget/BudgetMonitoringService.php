@@ -21,7 +21,7 @@ class BudgetMonitoringService
                 'fiscalYear:id,year,name',
                 'budgetCategory:id,code,name',
                 'glAccount:id,code,name',
-                'activity:id,code,name',
+                'activity:id,project_id,code,name,target_output',
             ])
             ->when($filters['budget_line_id'] ?? null, fn (Builder $query, $budgetLineId) => $query->whereKey($budgetLineId))
             ->when($filters['project_id'] ?? null, fn (Builder $query, $projectId) => $query->where('project_id', $projectId))
@@ -76,10 +76,11 @@ class BudgetMonitoringService
                 'budget_line_id' => $line->id,
                 'line_code' => $line->line_code,
                 'description' => $line->description,
-                'sub_output_code' => $line->sub_output_code,
-                'sub_output_name' => $line->sub_output_name ?: 'General Framework',
+                'activity' => $line->activity ? ['id' => $line->activity->id, 'code' => $line->activity->code, 'name' => $line->activity->name, 'target_output' => $line->activity->target_output] : null,
                 'activity_code' => $line->activity_code ?: ($line->activity->code ?? null),
                 'activity_name' => $line->activity_name ?: ($line->activity->name ?? 'General Activity'),
+                'sub_output_code' => $line->sub_output_code,
+                'sub_output_name' => $line->sub_output_name ?: 'General Framework',
                 'cost_category' => $line->glAccount ? "{$line->glAccount->code} - {$line->glAccount->name}" : ($line->budgetCategory->name ?? 'General Category'),
                 'approved_budget' => $approved,
                 'actual' => $actual,

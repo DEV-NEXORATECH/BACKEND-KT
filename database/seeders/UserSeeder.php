@@ -70,7 +70,7 @@ class UserSeeder extends Seeder
                 'name' => 'Denny Bhatara',
                 'email' => 'denny.bhatara@kaoemtelapak.org',
                 'password' => 'S3mpur#05',
-                'role_slug' => 'budget-holder-project-manager', // Peran Akses: PoM (Program & Operational Manager)
+                'role_slug' => 'budget-holder-project-manager', // Peran Akses: Program Manager & Operational (PoM)
             ],
             [
                 'name' => 'Abil Ahmad Akbar',

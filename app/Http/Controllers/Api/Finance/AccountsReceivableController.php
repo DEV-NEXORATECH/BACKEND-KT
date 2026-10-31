@@ -102,7 +102,7 @@ class AccountsReceivableController extends Controller
             throw ValidationException::withMessages(['status' => 'Customer invoice hanya dapat diajukan dari draft.']);
         }
         $run = $workflow->start('ar', $customerInvoice, (float) $customerInvoice->total_amount, $request->user()->id);
-        return response()->json(['success' => true, 'message' => $run ? 'Customer invoice diajukan ke Approval Matrix AR.' : 'Tidak ada Approval Matrix AR aktif; invoice siap diposting.', 'workflow_managed' => (bool) $run, 'data' => $this->formatInvoice($customerInvoice->fresh($this->with))]);
+        return response()->json(['success' => true, 'message' => $run ? 'Customer invoice submitted to the AR Approval Matrix.' : 'No active AR Approval Matrix; the invoice is ready to post.', 'workflow_managed' => (bool) $run, 'data' => $this->formatInvoice($customerInvoice->fresh($this->with))]);
     }
 
     public function rejectInvoice(Request $request, CustomerInvoice $customerInvoice, ApprovalWorkflowService $workflow): JsonResponse
@@ -125,7 +125,7 @@ class AccountsReceivableController extends Controller
 
         $approval = $workflow->approve('ar', $customerInvoice, $request->user(), $request->input('notes'));
         if (! $approval['managed'] && $workflow->requiresApproval('ar', $customerInvoice, (float) $customerInvoice->total_amount)) {
-            throw ValidationException::withMessages(['approval' => 'Customer invoice harus disubmit ke Approval Matrix AR sebelum posting.']);
+            throw ValidationException::withMessages(['approval' => 'The customer invoice must be submitted to the AR Approval Matrix before posting.']);
         }
         if ($approval['managed'] && ! $approval['completed']) {
             return response()->json(['success' => true, 'message' => "Approval AR tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->formatInvoice($customerInvoice->fresh($this->with))]);
@@ -210,7 +210,7 @@ class AccountsReceivableController extends Controller
     public function receivePayment(Request $request, CustomerInvoice $customerInvoice): JsonResponse
     {
         if (! in_array($customerInvoice->status, ['posted', 'partially_received'], true)) {
-            throw ValidationException::withMessages(['status' => 'Invoice harus posted sebelum receive payment.']);
+            throw ValidationException::withMessages(['status' => 'The invoice must be posted before receiving payment.']);
         }
 
         $data = $request->validate([

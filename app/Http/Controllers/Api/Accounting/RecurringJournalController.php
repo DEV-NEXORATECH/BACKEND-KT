@@ -147,7 +147,7 @@ class RecurringJournalController extends Controller
 
         if ($debit <= 0 || $debit !== $credit) {
             throw ValidationException::withMessages([
-                'lines' => 'Debit dan credit harus seimbang dan lebih besar dari nol.',
+                'lines' => 'Debits and credits must balance and be greater than zero.',
             ]);
         }
 

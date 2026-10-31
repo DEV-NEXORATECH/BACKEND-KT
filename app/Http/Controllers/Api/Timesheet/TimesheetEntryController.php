@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Timesheet;
 
 use App\Http\Controllers\Controller;
 use App\Models\Master\Activity;
+use App\Models\Master\BudgetLine;
 use App\Models\Master\Employee;
 use App\Models\Master\Project;
 use App\Models\ProjectAssignment;
@@ -277,7 +278,7 @@ class TimesheetEntryController extends Controller
     public function submit(Request $request, TimesheetEntry $timesheetEntry, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($timesheetEntry->status !== 'draft') {
-            throw ValidationException::withMessages(['status' => 'Timesheet harus draft untuk submit.']);
+            throw ValidationException::withMessages(['status' => 'The timesheet must be in draft status before submission.']);
         }
         if (! $this->userHasPermission($request->user(), 'timesheet.approve') && (int) $timesheetEntry->user_id !== (int) $request->user()->id) {
             abort(Response::HTTP_FORBIDDEN, 'Tidak boleh submit timesheet user lain.');
@@ -302,7 +303,7 @@ class TimesheetEntryController extends Controller
     private function decide(Request $request, TimesheetEntry $timesheetEntry, string $decision, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($timesheetEntry->status !== 'submitted') {
-            throw ValidationException::withMessages(['status' => 'Timesheet harus submitted untuk approval.']);
+            throw ValidationException::withMessages(['status' => 'The timesheet must be submitted before approval.']);
         }
         $data = $request->validate(['notes' => ['nullable', 'string'], 'signature' => ['nullable', 'string']]);
         if ($decision === 'approved') {
@@ -349,7 +350,7 @@ class TimesheetEntryController extends Controller
             ->get();
 
         if ($entries->isEmpty()) {
-            throw ValidationException::withMessages(['timesheet_ids' => 'Tidak ada timesheet berstatus approved yang dipilih.']);
+            throw ValidationException::withMessages(['timesheet_ids' => 'No approved timesheets were selected.']);
         }
 
         $processedIds = TimesheetEntry::whereIn('id', $data['timesheet_ids'])->pluck('id');
@@ -403,12 +404,29 @@ class TimesheetEntryController extends Controller
                     'source_type' => 'timesheet_entry', 'source_id' => $entry->id,
                 ]);
 
+                // Keep labor actuals connected to donor/project budget monitoring
+                // when the project/activity has exactly one active budget line.
+                // Do not guess when several cost categories are valid candidates.
+                $budgetLineId = null;
+                if ($entry->project_id && $entry->activity_id) {
+                    $candidateLines = BudgetLine::query()
+                        ->where('project_id', $entry->project_id)
+                        ->where('activity_id', $entry->activity_id)
+                        ->where('is_active', true)
+                        ->when($entry->fiscal_year_id, fn ($query) => $query->where('fiscal_year_id', $entry->fiscal_year_id))
+                        ->pluck('id');
+                    if ($candidateLines->count() === 1) {
+                        $budgetLineId = $candidateLines->first();
+                    }
+                }
+
                 $journal->lines()->create([
                     'account_id' => $laborAccount->id,
                     'project_id' => $entry->project_id,
                     'donor_id' => $entry->donor_id,
                     'program_id' => $entry->program_id,
                     'department_id' => $entry->department_id,
+                    'budget_line_id' => $budgetLineId,
                     'line_description' => 'Labor cost ('.$usedHours.' jam @ Rp '.number_format($usedRate, 0, ',', '.').')',
                     'debit' => $cost,
                     'credit' => 0,
@@ -483,7 +501,7 @@ class TimesheetEntryController extends Controller
                 ->get();
 
             if ($entries->isEmpty()) {
-                throw ValidationException::withMessages(['period' => 'Tidak ada timesheet External approved dan belum ditagihkan pada periode ini.']);
+                throw ValidationException::withMessages(['period' => 'There are no approved and unbilled external timesheets for this period.']);
             }
 
             // Recalculate older approved entries that were saved before the

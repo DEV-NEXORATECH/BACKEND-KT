@@ -125,7 +125,7 @@ class FixedAssetController extends Controller
         $this->ensureAssetScope($request, $fixedAsset);
         if ($fixedAsset->status !== 'draft') throw ValidationException::withMessages(['status' => 'Hanya asset draft yang dapat diajukan kapitalisasi.']);
         $run = $workflow->start('asset', $fixedAsset, (float) $fixedAsset->acquisition_cost, $request->user()->id);
-        return response()->json(['success' => true, 'workflow_managed' => (bool) $run, 'message' => $run ? 'Asset diajukan ke Approval Matrix kapitalisasi.' : 'Tidak ada Approval Matrix asset aktif; asset siap dikapitalisasi.', 'data' => $this->format($fixedAsset->fresh($this->with))]);
+        return response()->json(['success' => true, 'workflow_managed' => (bool) $run, 'message' => $run ? 'Asset submitted to the capitalization Approval Matrix.' : 'No active asset Approval Matrix; the asset is ready for capitalization.', 'data' => $this->format($fixedAsset->fresh($this->with))]);
     }
 
     public function capitalize(Request $request, FixedAsset $fixedAsset, ApprovalWorkflowService $workflow): JsonResponse
@@ -136,7 +136,7 @@ class FixedAssetController extends Controller
             throw ValidationException::withMessages(['status' => 'Asset hanya dapat dikapitalisasi dari draft.']);
         }
         $approval = $workflow->approve('asset', $fixedAsset, $request->user(), $request->input('notes'));
-        if (! $approval['managed'] && $workflow->requiresApproval('asset', $fixedAsset, (float) $fixedAsset->acquisition_cost)) throw ValidationException::withMessages(['approval' => 'Asset harus disubmit ke Approval Matrix sebelum kapitalisasi.']);
+        if (! $approval['managed'] && $workflow->requiresApproval('asset', $fixedAsset, (float) $fixedAsset->acquisition_cost)) throw ValidationException::withMessages(['approval' => 'The asset must be submitted to the Approval Matrix before capitalization.']);
         if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Approval asset tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($fixedAsset->fresh($this->with))]);
 
         $category = $fixedAsset->category;
@@ -144,14 +144,14 @@ class FixedAssetController extends Controller
         $clearingAccount = ChartOfAccount::query()->where('account_type', 'liability')->where('is_header', false)->first()
             ?: ChartOfAccount::query()->where('account_type', 'equity')->where('is_header', false)->first();
         if (! $assetAccount || ! $clearingAccount) {
-            throw ValidationException::withMessages(['account' => 'COA asset dan clearing/liability harus tersedia.']);
+            throw ValidationException::withMessages(['account' => 'Asset and clearing/liability accounts must be configured.']);
         }
 
         $sourceJournal = $fixedAsset->supplierInvoice?->journal_id
             ? Journal::with('lines')->find($fixedAsset->supplierInvoice->journal_id)
             : null;
         if ($fixedAsset->supplierInvoice && ! in_array($fixedAsset->supplierInvoice->status, ['posted', 'paid'], true)) {
-            throw ValidationException::withMessages(['supplier_invoice_id' => 'Supplier invoice harus posted sebelum aset dikapitalisasi.']);
+            throw ValidationException::withMessages(['supplier_invoice_id' => 'The supplier invoice must be posted before the asset is capitalized.']);
         }
 
         $asset = DB::transaction(function () use ($fixedAsset, $assetAccount, $clearingAccount, $request, $sourceJournal) {
@@ -193,7 +193,7 @@ class FixedAssetController extends Controller
     {
         $this->ensureAssetScope($request, $fixedAsset);
         if (! in_array($fixedAsset->status, ['active', 'transferred'], true)) {
-            throw ValidationException::withMessages(['status' => 'Asset harus active/transferred untuk depresiasi.']);
+            throw ValidationException::withMessages(['status' => 'The asset must be active or transferred before depreciation.']);
         }
         if ($fixedAsset->depreciation_method === 'none') {
             throw ValidationException::withMessages(['depreciation_method' => 'Asset category tidak menggunakan depresiasi.']);
@@ -258,7 +258,7 @@ class FixedAssetController extends Controller
     public function impair(Request $request, FixedAsset $fixedAsset): JsonResponse
     {
         $this->ensureAssetScope($request, $fixedAsset);
-        if (! in_array($fixedAsset->status, ['active', 'transferred'], true)) throw ValidationException::withMessages(['status' => 'Asset harus active/transferred untuk impairment.']);
+        if (! in_array($fixedAsset->status, ['active', 'transferred'], true)) throw ValidationException::withMessages(['status' => 'The asset must be active or transferred before impairment.']);
         $data = $request->validate(['impairment_date' => ['required', 'date'], 'amount' => ['required', 'numeric', 'min:0.01'], 'reason' => ['required', 'string', 'max:500']]);
         app(AccountingPeriodService::class)->ensureOpen($data['impairment_date'], 'impairment_date');
         $amount = min((float) $data['amount'], (float) $fixedAsset->net_book_value);
@@ -286,13 +286,13 @@ class FixedAssetController extends Controller
         $data = $request->validate(['disposed_date' => ['nullable', 'date'], 'disposal_reason' => ['nullable', 'string'], 'disposal_type' => ['nullable', 'in:sale,writeoff,donation,lost'], 'disposal_proceeds' => ['nullable', 'numeric', 'min:0'], 'disposal_bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id']]);
         $data['disposed_date'] ??= $fixedAsset->disposal_requested_date?->toDateString();
         $data['disposal_reason'] ??= $fixedAsset->disposal_requested_reason;
-        if (! $data['disposed_date'] || ! $data['disposal_reason']) throw ValidationException::withMessages(['disposed_date' => 'Tanggal dan alasan disposal wajib diisi atau diajukan terlebih dahulu.']);
+        if (! $data['disposed_date'] || ! $data['disposal_reason']) throw ValidationException::withMessages(['disposed_date' => 'The disposal date and reason are required before disposal.']);
         $data['disposal_type'] ??= 'writeoff';
         $data['disposal_proceeds'] = round((float) ($data['disposal_proceeds'] ?? 0), 2);
-        if ($data['disposal_type'] === 'sale' && $data['disposal_proceeds'] > 0 && empty($data['disposal_bank_account_id'])) throw ValidationException::withMessages(['disposal_bank_account_id' => 'Bank account wajib dipilih untuk hasil penjualan asset.']);
+        if ($data['disposal_type'] === 'sale' && $data['disposal_proceeds'] > 0 && empty($data['disposal_bank_account_id'])) throw ValidationException::withMessages(['disposal_bank_account_id' => 'A bank account is required for sale proceeds.']);
         app(AccountingPeriodService::class)->ensureOpen($data['disposed_date'], 'disposed_date');
         $approval = app(ApprovalWorkflowService::class)->approve('asset_disposal', $fixedAsset, $request->user(), $request->input('notes'));
-        if (! $approval['managed'] && app(ApprovalWorkflowService::class)->requiresApproval('asset_disposal', $fixedAsset, (float) $fixedAsset->net_book_value)) throw ValidationException::withMessages(['approval' => 'Disposal harus disubmit ke Approval Matrix sebelum diposting.']);
+        if (! $approval['managed'] && app(ApprovalWorkflowService::class)->requiresApproval('asset_disposal', $fixedAsset, (float) $fixedAsset->net_book_value)) throw ValidationException::withMessages(['approval' => 'The disposal must be submitted to the Approval Matrix before posting.']);
         if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Approval disposal tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($fixedAsset->fresh($this->with))]);
         $category = $fixedAsset->category;
         $assetAccount = $category?->assetGlAccount ?: ChartOfAccount::query()->where('account_type', 'asset')->where('is_header', false)->first();
@@ -322,12 +322,12 @@ class FixedAssetController extends Controller
     public function submitDisposal(Request $request, FixedAsset $fixedAsset, ApprovalWorkflowService $workflow): JsonResponse
     {
         $this->ensureAssetScope($request, $fixedAsset);
-        if (! in_array($fixedAsset->status, ['active', 'transferred'], true)) throw ValidationException::withMessages(['status' => 'Asset harus active/transferred untuk diajukan disposal.']);
+        if (! in_array($fixedAsset->status, ['active', 'transferred'], true)) throw ValidationException::withMessages(['status' => 'The asset must be active or transferred before disposal submission.']);
         $data = $request->validate(['disposed_date' => ['required', 'date'], 'disposal_reason' => ['required', 'string']]);
         app(AccountingPeriodService::class)->ensureOpen($data['disposed_date'], 'disposed_date');
         $fixedAsset->update(['disposal_requested_date' => $data['disposed_date'], 'disposal_requested_reason' => $data['disposal_reason']]);
         $run = $workflow->start('asset_disposal', $fixedAsset, (float) $fixedAsset->net_book_value, $request->user()->id);
-        return response()->json(['success' => true, 'workflow_managed' => (bool) $run, 'message' => $run ? 'Disposal asset diajukan ke Approval Matrix.' : 'Tidak ada Approval Matrix disposal aktif; asset siap dilepas.', 'data' => $this->format($fixedAsset->fresh($this->with))]);
+        return response()->json(['success' => true, 'workflow_managed' => (bool) $run, 'message' => $run ? 'Asset disposal submitted to the Approval Matrix.' : 'No active disposal Approval Matrix; the asset is ready for disposal.', 'data' => $this->format($fixedAsset->fresh($this->with))]);
     }
 
     public function bulkDepreciate(Request $request): JsonResponse
@@ -401,7 +401,7 @@ class FixedAssetController extends Controller
                 $totalDepreciationAmount += $amount;
             } catch (\Throwable $exception) {
                 report($exception);
-                $skipped[] = ['asset_id' => $asset->id, 'reason' => 'Gagal memposting depresiasi.'];
+                    $skipped[] = ['asset_id' => $asset->id, 'reason' => 'Failed to post depreciation.'];
             }
         }
 
@@ -430,7 +430,7 @@ class FixedAssetController extends Controller
             $asset = FixedAsset::find($item['fixed_asset_id']);
             if ($asset) {
                 $this->ensureAssetScope($request, $asset);
-                $notes = "Opname {$data['opname_date']} [Status Fisik: {$item['physical_status']}]: ".($item['notes'] ?? 'Tidak ada catatan');
+                $notes = "Stocktake {$data['opname_date']} [Physical Status: {$item['physical_status']}]: ".($item['notes'] ?? 'No notes');
                 $asset->update([
                     'notes' => $asset->notes ? $asset->notes." | ".$notes : $notes,
                 ]);

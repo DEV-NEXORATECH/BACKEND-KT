@@ -24,12 +24,12 @@ class ApprovalReminderNotification extends Notification implements ShouldQueue
     public function toMail(object $notifiable): MailMessage
     {
         $count = count($this->pendingItems);
-        $subject = "[Kaoem Telapak ERP] {$count} pengajuan menunggu persetujuan Anda (>{$this->overdueDays} hari)";
+        $subject = "[Kaoem Telapak ERP] {$count} requests are awaiting your approval (>{$this->overdueDays} days)";
 
         $mail = (new MailMessage)
             ->subject($subject)
             ->greeting("Halo {$notifiable->name},")
-            ->line("Terdapat **{$count} pengajuan** yang telah menunggu persetujuan Anda selama lebih dari **{$this->overdueDays} hari**.")
+            ->line("**{$count} requests** have been awaiting your approval for more than **{$this->overdueDays} days**.")
             ->line('Berikut ringkasannya:');
 
         foreach (array_slice($this->pendingItems, 0, 10) as $item) {
@@ -53,7 +53,7 @@ class ApprovalReminderNotification extends Notification implements ShouldQueue
         return [
             'type' => 'approval_reminder',
             'title' => count($this->pendingItems) . ' pengajuan menunggu persetujuan',
-            'message' => 'Ada ' . count($this->pendingItems) . " pengajuan yang telah menunggu lebih dari {$this->overdueDays} hari.",
+            'message' => count($this->pendingItems) . " requests have been waiting for more than {$this->overdueDays} days.",
             'pending_count' => count($this->pendingItems),
             'overdue_days' => $this->overdueDays,
         ];

@@ -15,7 +15,7 @@ class BudgetLine extends Model
 
     protected $table = 'budget_lines';
 
-    protected $fillable = ['fiscal_year_id', 'grant_agreement_id', 'project_id', 'activity_id', 'activity_code', 'activity_name', 'sub_output_code', 'sub_output_name', 'budget_category_id', 'line_code', 'description', 'cost_type', 'document_path', 'proposal_period', 'allocation_type', 'period_allocations', 'currency_id', 'exchange_rate', 'unit_of_measure_id', 'unit_price', 'quantity', 'total_amount', 'base_amount', 'gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['fiscal_year_id', 'grant_agreement_id', 'project_id', 'activity_id', 'sub_output_code', 'budget_category_id', 'line_code', 'description', 'cost_type', 'document_path', 'proposal_period', 'currency_id', 'exchange_rate', 'unit_of_measure_id', 'unit_price', 'quantity', 'total_amount', 'base_amount', 'period_allocations', 'gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -50,7 +50,7 @@ class BudgetLine extends Model
 
     public function activity()
     {
-        return $this->belongsTo(\App\Models\Master\Activity::class, 'activity_id');
+        return $this->belongsTo(Activity::class, 'activity_id');
     }
 
     public function budgetCategory()

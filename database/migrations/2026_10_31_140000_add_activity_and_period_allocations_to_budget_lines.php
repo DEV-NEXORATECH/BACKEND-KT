@@ -9,13 +9,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('budget_lines', function (Blueprint $table) {
-            $table->foreignId('activity_id')->nullable()->after('project_id')->constrained('activities')->nullOnDelete();
-            $table->string('activity_code', 50)->nullable()->after('activity_id');
-            $table->string('activity_name', 255)->nullable()->after('activity_code');
-            $table->string('sub_output_code', 50)->nullable()->after('activity_name');
-            $table->string('sub_output_name', 255)->nullable()->after('sub_output_code');
-            $table->string('allocation_type', 20)->default('annual')->after('proposal_period');
-            $table->json('period_allocations')->nullable()->after('allocation_type');
+            if (!Schema::hasColumn('budget_lines', 'activity_id')) {
+                $table->foreignId('activity_id')->nullable()->after('project_id')->constrained('activities')->nullOnDelete();
+            }
+            if (!Schema::hasColumn('budget_lines', 'activity_code')) $table->string('activity_code', 50)->nullable();
+            if (!Schema::hasColumn('budget_lines', 'activity_name')) $table->string('activity_name', 255)->nullable();
+            if (!Schema::hasColumn('budget_lines', 'sub_output_code')) $table->string('sub_output_code', 50)->nullable();
+            if (!Schema::hasColumn('budget_lines', 'sub_output_name')) $table->string('sub_output_name', 255)->nullable();
+            if (!Schema::hasColumn('budget_lines', 'allocation_type')) $table->string('allocation_type', 20)->default('annual');
+            if (!Schema::hasColumn('budget_lines', 'period_allocations')) $table->json('period_allocations')->nullable();
         });
     }
 
