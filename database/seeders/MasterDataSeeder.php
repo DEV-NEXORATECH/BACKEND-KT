@@ -27,6 +27,7 @@ use App\Models\Master\ExpenseCategory;
 use App\Models\Master\FiscalYear;
 use App\Models\Master\FundingSource;
 use App\Models\Master\GrantAgreement;
+use App\Models\Master\HolidayCalendar;
 use App\Models\Master\OfficeLocation;
 use App\Models\Master\Organization;
 use App\Models\Master\PaymentMethod;
@@ -116,7 +117,7 @@ class MasterDataSeeder extends Seeder
         ]);
 
         $fy2025 = FiscalYear::updateOrCreate(['year' => 2025], [
-            'name' => 'Tahun Fiskal 2025',
+            'name' => 'Fiscal Year 2025',
             'start_date' => '2025-01-01',
             'end_date' => '2025-12-31',
             'status' => 'open',
@@ -268,7 +269,7 @@ class MasterDataSeeder extends Seeder
 
         // 3. Fiscal Year & Periods
         $fy2026 = FiscalYear::updateOrCreate(['year' => 2026], [
-            'name' => 'Tahun Fiskal 2026',
+            'name' => 'Fiscal Year 2026',
             'start_date' => '2026-01-01',
             'end_date' => '2026-12-31',
             'status' => 'open',
@@ -276,7 +277,7 @@ class MasterDataSeeder extends Seeder
         ]);
 
         $fy2027 = FiscalYear::updateOrCreate(['year' => 2027], [
-            'name' => 'Tahun Fiskal 2027',
+            'name' => 'Fiscal Year 2027',
             'start_date' => '2027-01-01',
             'end_date' => '2027-12-31',
             'status' => 'open',
@@ -291,7 +292,7 @@ class MasterDataSeeder extends Seeder
             $fy2026->periods()->updateOrCreate([
                 'period_number' => $i,
             ], [
-                'name' => "Periode {$monthName} 2026",
+                'name' => "Period {$monthName} 2026",
                 'start_date' => "2026-{$monthStr}-01",
                 'end_date' => "2026-{$monthStr}-{$lastDay}",
                 'status' => $i <= 9 ? 'open' : 'open',
@@ -302,7 +303,7 @@ class MasterDataSeeder extends Seeder
             $fy2025->periods()->updateOrCreate([
                 'period_number' => $i,
             ], [
-                'name' => "Periode {$monthName} 2025",
+                'name' => "Period {$monthName} 2025",
                 'start_date' => "2025-{$monthStr}-01",
                 'end_date' => "2025-{$monthStr}-{$lastDay2025}",
                 'status' => 'open',
@@ -313,7 +314,7 @@ class MasterDataSeeder extends Seeder
             $fy2027->periods()->updateOrCreate([
                 'period_number' => $i,
             ], [
-                'name' => "Periode {$monthName} 2027",
+                'name' => "Period {$monthName} 2027",
                 'start_date' => "2027-{$monthStr}-01",
                 'end_date' => "2027-{$monthStr}-{$lastDay2027}",
                 'status' => 'open',
@@ -666,6 +667,25 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
+        // 18. Finance Holiday Calendar used by Cash Advance settlement due dates.
+        foreach ([2025, 2026, 2027] as $holidayYear) {
+            foreach ([
+                ['month' => 1, 'day' => 1, 'name' => "New Year's Day", 'type' => 'national_holiday'],
+                ['month' => 5, 'day' => 1, 'name' => 'Labour Day', 'type' => 'national_holiday'],
+                ['month' => 8, 'day' => 17, 'name' => 'Independence Day', 'type' => 'national_holiday'],
+                ['month' => 8, 'day' => 18, 'name' => 'Cuti Bersama', 'type' => 'cuti_bersama'],
+                ['month' => 12, 'day' => 25, 'name' => 'Christmas Day', 'type' => 'national_holiday'],
+            ] as $holiday) {
+                HolidayCalendar::updateOrCreate([
+                    'date' => sprintf('%04d-%02d-%02d', $holidayYear, $holiday['month'], $holiday['day']),
+                ], [
+                    'name' => $holiday['name'],
+                    'type' => $holiday['type'],
+                    'is_active' => true,
+                ]);
+            }
+        }
+
         // 8. Funding Sources & Donors
         $fundBilateral = FundingSource::updateOrCreate(['code' => 'FUND-BILATERAL'], [
             'name' => 'Bilateral Government Grant',
@@ -1015,7 +1035,7 @@ class MasterDataSeeder extends Seeder
                 'email' => 'Denny.Bhatara@kaoemtelapak.org',
                 'department_id' => $deptProg->id,
                 'office_location_id' => $headOffice->id,
-                'position' => 'Program & Operational Manager',
+                'position' => 'Program Manager & Operational',
                 'bank_name' => 'BNI',
                 'bank_account_number' => '0261317272',
                 'bank_account_holder' => 'Denny Bhatara',
@@ -1392,12 +1412,8 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        DocumentType::updateOrCreate(['code' => 'DOC-RECEIPT'], [
-            'name' => 'Kwitansi / Official Receipt',
-            'description' => 'Kwitansi bertanda tangan basah / materai atau struk resmi',
-            'is_mandatory_for_payout' => true,
-            'is_active' => true,
-        ]);
+        // Removed from the Expense App per the revised document-type list.
+        DocumentType::withTrashed()->where('code', 'DOC-RECEIPT')->first()?->delete();
 
         DocumentType::updateOrCreate(['code' => 'DOC-TAX-INV'], [
             'name' => 'Faktur Pajak & Invoice Vendor',
@@ -1443,66 +1459,15 @@ class MasterDataSeeder extends Seeder
 
         // 17. Approval Matrices (Tiered Multi-Level & Dynamic Rules)
         $roleDirector = Role::firstOrCreate(['slug' => 'executive-director'], ['name' => 'Executive Director']);
-        $roleBoard = Role::firstOrCreate(['slug' => 'board-director'], ['name' => 'Board of Trustees']);
+        $roleBoard = Role::firstOrCreate(['slug' => 'board-director'], ['name' => 'Board of Executives']);
+        $roleBoard->update(['name' => 'Board of Executives']);
         $roleFinanceManager = Role::firstOrCreate(['slug' => 'finance-manager'], ['name' => 'Finance Manager']);
         $roleProjectManager = Role::firstOrCreate(['slug' => 'project-manager'], ['name' => 'Project Manager']);
         $roleFinanceOfficer = Role::firstOrCreate(['slug' => 'finance-officer'], ['name' => 'Finance Officer']);
 
-        // EXPENSE: Tier 1 (Rp 0 - Rp 5 Jt) -> Level 1: Project Manager
-        ApprovalMatrix::updateOrCreate([
-            'module' => 'expense',
-            'level' => 1,
-            'min_amount' => 0,
-            'max_amount' => 5000000,
-        ], [
-            'role_id' => $roleProjectManager->id,
-            'approver_title' => 'Project Manager / Supervisor',
-            'is_conditional_project_manager' => true,
-            'description' => 'Biaya operasional & kegiatan lapangan rutin s.d Rp 5.000.000',
-            'is_active' => true,
-        ]);
-
-        // EXPENSE: Tier 2 (Rp 5 Jt - Rp 25 Jt) -> Level 1: Project Manager, Level 2: Finance Manager
-        ApprovalMatrix::updateOrCreate([
-            'module' => 'expense',
-            'level' => 2,
-            'min_amount' => 5000001,
-            'max_amount' => 25000000,
-        ], [
-            'role_id' => $roleFinanceManager->id,
-            'approver_title' => 'Finance Manager',
-            'is_conditional_project_manager' => false,
-            'description' => 'Verifikasi kepatuhan anggaran dan cash flow oleh Finance Manager',
-            'is_active' => true,
-        ]);
-
-        // EXPENSE: Tier 3 (Rp 25 Jt - Rp 100 Jt) -> Level 3: Executive Director
-        ApprovalMatrix::updateOrCreate([
-            'module' => 'expense',
-            'level' => 3,
-            'min_amount' => 25000001,
-            'max_amount' => 100000000,
-        ], [
-            'role_id' => $roleDirector->id,
-            'approver_title' => 'Executive Director',
-            'is_conditional_project_manager' => false,
-            'description' => 'Persetujuan pimpinan eksekutif untuk pengeluaran di atas Rp 25 Juta',
-            'is_active' => true,
-        ]);
-
-        // EXPENSE: Tier 4 (> Rp 100 Jt) -> Level 4: Board of Trustees
-        ApprovalMatrix::updateOrCreate([
-            'module' => 'expense',
-            'level' => 4,
-            'min_amount' => 100000001,
-            'max_amount' => null,
-        ], [
-            'role_id' => $roleBoard->id,
-            'approver_title' => 'Board of Trustees / Dewan Pengawas',
-            'is_conditional_project_manager' => false,
-            'description' => 'Persetujuan Dewan Pengawas untuk pengeluaran strategis di atas Rp 100 Juta',
-            'is_active' => true,
-        ]);
+        // Expense approval matrices are maintained exclusively by
+        // ExpenseApprovalChainSeeder so the project/entity delegation rules
+        // cannot be overwritten by this general master-data seeder.
 
         // TAX TRANSACTIONS: every PPh/PPN/e-Bupot/e-Faktur transaction must
         // pass a tax review before it can be reported to DJP. The rule is
@@ -1670,7 +1635,7 @@ class MasterDataSeeder extends Seeder
             ], [
                 'role_id' => $roleDirector->id,
                 'approver_title' => 'Executive Director & Donor Compliance Officer',
-                'description' => 'Ketentuan khusus Donor GEF: Pengeluaran > Rp 50 Juta wajib audit kepatuhan donor',
+                'description' => 'GEF donor-specific rule: expenses above IDR 50 million require a donor compliance audit',
                 'is_active' => true,
             ]);
         }
@@ -1773,7 +1738,7 @@ class MasterDataSeeder extends Seeder
         Notification::updateOrCreate([
             'title' => 'Pending Approval: Expense Claim #EXP-2026-004',
         ], [
-            'message' => 'Pengajuan klaim per diem & akomodasi lapangan Pontianak membutuhkan verifikasi Finance Manager.',
+            'message' => 'The Pontianak field per diem and accommodation claim requires Finance Manager verification.',
             'type' => 'approval',
             'action_url' => '/expenses-approvals/approvals',
             'created_at' => now()->subMinutes(15),
@@ -1791,7 +1756,7 @@ class MasterDataSeeder extends Seeder
         Notification::updateOrCreate([
             'title' => 'Purchase Request Approved: PR-2026-001',
         ], [
-            'message' => 'Permintaan pengadaan peralatan komputer lapangan telah disetujui oleh Executive Director.',
+            'message' => 'The field computer equipment purchase request was approved by the Executive Director.',
             'type' => 'success',
             'action_url' => '/procurement/purchase-requests',
             'created_at' => now()->subHours(5),

@@ -61,9 +61,9 @@ class ProcurementFulfillmentController extends Controller
     {
         return response()->json(['success' => true, 'data' => [
             ['value' => 'pr', 'title' => 'Purchase Request', 'subtitle' => 'Ajukan dan pantau permintaan pembelian.', 'endpoint' => '/v1/procurement/purchase-requests', 'columns' => [['key' => 'pr_number', 'label' => 'PR Number'], ['key' => 'request_date', 'label' => 'Date'], ['key' => 'status', 'label' => 'Status'], ['key' => 'total_amount', 'label' => 'Amount']]],
-            ['value' => 'po', 'title' => 'Purchase Orders', 'subtitle' => 'Kelola PO yang dibuat dari PR approved.', 'endpoint' => '/v1/procurement/purchase-orders', 'columns' => [['key' => 'po_number', 'label' => 'PO Number'], ['key' => 'po_date', 'label' => 'Date'], ['key' => 'vendor', 'label' => 'Vendor'], ['key' => 'status', 'label' => 'Status']]],
-            ['value' => 'grn', 'title' => 'Goods Receipts', 'subtitle' => 'Catat penerimaan barang berdasarkan PO.', 'endpoint' => '/v1/procurement/goods-receipts', 'columns' => [['key' => 'grn_number', 'label' => 'GRN Number'], ['key' => 'receipt_date', 'label' => 'Date'], ['key' => 'purchase_order', 'label' => 'Purchase Order'], ['key' => 'status', 'label' => 'Status']]],
-            ['value' => 'invoice', 'title' => 'Supplier Invoices', 'subtitle' => 'Kelola invoice supplier dan 3-way match.', 'endpoint' => '/v1/procurement/supplier-invoices', 'columns' => [['key' => 'invoice_number', 'label' => 'Invoice Number'], ['key' => 'invoice_date', 'label' => 'Date'], ['key' => 'vendor', 'label' => 'Vendor'], ['key' => 'tax', 'label' => 'Tax'], ['key' => 'match_status', 'label' => 'Match Status'], ['key' => 'status', 'label' => 'Status']]],
+            ['value' => 'po', 'title' => 'Purchase Orders', 'subtitle' => 'Manage purchase orders created from approved purchase requests.', 'endpoint' => '/v1/procurement/purchase-orders', 'columns' => [['key' => 'po_number', 'label' => 'PO Number'], ['key' => 'po_date', 'label' => 'Date'], ['key' => 'vendor', 'label' => 'Vendor'], ['key' => 'status', 'label' => 'Status']]],
+            ['value' => 'grn', 'title' => 'Goods Receipts', 'subtitle' => 'Record goods received against a purchase order.', 'endpoint' => '/v1/procurement/goods-receipts', 'columns' => [['key' => 'grn_number', 'label' => 'GRN Number'], ['key' => 'receipt_date', 'label' => 'Date'], ['key' => 'purchase_order', 'label' => 'Purchase Order'], ['key' => 'status', 'label' => 'Status']]],
+            ['value' => 'invoice', 'title' => 'Supplier Invoices', 'subtitle' => 'Manage supplier invoices and 3-way matching.', 'endpoint' => '/v1/procurement/supplier-invoices', 'columns' => [['key' => 'invoice_number', 'label' => 'Invoice Number'], ['key' => 'invoice_date', 'label' => 'Date'], ['key' => 'vendor', 'label' => 'Vendor'], ['key' => 'tax', 'label' => 'Tax'], ['key' => 'match_status', 'label' => 'Match Status'], ['key' => 'status', 'label' => 'Status']]],
         ]]);
     }
 
@@ -426,7 +426,7 @@ class ProcurementFulfillmentController extends Controller
             if (! isset($line['received_quantity'])) continue;
             $ordered = (float) $purchaseOrder->lines()->whereKey($line['purchase_order_line_id'])->value('quantity');
             $received = (float) $purchaseOrder->goodsReceipts()->where('status', '!=', 'cancelled')->when($ignoreGoodsReceiptId, fn ($q) => $q->where('id', '!=', $ignoreGoodsReceiptId))->with('lines')->get()->sum(fn ($grn) => (float) $grn->lines->where('purchase_order_line_id', $line['purchase_order_line_id'])->sum('received_quantity'));
-            if ($received + (float) $line['received_quantity'] > $ordered) throw ValidationException::withMessages(['lines' => 'Jumlah penerimaan melebihi quantity PO.']);
+            if ($received + (float) $line['received_quantity'] > $ordered) throw ValidationException::withMessages(['lines' => 'The received quantity exceeds the purchase order quantity.']);
         }
     }
 

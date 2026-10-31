@@ -120,7 +120,7 @@ abstract class BaseMasterController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal memuat data: ' . $e->getMessage(),
+                'message' => 'Failed to load data: ' . $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
@@ -202,7 +202,7 @@ abstract class BaseMasterController extends Controller
 
         return $this->successResponse(
             new $this->resourceClass($record),
-            'Status data berhasil diubah.'
+            'Data status updated successfully.'
         );
     }
 

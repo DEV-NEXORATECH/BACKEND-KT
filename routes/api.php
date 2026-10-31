@@ -152,6 +152,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/reports/export/{report}/{format}', [ReportsDashboardController::class, 'exportStandard'])->middleware('permission:reports.export');
     Route::get('/v1/reports/fx-adjustments', [ReportsDashboardController::class, 'fxAdjustments'])->middleware('permission:reports.view');
     Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/forecast/entries', [ReportsDashboardController::class, 'forecastEntries'])->middleware('permission:reports.view');
+    Route::post('/v1/reports/forecast/entries', [ReportsDashboardController::class, 'storeForecastEntry'])->middleware('permission:reports.view');
     Route::get('/v1/reports/custom/options', [CustomReportController::class, 'options'])->middleware('permission:reports.view');
     Route::post('/v1/reports/custom', [CustomReportController::class, 'build'])->middleware('permission:reports.view');
     Route::post('/v1/reports/custom/export', [CustomReportController::class, 'export'])->middleware('permission:reports.export');
@@ -363,6 +365,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('requests/{expenseRequest}/submit', [ExpenseRequestController::class, 'submit'])->middleware('permission:expense.submit');
         Route::post('requests/{expenseRequest}/settlement-due-date/override', [ExpenseRequestController::class, 'overrideSettlementDueDate'])->middleware('permission:expense.verify');
         Route::post('requests/{expenseRequest}/verify', [ExpenseRequestController::class, 'verify'])->middleware('permission:expense.verify');
+        Route::post('requests/{expenseRequest}/return-for-revision', [ExpenseRequestController::class, 'returnForRevision'])->middleware('permission:expense.verify');
         Route::post('requests/{expenseRequest}/approve', [ExpenseRequestController::class, 'approve'])->middleware('permission:expense.approve');
         Route::post('requests/{expenseRequest}/reject', [ExpenseRequestController::class, 'reject'])->middleware('permission:expense.approve');
         Route::post('requests/{expenseRequest}/resubmit', [ExpenseRequestController::class, 'resubmit'])->middleware('permission:expense.submit');
@@ -398,6 +401,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('holidays', [HolidayCalendarController::class, 'index'])->middleware('permission:master-data.view');
         Route::post('holidays', [HolidayCalendarController::class, 'store'])->middleware('permission:master-data.manage');
         Route::patch('holidays/{holiday}', [HolidayCalendarController::class, 'update'])->middleware('permission:master-data.manage');
+        Route::put('holidays/{holiday}', [HolidayCalendarController::class, 'update'])->middleware('permission:master-data.manage');
+        Route::patch('holidays/{holiday}/toggle-status', [HolidayCalendarController::class, 'toggleStatus'])->middleware('permission:master-data.manage');
         Route::delete('holidays/{holiday}', [HolidayCalendarController::class, 'destroy'])->middleware('permission:master-data.manage');
         Route::post('bank-accounts/{bankAccount}/post-opening-balance', [BankAccountController::class, 'postOpeningBalance'])->middleware('permission:master-data.manage');
         $masterResources = [

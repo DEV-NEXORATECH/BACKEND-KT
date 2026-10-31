@@ -22,7 +22,7 @@ class FiscalYearDemoSeeder extends Seeder
         $activeYear = $existingActiveYear ?: 2026;
         foreach ([2025, 2026, 2027] as $year) {
             $years[$year] = FiscalYear::updateOrCreate(['year' => $year], [
-                'name' => "Tahun Fiskal {$year}",
+                'name' => "Fiscal Year {$year}",
                 'start_date' => "{$year}-01-01",
                 'end_date' => "{$year}-12-31",
                 'status' => 'open',
@@ -35,7 +35,7 @@ class FiscalYearDemoSeeder extends Seeder
                 AccountingPeriod::updateOrCreate(
                     ['fiscal_year_id' => $years[$year]->id, 'period_number' => $period],
                     [
-                        'name' => 'Periode '.date('F', strtotime($start))." {$year}",
+                        'name' => 'Period '.date('F', strtotime($start))." {$year}",
                         'start_date' => $start,
                         'end_date' => $end,
                         'status' => 'open',
@@ -252,6 +252,15 @@ class FiscalYearDemoSeeder extends Seeder
             if ($sourceBudgetLine) {
                 $budgetPayload = (array) $sourceBudgetLine;
                 unset($budgetPayload['id'], $budgetPayload['created_at'], $budgetPayload['updated_at'], $budgetPayload['deleted_at']);
+                $seedCoaByCategory = ['BCAT-100' => '5100', 'BCAT-200' => '5200', 'BCAT-300' => '5300'];
+                if (! $budgetPayload['gl_account_id'] && ! empty($budgetPayload['budget_category_id'])) {
+                    $categoryCode = DB::table('budget_categories')->where('id', $budgetPayload['budget_category_id'])->value('code');
+                    $coaCode = $seedCoaByCategory[$categoryCode] ?? null;
+                    if ($coaCode) {
+                        $budgetPayload['gl_account_id'] = DB::table('chart_of_accounts')->where('code', $coaCode)->value('id');
+                        $budgetPayload['cost_type'] = $coaCode;
+                    }
+                }
                 foreach ([[$project2025, 'BL-FOREST-2025-1'], [$project2027, 'BL-FOREST-2027-1']] as [$budgetProjectId, $budgetCode]) {
                     if (! $budgetProjectId) continue;
                     $budgetPayload['project_id'] = $budgetProjectId;
@@ -259,10 +268,10 @@ class FiscalYearDemoSeeder extends Seeder
                     $budgetPayload['fiscal_year_id'] = str_contains($budgetCode, '2025') ? $fy2025 : $fy2027;
                     $budgetPayload['description'] = 'Field mapping and community engagement allocation '.substr($budgetCode, -4);
                 if (! $budgetPayload['gl_account_id']) {
-                    throw new \RuntimeException("Budget Line source untuk {$budgetCode} belum memiliki COA. Jalankan ExpenseChartOfAccountsSeeder terlebih dahulu.");
+                    throw new \RuntimeException("Budget line source {$budgetCode} has no COA. Run ExpenseChartOfAccountsSeeder first.");
                 }
                 if (! $budgetPayload['cost_type']) {
-                    throw new \RuntimeException("Budget Line source untuk {$budgetCode} belum memiliki cost_type/COA mapping.");
+                    throw new \RuntimeException("Budget line source {$budgetCode} has no cost type or COA mapping.");
                 }
                     $budgetPayload['created_at'] = $now;
                     $budgetPayload['updated_at'] = $now;

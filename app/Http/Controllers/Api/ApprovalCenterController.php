@@ -155,7 +155,7 @@ class ApprovalCenterController extends Controller
                         'module_label' => 'Expense Request',
                         'reference_number' => $exp->request_number ?? 'EXP-'.$exp->id,
                         'request_date' => $exp->request_date?->toDateString() ?? $exp->created_at?->toDateString(),
-                        'title_summary' => $exp->description ?? 'Pengajuan klaim expense',
+                        'title_summary' => $exp->description ?? 'Expense claim request',
                         'amount' => (float) $exp->total_amount,
                         'currency' => 'IDR',
                         'requester_name' => $exp->requester?->name ?? 'User',
@@ -181,7 +181,7 @@ class ApprovalCenterController extends Controller
                         'module_label' => 'Purchase Request',
                         'reference_number' => $pr->pr_number,
                         'request_date' => $pr->request_date?->toDateString(),
-                        'title_summary' => $pr->justification ?? 'Permintaan Pembelian Barang/Jasa',
+                        'title_summary' => $pr->justification ?? 'Purchase request',
                         'amount' => (float) $pr->total_amount,
                         'currency' => 'IDR',
                         'requester_name' => $pr->requester?->name ?? 'System User',
@@ -284,7 +284,7 @@ class ApprovalCenterController extends Controller
                         'module_label' => 'Jurnal Umum (GL)',
                         'reference_number' => $j->journal_number,
                         'request_date' => $j->journal_date?->toDateString(),
-                        'title_summary' => $j->description ?? 'Pengajuan Jurnal Akuntansi',
+                        'title_summary' => $j->description ?? 'Accounting journal request',
                         'amount' => (float) $j->lines()->sum('debit'),
                         'currency' => 'IDR',
                         'requester_name' => 'Accounting Officer',
@@ -881,7 +881,7 @@ class ApprovalCenterController extends Controller
                         break;
                 }
             } catch (\Throwable $e) {
-                $errors[] = "Gagal memproses {$module} ID {$id}: ".$e->getMessage();
+                $errors[] = "Failed to process {$module} ID {$id}: ".$e->getMessage();
             }
         }
 

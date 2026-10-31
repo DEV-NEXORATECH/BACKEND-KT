@@ -16,7 +16,7 @@ class ApprovalMatrixSeeder extends Seeder
     {
         foreach ([2025, 2026, 2027] as $year) {
             FiscalYear::updateOrCreate(['year' => $year], [
-                'name' => 'Tahun Fiskal '.$year,
+                'name' => 'Fiscal Year '.$year,
                 'calendar_code' => 'JAN-DEC',
                 'start_month' => 1,
                 'start_date' => $year.'-01-01',
@@ -50,7 +50,6 @@ class ApprovalMatrixSeeder extends Seeder
         // Only generic rows are replaced. Donor/project/department-specific
         // overrides remain intact and continue to take precedence.
         $modules = [
-            'expense' => 'Expense Request',
             'cash_advance' => 'Cash Advance',
             'reimbursement' => 'Reimbursement',
             'settlement' => 'Expense Settlement',
@@ -76,7 +75,6 @@ class ApprovalMatrixSeeder extends Seeder
         // approval order remains level 1 -> level 2 -> level 3, while each
         // transaction family can be tested with a different chain.
         $moduleApprovers = [
-            'expense' => ['abil', 'winda', 'syaifani'],
             'cash_advance' => ['denny', 'siti', 'syaifani'],
             'reimbursement' => ['sarah', 'winda', 'budi'],
             'settlement' => ['denny', 'siti', 'syaifani'],
@@ -135,10 +133,55 @@ class ApprovalMatrixSeeder extends Seeder
                         'employee_id' => $approver?->employee_id,
                         'approver_title' => $title,
                         'is_conditional_project_manager' => $level === 1,
-                        'description' => sprintf('%s level %d untuk nominal mulai Rp %s. Level approval sebelumnya wajib selesai lebih dahulu.', $label, $level, number_format($minAmount, 0, ',', '.')),
+                        'description' => sprintf('%s level %d for amounts starting at IDR %s. The previous approval level must be completed first.', $label, $level, number_format($minAmount, 0, ',', '.')),
                         'is_active' => true,
                     ]);
                 }
+            }
+        }
+
+        // Expense delegation limits are separate from the normal module
+        // thresholds. Abil is a project-only budget holder up to USD 10,000;
+        // Denny covers amounts above that limit, including entity/internal KT
+        // budgets, and the Board is added above USD 15,000.
+        $this->seedExpenseDelegationMatrix($years, $roles, $approvers);
+    }
+
+    private function seedExpenseDelegationMatrix($years, array $roles, $approvers): void
+    {
+        $budgetHolder = Role::firstOrCreate(['slug' => 'budget-holder'], ['name' => 'Budget Holder']);
+        $board = Role::firstOrCreate(['slug' => 'board-director'], ['name' => 'Board of Executives']);
+
+        ApprovalMatrix::query()->where('module', 'expense')->delete();
+
+        $abil = $approvers->get('abil');
+        $denny = $approvers->get('denny');
+        $financeOfficer = $approvers->get('winda');
+        $financeManager = $approvers->get('syaifani');
+        $rows = [
+            [1, 0, 178000000, $budgetHolder, $abil, 'Project Budget Holder (Abil Ahmad Akbar)', 'Project expenses up to USD 10,000 / IDR 178,000,000.'],
+            [1, 178000000.01, null, $budgetHolder, $denny, 'Program Manager & Operational (Denny Bhatara)', 'Project expenses above USD 10,000; Denny remains the budget holder for higher project values.'],
+            [2, 0, null, $roles['finance_officer'], $financeOfficer, 'Finance Officer', 'Finance review is required after the Budget Holder stage.'],
+            [3, 0, null, $roles['finance'], $financeManager, 'Finance Manager', 'Finance Manager verification is required before completion.'],
+            [4, 267000000.01, null, $board, null, 'Board of Executives', 'Expenses above USD 15,000 / IDR 267,000,000 require Board approval.'],
+        ];
+
+        foreach ($years as $fiscalYearId) {
+            foreach ($rows as [$level, $min, $max, $role, $user, $title, $description]) {
+                ApprovalMatrix::create([
+                    'fiscal_year_id' => $fiscalYearId,
+                    'module' => 'expense',
+                    'level' => $level,
+                    'min_amount' => $min,
+                    'max_amount' => $max,
+                    'role_id' => $role->id,
+                    'user_id' => $user?->id,
+                    'employee_id' => $user?->employee_id,
+                    'approver_title' => $title,
+                    'is_conditional_project_manager' => $level === 1,
+                    'description' => $description,
+                    'is_active' => true,
+                ]);
             }
         }
     }

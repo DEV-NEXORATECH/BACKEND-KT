@@ -15,6 +15,7 @@ use App\Models\Finance\Payment;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\FiscalYear;
 use App\Models\Master\GrantReportingDeadline;
+use App\Models\Budget\ForecastEntry;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
@@ -470,7 +471,7 @@ class ReportsDashboardController extends Controller
                 'success' => true,
                 'scope' => 'personal',
                 'period' => $period['label'],
-                'summary' => ['total_donors' => 0, 'total_grants' => 0, 'total_budget' => 0, 'total_actual' => 0, 'total_committed' => 0, 'total_available' => 0, 'overall_utilization' => 0],
+                'summary' => ['total_donors' => 0, 'total_grants' => 0, 'total_budget' => 0, 'total_actual' => 0, 'total_committed' => 0, 'total_available' => 0, 'total_cash_position' => 0, 'overall_utilization' => 0, 'grants_ending_soon' => 0, 'reporting_deadlines' => 0],
                 'donors' => [],
                 'grants' => [],
             ]);
@@ -506,13 +507,32 @@ class ReportsDashboardController extends Controller
             ];
         });
 
-        $grantSummaries = $grants->map(function ($grant) use ($budgetRows, $grantDeadlines) {
+        $today = now()->toDateString();
+        $deadlineWindowEnd = now()->addDays(60)->toDateString();
+
+        $grantSummaries = $grants->map(function ($grant) use ($budgetRows, $grantDeadlines, $today, $deadlineWindowEnd) {
             $grantLines = collect($budgetRows)->filter(fn ($r) => ($r['grant_agreement']['id'] ?? null) == $grant->id);
             $approved = (float) $grantLines->sum('approved_budget');
             $actual = (float) $grantLines->sum('actual');
             $committed = (float) $grantLines->sum('committed');
             $available = (float) $grantLines->sum('available');
             $grantTotal = $approved > 0 ? $approved : (float) $grant->total_amount;
+
+            $deadlines = $grantDeadlines->get($grant->id, collect())->map(function ($deadline) {
+                return [
+                    'id' => $deadline->id,
+                    'report_type' => $deadline->report_type,
+                    'period_label' => $deadline->period_label,
+                    'due_date' => $deadline->due_date?->toDateString(),
+                    'status' => $deadline->status,
+                ];
+            })->values();
+            $upcomingDeadlines = $deadlines->filter(fn (array $deadline) =>
+                $deadline['due_date'] &&
+                $deadline['due_date'] >= $today &&
+                $deadline['due_date'] <= $deadlineWindowEnd &&
+                ! in_array($deadline['status'], ['submitted'], true)
+            )->values();
 
             return [
                 'id' => $grant->id,
@@ -527,11 +547,16 @@ class ReportsDashboardController extends Controller
                 'actual' => round($actual, 2),
                 'committed' => round($committed, 2),
                 'available' => round($available, 2),
+                // Cash position is the currently available grant balance after
+                // actual spending and committed spending have been deducted.
+                'cash_position' => round($available, 2),
                 'utilization_percent' => $grantTotal > 0
                     ? round((($actual + $committed) / $grantTotal) * 100, 2)
                     : 0,
                 'status' => $grant->status ?? 'active',
-                'reporting_deadline' => $grantDeadlines->get($grant->id)?->first()?->due_date?->toDateString(),
+                'reporting_deadline' => $upcomingDeadlines->first()['due_date'] ?? $deadlines->first()['due_date'] ?? null,
+                'upcoming_deadlines' => $upcomingDeadlines->all(),
+                'reporting_deadlines' => $deadlines->all(),
             ];
         });
 
@@ -550,6 +575,7 @@ class ReportsDashboardController extends Controller
                 'total_actual' => $totals['actual'],
                 'total_committed' => $totals['committed'],
                 'total_available' => $totals['available'],
+                'total_cash_position' => $totals['available'],
                 'overall_utilization' => $totals['utilization_percent'],
                 'grants_ending_soon' => $endingSoon,
                 'reporting_deadlines' => $reportingSoon,
@@ -976,7 +1002,71 @@ class ReportsDashboardController extends Controller
         $rows = JournalLine::query()->whereHas('journal', fn (Builder $q) => $q->where('status', 'posted')->whereDate('journal_date', '>=', $from)->when($request->filled('fiscal_year_id'), fn (Builder $yearQuery) => $yearQuery->where('fiscal_year_id', $request->integer('fiscal_year_id'))))->with('journal:id,journal_date')->get();
         $monthly = collect(range(0, $months - 1))->mapWithKeys(function ($index) use ($from, $rows) { $month = $from->addMonths($index); $key = $month->format('Y-m'); $value = $rows->filter(fn (JournalLine $line) => $line->journal?->journal_date?->format('Y-m') === $key)->sum(fn (JournalLine $line) => (float) $line->debit - (float) $line->credit); return [$key => round(max(0, $value), 2)]; });
         $average = round($monthly->avg(), 2);
-        return response()->json(['success' => true, 'data' => ['months' => $monthly, 'average_monthly_expense' => $average, 'next_month_projection' => $average, 'method' => 'rolling_average']]);
+        $quarters = collect($monthly)->groupBy(fn ($value, $key) => CarbonImmutable::parse($key.'-01')->format('Y').' Q'.CarbonImmutable::parse($key.'-01')->quarter)->map(fn ($values, $quarter) => [
+            'quarter' => $quarter,
+            'actual_expense' => round($values->sum(), 2),
+            'forecast_amount' => round($values->avg(), 2),
+        ])->values();
+        $actualFx = round((float) $rows->where('exchange_rate', '>', 0)->avg('exchange_rate'), 6) ?: 1;
+        $manualAmount = $request->filled('manual_amount') ? round((float) $request->input('manual_amount'), 2) : null;
+        $manualPercentage = $request->filled('manual_percentage') ? (float) $request->input('manual_percentage') : null;
+        $nextProjection = $manualAmount !== null
+            ? $manualAmount
+            : ($manualPercentage !== null ? round($average * (1 + ($manualPercentage / 100)), 2) : $average);
+
+        $entryQuery = ForecastEntry::query()->with(['grantAgreement:id,grant_no,agreement_name', 'project:id,code,name', 'currency:id,code,name'])
+            ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
+            ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', $request->integer('project_id')))
+            ->when($request->filled('grant_agreement_id'), fn (Builder $query) => $query->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+            ->latest('period_date');
+        $entries = $entryQuery->limit(500)->get();
+
+        return response()->json(['success' => true, 'data' => [
+            'months' => $monthly,
+            'quarters' => $quarters,
+            'average_monthly_expense' => $average,
+            'historical_total_expense' => round((float) $monthly->sum(), 2),
+            'automatic_projection' => $average,
+            'next_month_projection' => $nextProjection,
+            'actual_fx_rate' => $actualFx,
+            'manual_amount' => $manualAmount,
+            'manual_percentage' => $manualPercentage,
+            'disbursement_requests' => $entries->where('entry_type', 'disbursement_request')->values(),
+            'funds_received' => $entries->where('entry_type', 'funds_received')->values(),
+            'method' => $manualAmount !== null || $manualPercentage !== null ? 'historical_plus_manual_override' : 'rolling_average',
+        ]]);
+    }
+
+    public function forecastEntries(Request $request): JsonResponse
+    {
+        $entries = ForecastEntry::query()
+            ->with(['grantAgreement:id,grant_no,agreement_name', 'project:id,code,name', 'currency:id,code,name'])
+            ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
+            ->when($request->filled('entry_type'), fn (Builder $query) => $query->where('entry_type', $request->string('entry_type')))
+            ->latest('period_date')->limit(500)->get();
+
+        return response()->json(['success' => true, 'data' => $entries]);
+    }
+
+    public function storeForecastEntry(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
+            'grant_agreement_id' => 'nullable|integer|exists:grant_agreements,id',
+            'project_id' => 'nullable|integer|exists:projects,id',
+            'entry_type' => 'required|in:disbursement_request,funds_received',
+            'period_date' => 'required|date',
+            'reference' => 'nullable|string|max:80',
+            'amount' => 'required|numeric|min:0.01',
+            'currency_id' => 'nullable|integer|exists:currencies,id',
+            'exchange_rate' => 'required|numeric|min:0.000001',
+            'status' => 'nullable|in:draft,submitted,approved,received,cancelled',
+            'notes' => 'nullable|string|max:2000',
+        ]);
+        $data['created_by'] = $request->user()?->id;
+        $entry = ForecastEntry::create($data)->load(['grantAgreement:id,grant_no,agreement_name', 'project:id,code,name', 'currency:id,code,name']);
+
+        return response()->json(['success' => true, 'message' => 'Forecast entry saved.', 'data' => $entry], 201);
     }
 
     private function period(Request $request): array

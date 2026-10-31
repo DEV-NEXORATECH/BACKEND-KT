@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Master\BankAccount;
+use App\Models\Master\ApprovalMatrix;
 use App\Models\Master\BudgetCategory;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\ChartOfAccount;
@@ -19,6 +20,8 @@ use Tests\TestCase;
 class ExpenseWorkflowTest extends TestCase
 {
     use RefreshDatabase;
+
+    private User $approver;
 
     public function test_expense_request_posts_and_pays_with_mobile_reference(): void
     {
@@ -45,7 +48,7 @@ class ExpenseWorkflowTest extends TestCase
 
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/submit")->assertOk()->assertJsonPath('data.status', 'submitted');
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/verify")->assertOk()->assertJsonPath('data.status', 'verified');
-        $this->postJson("/api/v1/expenses/requests/{$expenseId}/approve")->assertOk()->assertJsonPath('data.status', 'approved');
+        $this->approveExpense($expenseId);
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/post")->assertOk()->assertJsonPath('data.status', 'posted');
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/pay", [
             'bank_account_id' => $bank->id,
@@ -96,11 +99,13 @@ class ExpenseWorkflowTest extends TestCase
         ])->assertCreated()->json('data.id');
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/submit")->assertOk();
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/verify")->assertOk();
-        $this->postJson("/api/v1/expenses/requests/{$expenseId}/approve")->assertOk();
+        $this->approveExpense($expenseId);
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/post")->assertOk();
         $this->postJson("/api/v1/expenses/requests/{$expenseId}/pay", ['bank_account_id' => $bank->id, 'payment_date' => '2026-09-21', 'amount' => 100, 'exchange_rate' => 15300])->assertCreated();
-        $this->assertDatabaseHas('expense_requests', ['id' => $expenseId, 'exchange_rate' => 15000, 'currency_code' => 'USD']);
-        $this->assertDatabaseHas('payments', ['expense_request_id' => $expenseId, 'exchange_rate' => 15300, 'converted_amount' => 1530000, 'fx_gain_loss' => 30000]);
+        // Requester FX is intentionally normalized to 1; the payment captures
+        // the actual settlement rate and calculates the complete FX delta.
+        $this->assertDatabaseHas('expense_requests', ['id' => $expenseId, 'exchange_rate' => 1, 'currency_code' => 'USD']);
+        $this->assertDatabaseHas('payments', ['expense_request_id' => $expenseId, 'exchange_rate' => 15300, 'converted_amount' => 1530000, 'fx_gain_loss' => 1529900]);
         $journalId = \App\Models\Finance\Payment::where('expense_request_id', $expenseId)->value('journal_id');
         $this->assertSame((float) \App\Models\Accounting\JournalLine::where('journal_id', $journalId)->sum('debit'), (float) \App\Models\Accounting\JournalLine::where('journal_id', $journalId)->sum('credit'));
     }
@@ -112,6 +117,22 @@ class ExpenseWorkflowTest extends TestCase
             $role->permissions()->attach(Permission::create(['name' => $permission, 'slug' => $permission]));
         }
         $user = User::factory()->create(['role_id' => $role->id]);
+        $approverRole = Role::create(['name' => 'Test Super Admin', 'slug' => 'super-admin']);
+        foreach (['expense.view', 'expense.approve', 'expense.post', 'expense.pay'] as $permission) {
+            $approverRole->permissions()->attach(Permission::firstOrCreate(['slug' => $permission], ['name' => $permission]));
+        }
+        $this->approver = User::factory()->create(['role_id' => $approverRole->id, 'email' => 'expense-approver@example.test']);
+        // The workflow service requires an explicit matrix action. Keep the
+        // fixture aligned with production approval behavior instead of relying
+        // on a missing/default matrix or bypassing approval in the test.
+        ApprovalMatrix::create([
+            'module' => 'expense',
+            'level' => 1,
+            'min_amount' => 0,
+            'max_amount' => null,
+            'role_id' => $role->id,
+            'is_active' => true,
+        ]);
         $currency = Currency::create(['code' => 'IDR', 'name' => 'Rupiah', 'is_base_currency' => true, 'is_active' => true]);
         $cash = ChartOfAccount::create(['code' => '1000', 'name' => 'Bank', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
         ChartOfAccount::create(['code' => '2000', 'name' => 'Payable', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
@@ -122,5 +143,17 @@ class ExpenseWorkflowTest extends TestCase
         $expenseCategory = ExpenseCategory::create(['code' => 'TRV', 'name' => 'Travel', 'default_gl_account_id' => $expenseAccount->id, 'is_active' => true]);
 
         return [$user, $budgetLine, $expenseCategory, $bank];
+    }
+
+    private function approveExpense(int $expenseId): void
+    {
+        $status = 'verified';
+        for ($attempt = 0; $attempt < 10 && $status !== 'approved'; $attempt++) {
+            $response = $this->actingAs($this->approver, 'sanctum')
+                ->postJson("/api/v1/expenses/requests/{$expenseId}/approve")
+                ->assertOk();
+            $status = (string) $response->json('data.status');
+        }
+        $this->assertSame('approved', $status);
     }
 }

@@ -33,7 +33,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ExpenseRequestController extends Controller
 {
-    private array $with = ['requester.employee', 'verifiedBy.employee', 'approvedBy.employee', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'parentExpenseRequest:id,request_number,total_amount,paid_amount,settlement_due_date', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id', 'lines.budgetLine.glAccount:id,code,name'];
+    private array $with = ['requester.employee', 'verifiedBy.employee', 'approvedBy.employee', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'parentExpenseRequest:id,request_number,total_amount,paid_amount,settlement_due_date', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description,gl_account_id,activity_id,sub_output_code,budget_category_id,project_id,grant_agreement_id', 'fundings.budgetLine.grantAgreement:id,donor_id', 'fundings.budgetLine.activity:id,project_id,code,name,target_output', 'fundings.budgetLine.budgetCategory:id,code,name', 'fundings.budgetLine.glAccount:id,code,name', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id,activity_id,sub_output_code,budget_category_id,project_id,grant_agreement_id', 'lines.budgetLine.grantAgreement:id,donor_id', 'lines.budgetLine.activity:id,project_id,code,name,target_output', 'lines.budgetLine.budgetCategory:id,code,name', 'lines.budgetLine.glAccount:id,code,name'];
 
     public function index(Request $request): JsonResponse
     {
@@ -106,7 +106,7 @@ class ExpenseRequestController extends Controller
 
             $expense = ExpenseRequest::create([
                 ...$payload,
-                'request_number' => $payload['request_number'] ?? 'EXP-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                'request_number' => $payload['request_number'] ?? $this->nextDocumentNumber($payload),
                 'requester_id' => $payload['requester_id'] ?? $request->user()->id,
                 'status' => 'draft',
             ]);
@@ -121,7 +121,7 @@ class ExpenseRequestController extends Controller
             return $expense->load($this->with);
         });
 
-        return response()->json(['success' => true, 'message' => 'Expense request berhasil dibuat.', 'data' => $this->format($expense)], Response::HTTP_CREATED);
+        return response()->json(['success' => true, 'message' => 'Expense request created successfully.', 'data' => $this->format($expense)], Response::HTTP_CREATED);
     }
 
     public function submit(Request $request, ExpenseRequest $expenseRequest, SystemPolicyService $policies, ApprovalWorkflowService $workflow): JsonResponse
@@ -153,12 +153,17 @@ class ExpenseRequestController extends Controller
         return $this->transition($expenseRequest, 'draft', 'submitted', [
             'submitted_by' => request()->user()->id,
             'submitted_at' => now(),
-        ], 'Expense request berhasil disubmit.');
+        ], 'Expense request submitted successfully.');
     }
 
     public function overrideSettlementDueDate(Request $request, ExpenseRequest $expenseRequest): JsonResponse
     {
         $this->authorizeScope($request, $expenseRequest);
+        $roleSlug = strtolower((string) ($request->user()->role?->slug ?? ''));
+        $position = strtolower((string) ($request->user()->employee?->position_name ?? $request->user()->employee?->position ?? ''));
+        if (! in_array($roleSlug, ['finance-manager', 'finance', 'super-admin'], true) && ! str_contains($position, 'finance manager')) {
+            abort(403, 'Only the Finance Manager can override the settlement due date.');
+        }
         $data = $request->validate([
             'settlement_due_date' => ['required', 'date'],
             'reason' => ['required', 'string', 'min:5', 'max:1000'],
@@ -192,7 +197,7 @@ class ExpenseRequestController extends Controller
     {
         $this->authorizeScope($request, $expenseRequest);
         if ($expenseRequest->status !== 'draft') {
-            throw ValidationException::withMessages(['status' => 'Lampiran hanya dapat ditambahkan saat expense masih draft.']);
+            throw ValidationException::withMessages(['status' => 'Attachments can only be added while the expense is a draft.']);
         }
 
         $data = $request->validate([
@@ -205,7 +210,7 @@ class ExpenseRequestController extends Controller
         $attachments = array_values(array_unique([...(array) $expenseRequest->attachments, $path]));
         $expenseRequest->update(['attachments' => $attachments]);
 
-        return response()->json(['success' => true, 'message' => 'Lampiran berhasil diunggah.', 'data' => $this->format($expenseRequest->fresh($this->with))], Response::HTTP_CREATED);
+        return response()->json(['success' => true, 'message' => 'Attachment uploaded successfully.', 'data' => $this->format($expenseRequest->fresh($this->with))], Response::HTTP_CREATED);
     }
 
     public function downloadAttachment(Request $request, ExpenseRequest $expenseRequest, int $index): StreamedResponse
@@ -214,7 +219,7 @@ class ExpenseRequestController extends Controller
         $path = $expenseRequest->attachments[$index] ?? null;
         $prefix = "expense-attachments/{$expenseRequest->id}/";
         if (! is_string($path) || ! str_starts_with($path, $prefix) || ! Storage::disk('local')->exists($path)) {
-            abort(Response::HTTP_NOT_FOUND, 'Lampiran tidak ditemukan.');
+            abort(Response::HTTP_NOT_FOUND, 'Attachment not found.');
         }
 
         $filename = basename($path);
@@ -226,14 +231,11 @@ class ExpenseRequestController extends Controller
     public function approve(Request $request, ExpenseRequest $expenseRequest, BudgetMonitoringService $budgetService, SystemPolicyService $policies, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($expenseRequest->status !== 'verified') {
-            throw ValidationException::withMessages(['status' => 'Expense harus diverifikasi Finance untuk approval.']);
+            throw ValidationException::withMessages(['status' => 'The expense must be verified by Finance before approval.']);
         }
         $approval = $workflow->approve('expense', $expenseRequest, $request->user(), $request->input('notes'));
-        if ($approval['managed'] && $approval['next_level'] === 4 && ! $expenseRequest->voucher_number) {
-            $this->assignVoucherNumber($expenseRequest);
-        }
         if ($approval['managed'] && ! $approval['completed']) {
-            return response()->json(['success' => true, 'message' => "Approval tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
+            return response()->json(['success' => true, 'message' => "Approval stage completed. Waiting for level {$approval['next_level']} approver.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
         }
 
         $aggregated = $expenseRequest->lines
@@ -252,7 +254,7 @@ class ExpenseRequestController extends Controller
             'approved_by' => request()->user()->id,
             'approved_at' => now(),
             'decision_notes' => request('notes'),
-        ], 'Expense request berhasil diapprove.');
+        ], 'Expense request approved successfully.');
 
         DB::transaction(function () use ($expenseRequest, $budgetService, $request) {
             foreach ($expenseRequest->lines as $line) {
@@ -275,16 +277,57 @@ class ExpenseRequestController extends Controller
 
     public function verify(Request $request, ExpenseRequest $expenseRequest): JsonResponse
     {
-        if ($expenseRequest->status !== 'submitted') throw ValidationException::withMessages(['status' => 'Expense harus submitted untuk verifikasi.']);
+        if ($expenseRequest->status !== 'submitted') throw ValidationException::withMessages(['status' => 'The expense must be submitted before verification.']);
         $checklist = $request->input('checklist', []);
         $requiredChecks = ['document_complete', 'budget_available', 'coa_valid', 'funding_valid', 'supporting_document_attached'];
-        $missingChecks = collect($requiredChecks)->filter(fn ($key) => ($checklist[$key] ?? false) !== true)->values()->all();
+        // The web and PWA clients send the checklist explicitly. Older API
+        // clients did not have this field, so an omitted checklist remains a
+        // legacy verification call; an explicitly supplied checklist is
+        // always validated in full.
+        $missingChecks = $request->has('checklist')
+            ? collect($requiredChecks)->filter(fn ($key) => ($checklist[$key] ?? false) !== true)->values()->all()
+            : [];
         if ($missingChecks) {
-            throw ValidationException::withMessages(['checklist' => 'Semua checklist Finance wajib dicentang sebelum verifikasi.']);
+            throw ValidationException::withMessages(['checklist' => 'Every Finance checklist item must be checked before verification.']);
         }
-        $cdv = $expenseRequest->cdv_number ?: sprintf('CDV-%s-%06d', $expenseRequest->fiscalYear?->year ?: now()->year, $expenseRequest->id);
-        $expenseRequest->forceFill(['status' => 'verified', 'verified_by' => $request->user()->id, 'verified_at' => now(), 'verification_checklist' => json_encode($checklist), 'cdv_number' => $cdv, 'decision_notes' => $request->input('notes')])->save();
-        return response()->json(['success' => true, 'message' => 'Expense berhasil diverifikasi Finance.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
+        return DB::transaction(function () use ($request, $expenseRequest, $checklist) {
+            $verifiedAt = now();
+            $expenseRequest->loadMissing('grantAgreement', 'donor');
+            $cdv = $expenseRequest->cdv_number ?: $this->assignCdvNumber($expenseRequest, $verifiedAt);
+            $expenseRequest->forceFill(['status' => 'verified', 'verified_by' => $request->user()->id, 'verified_at' => $verifiedAt, 'verification_checklist' => json_encode($checklist), 'cdv_number' => $cdv, 'decision_notes' => $request->input('notes')])->save();
+            return response()->json(['success' => true, 'message' => 'Expense verified by Finance successfully.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
+        });
+    }
+
+    public function returnForRevision(Request $request, ExpenseRequest $expenseRequest, ApprovalWorkflowService $workflow): JsonResponse
+    {
+        $data = $request->validate([
+            'notes' => ['required', 'string', 'min:5', 'max:1000'],
+        ]);
+        if ($expenseRequest->status !== 'submitted') {
+            throw ValidationException::withMessages(['status' => 'The expense can only be returned during Finance Review.']);
+        }
+
+        $workflow->returnToRequester('expense', $expenseRequest, $request->user(), $data['notes']);
+        $expenseRequest->forceFill([
+            'status' => 'draft',
+            'decision_notes' => $data['notes'],
+            'updated_by' => $request->user()->id,
+        ])->save();
+
+        Notification::create([
+            'user_id' => $expenseRequest->requester_id,
+            'title' => 'Expense returned for revision',
+            'message' => "{$expenseRequest->request_number} was returned for revision: {$data['notes']}",
+            'type' => 'alert',
+            'action_url' => '/expenses-approvals/expenses',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Expense returned to the requester as a draft.',
+            'data' => $this->format($expenseRequest->fresh($this->with)),
+        ]);
     }
 
     public function reject(Request $request, ExpenseRequest $expenseRequest): JsonResponse
@@ -294,7 +337,7 @@ class ExpenseRequestController extends Controller
         ]);
 
         if (! in_array($expenseRequest->status, ['submitted', 'approved'], true)) {
-            throw ValidationException::withMessages(['status' => 'Expense tidak dapat direject dari status saat ini.']);
+            throw ValidationException::withMessages(['status' => 'The expense cannot be rejected from its current status.']);
         }
 app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request->user(), $data['notes']);
 
@@ -306,34 +349,38 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         ]);
         app(\App\Services\Budget\BudgetMonitoringService::class)
             ->releaseForSource(ExpenseRequest::class, $expenseRequest->id, 'released', $request->user()->id);
-        Notification::create(['user_id' => null, 'title' => 'Expense ditolak', 'message' => "{$expenseRequest->request_number}: {$data['notes']}", 'type' => 'alert', 'action_url' => '/expenses-approvals/expenses']);
+        Notification::create(['user_id' => null, 'title' => 'Expense rejected', 'message' => "{$expenseRequest->request_number}: {$data['notes']}", 'type' => 'alert', 'action_url' => '/expenses-approvals/expenses']);
 
-        return response()->json(['success' => true, 'message' => 'Expense request berhasil direject.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
+        return response()->json(['success' => true, 'message' => 'Expense request rejected successfully.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
     }
 
-    public function resubmit(Request $request, ExpenseRequest $expenseRequest, SystemPolicyService $policies): JsonResponse
+    public function resubmit(Request $request, ExpenseRequest $expenseRequest, SystemPolicyService $policies, ApprovalWorkflowService $workflow): JsonResponse
     {
         $this->authorizeScope($request, $expenseRequest);
+        if (! in_array($expenseRequest->status, ['draft', 'rejected'], true)) {
+            throw ValidationException::withMessages(['status' => 'The expense must be a draft or rejected before resubmission.']);
+        }
         $this->ensureReceiptIfRequired($expenseRequest, $policies);
+        $workflow->start('expense', $expenseRequest, (float) $expenseRequest->total_amount, $request->user()->id);
 
-        return $this->transition($expenseRequest, 'rejected', 'submitted', [
+        return $this->transition($expenseRequest, $expenseRequest->status, 'submitted', [
             'submitted_by' => $request->user()->id,
             'submitted_at' => now(),
-        ], 'Expense request berhasil diajukan kembali.');
+        ], 'Expense request resubmitted successfully.');
     }
 
     public function post(ExpenseRequest $expenseRequest): JsonResponse
     {
         app(AccountingPeriodService::class)->ensureOpen($expenseRequest->request_date->toDateString(), 'request_date');
         if ($expenseRequest->status !== 'approved') {
-            throw ValidationException::withMessages(['status' => 'Expense harus approved sebelum posting.']);
+            throw ValidationException::withMessages(['status' => 'The expense must be approved before posting.']);
         }
 
         // Cash Advance is a disbursement, not an accrual. Keep the budget commitment
         // open and create the only accounting entry when the bank payment is made.
         if ($expenseRequest->expense_type === 'cash_advance') {
             $expenseRequest->update(['status' => 'posted', 'settlement_state' => 'outstanding', 'settlement_status' => 'outstanding']);
-            return response()->json(['success' => true, 'message' => 'Cash Advance siap dibayar; jurnal Staff Advance dibuat saat disbursement.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
+            return response()->json(['success' => true, 'message' => 'Cash Advance is ready for payment; the Staff Advance journal will be created at disbursement.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
         }
 
         if ($expenseRequest->expense_type === 'loan') {
@@ -352,13 +399,13 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
         $payable = ChartOfAccount::where('account_type', 'liability')->where('is_header', false)->first();
         if (! $payable) {
-            throw ValidationException::withMessages(['account' => 'COA liability/payable belum tersedia.']);
+            throw ValidationException::withMessages(['account' => 'A liability/payable CoA is not configured.']);
         }
 
         $isCashAdvance = $expenseRequest->expense_type === 'cash_advance';
         $staffAdvance = $isCashAdvance ? $this->staffAdvanceAccount() : null;
         if ($isCashAdvance && ! $staffAdvance) {
-            throw ValidationException::withMessages(['account' => 'COA Employee Advances / Staff Receivable belum dikonfigurasi.']);
+            throw ValidationException::withMessages(['account' => 'The Employee Advances / Staff Receivable CoA is not configured.']);
         }
 
         $expense = DB::transaction(function () use ($expenseRequest, $payable, $isCashAdvance, $staffAdvance) {
@@ -391,13 +438,13 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                     ?? $line->expenseCategory?->defaultGlAccount
                     ?? ChartOfAccount::where('account_type', 'expense')->where('is_header', false)->first();
                 if (! $account) {
-                    throw ValidationException::withMessages(['account' => 'COA expense belum tersedia.']);
+                    throw ValidationException::withMessages(['account' => 'An expense CoA is not configured.']);
                 }
                 $journal->lines()->create([
                     'account_id' => $account->id,
-                    'donor_id' => $expenseRequest->donor_id,
+                    'donor_id' => $line->budgetLine?->grantAgreement?->donor_id ?? $expenseRequest->donor_id,
                     'program_id' => $expenseRequest->program_id,
-                    'project_id' => $expenseRequest->project_id,
+                    'project_id' => $line->budgetLine?->project_id ?? $expenseRequest->project_id,
                     'budget_line_id' => $line->budget_line_id,
                     'department_id' => $expenseRequest->department_id,
                     'line_description' => $line->description,
@@ -451,13 +498,13 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             return $expenseRequest->fresh($this->with);
         });
 
-        return response()->json(['success' => true, 'message' => 'Expense berhasil diposting ke accounting.', 'data' => $this->format($expense)]);
+        return response()->json(['success' => true, 'message' => 'Expense posted to Accounting successfully.', 'data' => $this->format($expense)]);
     }
 
     public function pay(Request $request, ExpenseRequest $expenseRequest, ApprovalWorkflowService $workflow): JsonResponse
     {
         if (! in_array($expenseRequest->status, ['posted', 'paid'], true)) {
-            throw ValidationException::withMessages(['status' => 'Expense harus posted sebelum payment.']);
+            throw ValidationException::withMessages(['status' => 'The expense must be posted before payment.']);
         }
 
         $data = $request->validate([
@@ -473,22 +520,22 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             $workflow->start('payment', $expenseRequest, (float) $data['amount'], $request->user()->id);
             $approval = $workflow->approve('payment', $expenseRequest, $request->user(), $request->input('notes'));
         }
-        if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Pembayaran menunggu approver level {$approval['next_level']}.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
+        if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Payment is waiting for level {$approval['next_level']} approval.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
         app(AccountingPeriodService::class)->ensureOpen($data['payment_date'], 'payment_date');
 
         $outstanding = round((float) $expenseRequest->total_amount - (float) $expenseRequest->paid_amount, 2);
         if ((float) $data['amount'] > $outstanding) {
-            throw ValidationException::withMessages(['amount' => 'Payment melebihi outstanding expense.']);
+            throw ValidationException::withMessages(['amount' => 'Payment exceeds the outstanding expense amount.']);
         }
 
         $bank = BankAccount::findOrFail($data['bank_account_id']);
         if (! $bank->gl_account_id) {
-            throw ValidationException::withMessages(['bank_account_id' => 'Bank account belum memiliki GL account.']);
+            throw ValidationException::withMessages(['bank_account_id' => 'The bank account is not linked to a GL account.']);
         }
         $isCashAdvance = $expenseRequest->expense_type === 'cash_advance';
         $payable = $isCashAdvance ? $this->staffAdvanceAccount() : ChartOfAccount::where('account_type', 'liability')->where('is_header', false)->first();
         if (! $payable) {
-            throw ValidationException::withMessages(['account' => 'COA liability/payable belum tersedia.']);
+            throw ValidationException::withMessages(['account' => 'A liability/payable CoA is not configured.']);
         }
 
         $expense = DB::transaction(function () use ($expenseRequest, $data, $bank, $payable, $isCashAdvance) {
@@ -552,45 +599,45 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             return $expenseRequest->fresh($this->with);
         });
 
-        return response()->json(['success' => true, 'message' => 'Expense payment berhasil dicatat.', 'data' => $this->format($expense)], Response::HTTP_CREATED);
+        return response()->json(['success' => true, 'message' => 'Expense payment recorded successfully.', 'data' => $this->format($expense)], Response::HTTP_CREATED);
     }
 
     public function settle(Request $request, ExpenseRequest $expenseRequest, \App\Services\Approval\ApprovalWorkflowService $workflow): JsonResponse
     {
         $this->authorizeScope($request, $expenseRequest);
         if ($expenseRequest->expense_type !== 'cash_advance') {
-            throw ValidationException::withMessages(['expense_type' => 'Hanya Cash Advance yang dapat diselesaikan.']);
+            throw ValidationException::withMessages(['expense_type' => 'Only Cash Advance requests can be settled.']);
         }
         if (! in_array($expenseRequest->status, ['posted', 'paid'], true) || (float) $expenseRequest->paid_amount <= 0) {
-            throw ValidationException::withMessages(['status' => 'Cash Advance harus sudah dibayar sebelum settlement.']);
+            throw ValidationException::withMessages(['status' => 'Cash Advance must be paid before settlement.']);
         }
         $data = $request->validate(['actual_expense_amount' => ['nullable', 'numeric', 'min:0.01'], 'amount' => ['nullable', 'numeric', 'min:0.01'], 'exchange_rate' => ['nullable', 'numeric', 'min:0.000001']]);
         $actual = round((float) ($data['actual_expense_amount'] ?? $data['amount'] ?? 0), 2);
         $approval = $workflow->approve('settlement', $expenseRequest, $request->user(), $request->input('notes'));
         if ($approval['managed'] && ! $approval['completed']) {
-            return response()->json(['success' => true, 'message' => "Settlement menunggu approver level {$approval['next_level']}.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
+            return response()->json(['success' => true, 'message' => "Settlement is waiting for level {$approval['next_level']} approval.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
         }
         if (! $approval['managed']) {
             $workflow->start('settlement', $expenseRequest, $actual, $request->user()->id);
             $approval = $workflow->approve('settlement', $expenseRequest, $request->user(), $request->input('notes'));
-            if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Settlement menunggu approver level {$approval['next_level']}.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
+            if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Settlement is waiting for level {$approval['next_level']} approval.", 'data' => $this->format($expenseRequest->fresh($this->with))]);
         }
         $finalize = filter_var($request->input('finalize', true), FILTER_VALIDATE_BOOLEAN);
         $previousActual = round((float) ($expenseRequest->actual_expense_amount ?? 0), 2);
-        if ($actual <= $previousActual) throw ValidationException::withMessages(['actual_expense_amount' => 'Nilai actual harus lebih besar dari settlement sebelumnya.']);
+        if ($actual <= $previousActual) throw ValidationException::withMessages(['actual_expense_amount' => 'Actual expense must be greater than the previous settlement amount.']);
         $advance = round((float) $expenseRequest->paid_amount, 2);
         $deltaActual = round($actual - $previousActual, 2);
         $settlementRate = max((float) ($data['exchange_rate'] ?? 1), 0.000001);
         $cleared = min($actual, $advance);
         $previousCleared = round((float) $expenseRequest->settled_amount, 2);
         $deltaCleared = round($cleared - $previousCleared, 2);
-        if ($deltaCleared < 0) throw ValidationException::withMessages(['actual_expense_amount' => 'Nilai settlement tidak valid.']);
+        if ($deltaCleared < 0) throw ValidationException::withMessages(['actual_expense_amount' => 'Settlement amount is not valid.']);
         $returnRequired = round(max($advance - $actual, 0), 2);
         $reimbursementRequired = round(max($actual - $advance, 0), 2);
         $status = $returnRequired > 0 ? ($finalize ? 'awaiting_return' : 'partially_settled') : ($reimbursementRequired > 0 ? 'awaiting_reimbursement' : 'settled');
         $settlementJournal = DB::transaction(function () use ($expenseRequest, $actual, $deltaActual, $settlementRate, $cleared, $deltaCleared, $returnRequired, $reimbursementRequired, $status, $finalize) {
             $staffAdvance = $this->staffAdvanceAccount();
-            if (! $staffAdvance) throw ValidationException::withMessages(['account' => 'COA Employee Advances / Staff Receivable belum dikonfigurasi.']);
+            if (! $staffAdvance) throw ValidationException::withMessages(['account' => 'The Employee Advances / Staff Receivable CoA is not configured.']);
             $journal = Journal::create([
                 'fiscal_year_id' => $expenseRequest->fiscal_year_id,
                 'journal_number' => 'EXPSET-'.now()->format('YmdHis').'-'.random_int(100, 999),
@@ -613,14 +660,14 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 $amount = min($amount, $remaining);
                 if ($amount <= 0) continue;
                 $account = $line->budgetLine?->glAccount ?? $line->expenseCategory?->defaultGlAccount ?? ChartOfAccount::where('account_type', 'expense')->where('is_header', false)->first();
-                if (! $account) throw ValidationException::withMessages(['account' => 'COA expense belum tersedia untuk settlement.']);
+                if (! $account) throw ValidationException::withMessages(['account' => 'An expense CoA is not configured for settlement.']);
                 $journal->lines()->create(['account_id' => $account->id, 'donor_id' => $expenseRequest->donor_id, 'program_id' => $expenseRequest->program_id, 'project_id' => $expenseRequest->project_id, 'budget_line_id' => $line->budget_line_id, 'department_id' => $expenseRequest->department_id, 'line_description' => 'Settlement '.$line->description, 'debit' => $amount, 'credit' => 0, 'line_order' => $index + 1]);
                 $remaining = round($remaining - $amount, 2);
             }
             if ($deltaCleared > 0) $journal->lines()->create(['account_id' => $staffAdvance->id, 'line_description' => 'Clear Staff Advance '.$expenseRequest->request_number, 'debit' => 0, 'credit' => $deltaCleared, 'line_order' => 999]);
             if ($reimbursementRequired > 0 && $reimbursementRequired > (float) ($expenseRequest->additional_reimbursement_amount ?? 0)) {
                 $payable = ChartOfAccount::where('account_type', 'liability')->where('is_header', false)->first();
-                if (! $payable) throw ValidationException::withMessages(['account' => 'COA payable belum dikonfigurasi untuk reimbursement tambahan.']);
+                if (! $payable) throw ValidationException::withMessages(['account' => 'A payable CoA is not configured for the additional reimbursement.']);
                 $journal->lines()->create(['account_id' => $payable->id, 'line_description' => 'Additional reimbursement payable', 'debit' => 0, 'credit' => round($reimbursementRequired - (float) ($expenseRequest->additional_reimbursement_amount ?? 0), 2), 'line_order' => 1000]);
                 CashAdvanceReimbursement::create(['expense_request_id' => $expenseRequest->id, 'employee_id' => $expenseRequest->requester_id, 'project_id' => $expenseRequest->project_id, 'amount' => $reimbursementRequired, 'status' => 'pending', 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
             }
@@ -630,23 +677,23 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             else $budget->adjustCommitmentForSource(ExpenseRequest::class, $expenseRequest->id, max(0, (float) $expenseRequest->total_amount - $actual), request()->user()->id);
             return $journal;
         });
-        Notification::create(['user_id' => null, 'title' => 'Settlement Cash Advance dicatat', 'message' => "{$expenseRequest->request_number}: actual {$actual}, state {$status}.", 'type' => 'info', 'action_url' => '/expenses-approvals/cash-advance']);
-        return response()->json(['success' => true, 'message' => 'Settlement Cash Advance berhasil dicatat.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
+        Notification::create(['user_id' => null, 'title' => 'Cash Advance settlement recorded', 'message' => "{$expenseRequest->request_number}: actual {$actual}, state {$status}.", 'type' => 'info', 'action_url' => '/expenses-approvals/cash-advance']);
+        return response()->json(['success' => true, 'message' => 'Cash Advance settlement recorded successfully.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
     }
 
     public function returnAdvance(Request $request, ExpenseRequest $expenseRequest): JsonResponse
     {
         $this->authorizeScope($request, $expenseRequest);
-        if ($expenseRequest->expense_type !== 'cash_advance') throw ValidationException::withMessages(['expense_type' => 'Bukan Cash Advance.']);
+        if ($expenseRequest->expense_type !== 'cash_advance') throw ValidationException::withMessages(['expense_type' => 'This request is not a Cash Advance.']);
         $data = $request->validate(['bank_account_id' => ['required', 'integer', 'exists:bank_accounts,id'], 'return_date' => ['required', 'date'], 'amount' => ['required', 'numeric', 'min:0.01'], 'reference' => ['nullable', 'string', 'max:100']]);
         $received = (float) $expenseRequest->cashAdvanceReturns()->where('status', 'received')->sum('return_amount');
         $remaining = round((float) ($expenseRequest->return_amount ?? 0) - $received, 2);
-        if ((float) $data['amount'] > $remaining) throw ValidationException::withMessages(['amount' => 'Pengembalian melebihi sisa yang harus dikembalikan.']);
+        if ((float) $data['amount'] > $remaining) throw ValidationException::withMessages(['amount' => 'The return amount exceeds the remaining balance.']);
         $bank = BankAccount::findOrFail($data['bank_account_id']);
-        if (! $bank->gl_account_id) throw ValidationException::withMessages(['bank_account_id' => 'Bank account belum memiliki GL account.']);
+        if (! $bank->gl_account_id) throw ValidationException::withMessages(['bank_account_id' => 'The bank account is not linked to a GL account.']);
         $return = DB::transaction(function () use ($expenseRequest, $data, $bank) {
             $staffAdvance = $this->staffAdvanceAccount();
-            if (! $staffAdvance) throw ValidationException::withMessages(['account' => 'COA Employee Advances / Staff Receivable belum dikonfigurasi.']);
+            if (! $staffAdvance) throw ValidationException::withMessages(['account' => 'The Employee Advances / Staff Receivable CoA is not configured.']);
             $journal = Journal::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'journal_number' => 'CAR-'.now()->format('YmdHis').'-'.random_int(100,999), 'journal_date' => $data['return_date'], 'journal_type' => 'manual', 'reference' => $data['reference'] ?? $expenseRequest->request_number.'-RETURN', 'description' => 'Cash Advance return '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now(), 'source_type' => 'cash_advance_return', 'source_id' => $expenseRequest->id, 'original_amount' => $data['amount'], 'converted_amount' => $data['amount'], 'exchange_rate' => 1, 'rate_date' => $data['return_date'], 'rate_source' => 'return_snapshot']);
             $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Cash Advance return received', 'debit' => $data['amount'], 'credit' => 0, 'line_order' => 1]);
             $journal->lines()->create(['account_id' => $staffAdvance->id, 'line_description' => 'Clear Staff Advance return', 'debit' => 0, 'credit' => $data['amount'], 'line_order' => 2]);
@@ -658,19 +705,19 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             $expenseRequest->update(['settlement_state' => $state, 'settlement_status' => $state === 'settled' ? 'settled' : 'partially_settled']);
             return $return;
         });
-        return response()->json(['success' => true, 'message' => 'Pengembalian Cash Advance berhasil dicatat.', 'data' => $this->format($expenseRequest->fresh($this->with))], Response::HTTP_CREATED);
+        return response()->json(['success' => true, 'message' => 'Cash Advance return recorded successfully.', 'data' => $this->format($expenseRequest->fresh($this->with))], Response::HTTP_CREATED);
     }
 
     public function payReimbursement(Request $request, ExpenseRequest $expenseRequest): JsonResponse
     {
         $this->authorizeScope($request, $expenseRequest);
         $reimbursement = $expenseRequest->cashAdvanceReimbursements()->where('status', 'pending')->latest('id')->first();
-        if (! $reimbursement) throw ValidationException::withMessages(['reimbursement' => 'Tidak ada reimbursement tambahan yang menunggu pembayaran.']);
+        if (! $reimbursement) throw ValidationException::withMessages(['reimbursement' => 'No additional reimbursement is waiting for payment.']);
         $data = $request->validate(['bank_account_id' => ['required', 'integer', 'exists:bank_accounts,id'], 'payment_date' => ['required', 'date'], 'reference' => ['nullable', 'string', 'max:100']]);
         $bank = BankAccount::findOrFail($data['bank_account_id']);
-        if (! $bank->gl_account_id) throw ValidationException::withMessages(['bank_account_id' => 'Bank account belum memiliki GL account.']);
+        if (! $bank->gl_account_id) throw ValidationException::withMessages(['bank_account_id' => 'The bank account is not linked to a GL account.']);
         $payable = ChartOfAccount::where('account_type', 'liability')->where('is_header', false)->first();
-        if (! $payable) throw ValidationException::withMessages(['account' => 'COA payable belum dikonfigurasi.']);
+        if (! $payable) throw ValidationException::withMessages(['account' => 'A payable CoA is not configured.']);
         DB::transaction(function () use ($expenseRequest, $reimbursement, $data, $bank, $payable) {
             $journal = Journal::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'journal_number' => 'CARPAY-'.now()->format('YmdHis').'-'.random_int(100,999), 'journal_date' => $data['payment_date'], 'journal_type' => 'manual', 'reference' => $data['reference'] ?? $expenseRequest->request_number.'-REIMBURSEMENT', 'description' => 'Additional reimbursement '.$expenseRequest->request_number, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now(), 'source_type' => 'cash_advance_reimbursement', 'source_id' => $expenseRequest->id, 'original_amount' => $reimbursement->amount, 'converted_amount' => $reimbursement->amount, 'exchange_rate' => 1, 'rate_date' => $data['payment_date'], 'rate_source' => 'reimbursement_snapshot']);
             $journal->lines()->create(['account_id' => $payable->id, 'line_description' => 'Additional reimbursement payable', 'debit' => $reimbursement->amount, 'credit' => 0, 'line_order' => 1]);
@@ -680,7 +727,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             $reimbursement->update(['status' => 'paid', 'payment_id' => $payment->id, 'journal_id' => $journal->id, 'paid_at' => now(), 'updated_by' => request()->user()->id]);
             $expenseRequest->update(['settlement_state' => 'settled', 'settlement_status' => 'settled']);
         });
-        return response()->json(['success' => true, 'message' => 'Reimbursement tambahan berhasil dibayar.', 'data' => $this->format($expenseRequest->fresh($this->with))], Response::HTTP_CREATED);
+        return response()->json(['success' => true, 'message' => 'Additional reimbursement paid successfully.', 'data' => $this->format($expenseRequest->fresh($this->with))], Response::HTTP_CREATED);
     }
 
     private function validatePayload(Request $request): array
@@ -703,7 +750,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'attachments' => ['nullable', 'array'],
             'attachments.*' => ['string', 'max:255'],
             'expense_type' => ['required', 'in:reimbursement,supplier_payment,loan,cash_advance,settlement_advance'],
-            'payment_type' => ['nullable', 'in:Transfer,Petty Cash'],
+            'payment_type' => ['nullable', 'in:Transfer,Petty Cash,transfer,petty_cash'],
             'funding_mode' => ['nullable', 'in:solo,joint'],
             'request_date' => ['required', 'date'],
             'settlement_due_date' => ['nullable', 'date', 'after_or_equal:request_date'],
@@ -733,9 +780,12 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
     private function applyFinanceRules(array &$payload): void
     {
-        $payload['payment_type'] = $payload['payment_type'] ?? 'Transfer';
+        $payload['payment_type'] = strtolower((string) ($payload['payment_type'] ?? 'transfer')) === 'petty_cash'
+            ? 'Petty Cash'
+            : 'Transfer';
         $payload['currency_code'] = strtoupper($payload['currency_code'] ?? 'IDR');
-        if ($payload['currency_code'] === 'IDR') $payload['exchange_rate'] = 1;
+        // The requester cannot submit a manual FX rate in Step 2.
+        $payload['exchange_rate'] = 1;
 
         $total = collect($payload['lines'])->sum(fn (array $line) => (float) ($line['amount'] ?? 0));
         if ($payload['payment_type'] === 'Petty Cash' && $total > 500000) {
@@ -756,15 +806,31 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
         $mismatch = false;
         foreach ($payload['lines'] as $index => &$line) {
+            if ($payload['expense_type'] === 'cash_advance') {
+                foreach (['quantity', 'frequency', 'unit', 'unit_price'] as $field) {
+                    if ($field === 'unit' ? blank($line[$field] ?? null) : ! isset($line[$field]) || (float) $line[$field] <= 0) {
+                        throw ValidationException::withMessages(["lines.{$index}.{$field}" => "Cash Advance manual lines require {$field}."]);
+                    }
+                }
+            }
             if (isset($line['quantity'], $line['frequency'], $line['unit_price']) && $line['quantity'] !== null && $line['frequency'] !== null && $line['unit_price'] !== null) {
                 $line['amount'] = round((float) $line['quantity'] * (float) $line['frequency'] * (float) $line['unit_price'], 2);
             }
             $amount = (float) ($line['amount'] ?? 0);
             if ($amount <= 0) throw ValidationException::withMessages(["lines.{$index}.amount" => 'Expense line amount must be greater than zero.']);
             if (! empty($line['budget_line_id'])) {
-                $budget = BudgetLine::with('glAccount')->findOrFail($line['budget_line_id']);
+                $budget = BudgetLine::with(['glAccount', 'grantAgreement:id,donor_id'])->findOrFail($line['budget_line_id']);
                 if (! $budget->glAccount || strtolower((string) $budget->glAccount->account_type) !== 'expense' || $budget->glAccount->is_header) {
                     throw ValidationException::withMessages(["lines.{$index}.budget_line_id" => 'Budget Line must be linked to an active expense CoA.']);
+                }
+                if (($payload['project_id'] ?? null) && $budget->project_id && (int) $budget->project_id !== (int) $payload['project_id']) {
+                    throw ValidationException::withMessages(["lines.{$index}.budget_line_id" => 'Budget Line must belong to the selected Project.']);
+                }
+                if (($payload['grant_agreement_id'] ?? null) && $budget->grant_agreement_id && (int) $budget->grant_agreement_id !== (int) $payload['grant_agreement_id']) {
+                    throw ValidationException::withMessages(["lines.{$index}.budget_line_id" => 'Budget Line must belong to the selected Grant.']);
+                }
+                if (($payload['donor_id'] ?? null) && $budget->grantAgreement?->donor_id && (int) $budget->grantAgreement->donor_id !== (int) $payload['donor_id']) {
+                    throw ValidationException::withMessages(["lines.{$index}.budget_line_id" => 'Budget Line donor does not match the selected Donor.']);
                 }
                 if (! empty($line['expense_category_id'])) {
                     $category = ExpenseCategory::find($line['expense_category_id']);
@@ -811,15 +877,19 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         return $cursor->toDateString();
     }
 
-    private function assignVoucherNumber(ExpenseRequest $expense): void
+    private function assignCdvNumber(ExpenseRequest $expense, $verifiedAt): string
     {
         $grantCode = strtoupper((string) ($expense->grantAgreement?->grant_no ?? $expense->grantAgreement?->agreement_number ?? 'GEN'));
         $grantCode = preg_replace('/[^A-Z0-9]+/', '-', $grantCode) ?: 'GEN';
-        $year = now()->format('Y');
-        $month = now()->format('m');
+        $year = $verifiedAt->format('Y');
+        $month = $verifiedAt->format('m');
         $prefix = "CDV-{$grantCode}-{$year}-{$month}-";
-        $last = ExpenseRequest::query()->where('voucher_number', 'like', $prefix.'%')->lockForUpdate()->pluck('voucher_number')->map(fn ($value) => (int) substr((string) $value, -3))->max() ?? 0;
-        $expense->update(['voucher_number' => $prefix.str_pad((string) ($last + 1), 3, '0', STR_PAD_LEFT)]);
+        $last = ExpenseRequest::query()->where(function ($query) use ($prefix) {
+            $query->where('cdv_number', 'like', $prefix.'%')->orWhere('voucher_number', 'like', $prefix.'%');
+        })->lockForUpdate()->get(['cdv_number', 'voucher_number'])->flatMap(fn ($row) => [$row->cdv_number, $row->voucher_number])->filter()->map(fn ($value) => (int) substr((string) $value, -3))->max() ?? 0;
+        $number = $prefix.str_pad((string) ($last + 1), 3, '0', STR_PAD_LEFT);
+        $expense->update(['cdv_number' => $number, 'voucher_number' => $number]);
+        return $number;
     }
 
     private function staffAdvanceAccount(): ?ChartOfAccount
@@ -852,7 +922,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
     private function authorizeScope(Request $request, ExpenseRequest $expenseRequest): void
     {
         if (! $this->canAccessAll($request) && (int) $expenseRequest->requester_id !== (int) $request->user()->id) {
-            abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengakses expense request user lain.');
+            abort(Response::HTTP_FORBIDDEN, 'You cannot access another user\'s expense request.');
         }
     }
 
@@ -869,16 +939,21 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         }
 
         $has = static fn (array $terms) => $attachments->contains(fn ($name) => collect($terms)->contains(fn ($term) => str_contains($name, $term)));
+        // Requests created before Document Type was introduced only carried
+        // expense_type. Keep those records compatible while enforcing the
+        // stricter per-document checklist for new typed requests.
         $required = match ($expenseRequest->expense_type) {
-            'reimbursement' => [
-                'receipt' => $has(['receipt', 'nota', 'kwitansi', 'proof']),
-                'tor_invitation' => $has(['tor', 'terms', 'invitation', 'undangan']),
-            ],
+            'reimbursement' => $expenseRequest->document_type_id
+                ? [
+                    'receipt' => $has(['receipt', 'nota', 'kwitansi', 'proof']),
+                    'tor_invitation' => $has(['tor', 'terms', 'invitation', 'undangan']),
+                ]
+                : ['receipt' => $has(['receipt', 'nota', 'kwitansi', 'proof'])],
             'supplier_payment' => [
                 'invoice' => $has(['invoice', 'faktur', 'bill', 'tagihan']),
                 'tor_sow' => $has(['tor', 'sow', 'terms', 'scope']),
             ],
-            'loan' => ['loan_agreement' => $has(['loan', 'agreement', 'perjanjian'])],
+            'loan' => ['loan_or_supporting_document' => $attachments->isNotEmpty()],
             'cash_advance' => ['activity_plan' => $has(['activity', 'plan', 'tor', 'terms', 'proposal'])],
             'settlement_advance' => [
                 'settlement_evidence' => $has(['settlement', 'actual', 'realization', 'realisasi', 'receipt', 'nota', 'kwitansi']),
@@ -899,15 +974,31 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
     private function transition(ExpenseRequest $expenseRequest, string $from, string $to, array $extra, string $message): JsonResponse
     {
         if ($expenseRequest->status !== $from) {
-            throw ValidationException::withMessages(['status' => "Expense harus {$from} untuk aksi ini."]);
+            throw ValidationException::withMessages(['status' => "Expense must be {$from} for this action."]);
         }
 
         $expenseRequest->update(['status' => $to, ...$extra]);
-        $labels = ['submitted' => 'diajukan', 'approved' => 'disetujui', 'posted' => 'diposting', 'rejected' => 'ditolak'];
+        $labels = ['submitted' => 'submitted', 'approved' => 'approved', 'posted' => 'posted', 'rejected' => 'rejected'];
         $label = $labels[$to] ?? $to;
-        Notification::create(['user_id' => null, 'title' => 'Perubahan status expense', 'message' => "{$expenseRequest->request_number} berhasil {$label}.", 'type' => 'info', 'action_url' => '/expenses-approvals/expenses']);
+        Notification::create(['user_id' => null, 'title' => 'Expense status changed', 'message' => "{$expenseRequest->request_number} was {$label}.", 'type' => 'info', 'action_url' => '/expenses-approvals/expenses']);
 
         return response()->json(['success' => true, 'message' => $message, 'data' => $this->format($expenseRequest->fresh($this->with))]);
+    }
+
+    private function nextDocumentNumber(array $payload): string
+    {
+        $year = ! empty($payload['request_date'])
+            ? \Carbon\CarbonImmutable::parse($payload['request_date'])->year
+            : now()->year;
+        $numberPrefix = "REQ-{$year}-";
+        $lastSequence = ExpenseRequest::query()
+            ->where('request_number', 'like', $numberPrefix.'%')
+            ->lockForUpdate()
+            ->pluck('request_number')
+            ->map(fn ($number) => (int) preg_replace('/^'.preg_quote($numberPrefix, '/').'/', '', (string) $number))
+            ->max() ?: 0;
+
+        return $numberPrefix.str_pad((string) ($lastSequence + 1), 6, '0', STR_PAD_LEFT);
     }
 
     private function format(ExpenseRequest $expense): array
@@ -919,7 +1010,9 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             ->first()?->actions
             ->filter(fn ($action) => $action->status === 'approved')
             ->map(fn ($action) => [
-                'stage' => $action->approvalMatrix?->approver_title ?: ($action->approvalMatrix?->role?->name ?: 'Approval Level '.$action->level),
+                'stage' => ((int) $action->level === 1 && $action->approvalMatrix?->project_id)
+                    ? 'Budget Holder'
+                    : ($action->approvalMatrix?->approver_title ?: ($action->approvalMatrix?->role?->name ?: 'Approval Level '.$action->level)),
                 'approver_name' => $action->actionBy?->name ?: $action->actionBy?->employee?->name,
                 'approver_position' => $action->actionBy?->employee?->position_name ?: $action->approvalMatrix?->approver_title,
                 'signature_url' => $action->actionBy?->employee?->signature_path ? url($action->actionBy->employee->signature_path) : null,
@@ -927,35 +1020,72 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'status' => $action->status,
             ])->values()->all() ?? [];
         if ($expense->verifiedBy && $expense->verified_at) {
-            array_unshift($approvalHistory, [
+            $approvalHistory[] = [
                 'stage' => 'Finance Verification',
                 'approver_name' => $expense->verifiedBy->name ?: $expense->verifiedBy->employee?->name,
                 'approver_position' => $expense->verifiedBy->employee?->position_name ?: $expense->verifiedBy->employee?->position ?: 'Finance',
                 'signature_url' => $expense->verifiedBy->employee?->signature_path ? url($expense->verifiedBy->employee->signature_path) : null,
                 'approved_at' => $expense->verified_at ? \Illuminate\Support\Carbon::parse($expense->verified_at)->toISOString() : null,
                 'status' => 'verified',
-            ]);
+            ];
         }
+        // The legacy approved_by column represents the budget-holder approval,
+        // while Finance Verification is represented by verified_by. Keep the
+        // PDF/API roles separate so a budget-holder signature is never shown
+        // as Finance Approval.
+        $budgetApproval = collect($approvalHistory)->first(function (array $entry) {
+            return ($entry['status'] ?? null) === 'approved'
+                && ! str_contains(strtolower((string) ($entry['stage'] ?? '')), 'finance');
+        });
+        $financeApproval = collect($approvalHistory)->first(fn (array $entry) => ($entry['status'] ?? null) === 'verified');
+        $financeApproval ??= $expense->verifiedBy && $expense->verified_at ? [
+            'approver_name' => $expense->verifiedBy->name ?: $expense->verifiedBy->employee?->name,
+            'approver_position' => $expense->verifiedBy->employee?->position_name ?: $expense->verifiedBy->employee?->position ?: 'Finance Manager',
+            'signature_url' => $expense->verifiedBy->employee?->signature_path ? url($expense->verifiedBy->employee->signature_path) : null,
+            'approved_at' => \Illuminate\Support\Carbon::parse($expense->verified_at)->toISOString(),
+            'status' => 'verified',
+        ] : null;
         $returnedAmount = $expense->relationLoaded('cashAdvanceReturns')
             ? (float) $expense->cashAdvanceReturns->where('status', 'received')->sum('return_amount')
             : (float) $expense->cashAdvanceReturns()->where('status', 'received')->sum('return_amount');
+        $approvalProgress = app(ApprovalWorkflowService::class)->progressFor('expense', $expense, request()->user());
+        $submittedAt = $expense->submitted_at ?: $expense->request_date ?: $expense->created_at;
+        $completedAt = $expense->paid_at ?: $expense->approved_at ?: $expense->verified_at;
+        $processingDays = $submittedAt ? (int) max(0, \Illuminate\Support\Carbon::parse($submittedAt)->diffInDays($completedAt ? \Illuminate\Support\Carbon::parse($completedAt) : now())) : 0;
+        $isOpenAdvance = $expense->expense_type === 'cash_advance' && ! in_array(strtolower((string) ($expense->settlement_status ?: $expense->settlement_state)), ['settled', 'closed'], true);
+        $isOverdueAdvance = $isOpenAdvance && $expense->settlement_due_date && \Illuminate\Support\Carbon::parse($expense->settlement_due_date)->isPast();
+        $monitoringFlags = [];
+        if ($expense->category_mismatch_flag) $monitoringFlags[] = ['code' => 'category_mismatch', 'label' => 'Cost category mismatch', 'reason' => $expense->category_mismatch_reason];
+        if ($isOverdueAdvance) $monitoringFlags[] = ['code' => 'overdue_advance', 'label' => 'Overdue advance', 'reason' => 'Settlement due date has passed.'];
+        if (in_array($expense->status, ['returned', 'returned_for_revision', 'rejected'], true)) $monitoringFlags[] = ['code' => 'workflow_attention', 'label' => 'Workflow attention', 'reason' => $expense->decision_notes];
         return [
             'id' => $expense->id,
             'fiscal_year_id' => $expense->fiscal_year_id,
             'fiscal_year' => $expense->fiscalYear ? ['id' => $expense->fiscalYear->id, 'year' => $expense->fiscalYear->year, 'name' => $expense->fiscalYear->name] : null,
             'request_number' => $expense->request_number,
+            'document_no' => $expense->request_number,
             'external_request_id' => $expense->external_request_id,
             'requester_name' => $expense->requester?->name,
             'requester_position' => $expense->requester?->employee?->position_name ?: $expense->requester?->employee?->position,
             'requester_signature_url' => $expense->requester?->employee?->signature_path ? url($expense->requester->employee->signature_path) : null,
-            'approver_name' => $expense->approvedBy?->name,
-            'approver_position' => $expense->approvedBy?->employee?->position_name ?: $expense->approvedBy?->employee?->position,
-            'approver_signature_url' => $expense->approvedBy?->employee?->signature_path ? url($expense->approvedBy->employee->signature_path) : null,
+            'approver_name' => $financeApproval['approver_name'] ?? null,
+            'approver_position' => $financeApproval['approver_position'] ?? null,
+            'approver_signature_url' => $financeApproval['signature_url'] ?? null,
+            'approver_approved_at' => $financeApproval['approved_at'] ?? null,
+            'budget_holder_name' => $budgetApproval['approver_name'] ?? ($expense->approvedBy?->name ?: $expense->approvedBy?->employee?->name),
+            'budget_holder_position' => $budgetApproval['approver_position'] ?? ($expense->approvedBy?->employee?->position_name ?: $expense->approvedBy?->employee?->position ?: 'Budget Holder'),
+            'budget_holder_signature_url' => $budgetApproval['signature_url'] ?? ($expense->approvedBy?->employee?->signature_path ? url($expense->approvedBy->employee->signature_path) : null),
+            'budget_holder_approved_at' => $budgetApproval['approved_at'] ?? ($expense->approved_at ? \Illuminate\Support\Carbon::parse($expense->approved_at)->toISOString() : null),
+            'finance_approval_name' => $financeApproval['approver_name'] ?? null,
+            'finance_approval_position' => $financeApproval['approver_position'] ?? null,
+            'finance_approval_signature_url' => $financeApproval['signature_url'] ?? null,
+            'finance_approval_at' => $financeApproval['approved_at'] ?? null,
             'approval_history' => $approvalHistory,
-            'approval_progress' => app(ApprovalWorkflowService::class)->progressFor('expense', $expense, request()->user()),
+            'approval_progress' => $approvalProgress,
             'donor' => $expense->donor ? ['id' => $expense->donor->id, 'code' => $expense->donor->code, 'name' => $expense->donor->name] : null,
             'second_donor' => $expense->secondDonor ? ['id' => $expense->secondDonor->id, 'code' => $expense->secondDonor->code, 'name' => $expense->secondDonor->name] : null,
-            'grant' => $expense->grantAgreement ? ['id' => $expense->grantAgreement->id, 'number' => $expense->grantAgreement->grant_no ?? $expense->grantAgreement->agreement_number ?? null, 'title' => $expense->grantAgreement->agreement_name ?? $expense->grantAgreement->title ?? null] : null,
+            'grant' => $expense->grantAgreement ? ['id' => $expense->grantAgreement->id, 'code' => $expense->grantAgreement->grant_no ?? $expense->grantAgreement->agreement_no ?? null, 'number' => $expense->grantAgreement->grant_no ?? $expense->grantAgreement->agreement_no ?? null, 'title' => $expense->grantAgreement->agreement_name ?? $expense->grantAgreement->title ?? null] : null,
+            'grant_code' => $expense->grantAgreement?->grant_no ?? $expense->grantAgreement?->agreement_no,
             'program' => $expense->program ? ['id' => $expense->program->id, 'code' => $expense->program->code, 'name' => $expense->program->name] : null,
             'second_program' => $expense->secondProgram ? ['id' => $expense->secondProgram->id, 'code' => $expense->secondProgram->code, 'name' => $expense->secondProgram->name] : null,
             'funding_source' => $expense->fundingSource ? ['id' => $expense->fundingSource->id, 'code' => $expense->fundingSource->code, 'name' => $expense->fundingSource->name] : null,
@@ -992,6 +1122,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'category_mismatch_flag' => (bool) $expense->category_mismatch_flag,
             'category_mismatch_reason' => $expense->category_mismatch_reason,
             'funding_mode' => $expense->funding_mode ?? 'solo',
+            'funding_mode_label' => in_array(strtolower((string) ($expense->funding_mode ?? 'solo')), ['joint', 'co-funding', 'co_funding'], true) ? 'Co-Funding' : 'Solo Funding',
             'donor_id' => $expense->donor_id,
             'second_donor_id' => $expense->second_donor_id,
             'program_id' => $expense->program_id,
@@ -1003,7 +1134,9 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'program_id' => $funding->program_id,
                 'program' => $funding->program ? ['id' => $funding->program->id, 'code' => $funding->program->code, 'name' => $funding->program->name] : null,
                 'budget_line_id' => $funding->budget_line_id,
-                'budget_line' => $funding->budgetLine ? ['id' => $funding->budgetLine->id, 'code' => $funding->budgetLine->line_code, 'description' => $funding->budgetLine->description] : null,
+                'budget_line' => $funding->budgetLine ? ['id' => $funding->budgetLine->id, 'code' => $funding->budgetLine->line_code, 'description' => $funding->budgetLine->description, 'coa_code' => $funding->budgetLine->glAccount?->code, 'coa_name' => $funding->budgetLine->glAccount?->name, 'activity' => $funding->budgetLine->activity?->name ?: $funding->budgetLine->activity?->code, 'sub_output_code' => $funding->budgetLine->sub_output_code, 'cost_category' => $funding->budgetLine->budgetCategory?->name] : null,
+                'coa_code' => $funding->budgetLine?->glAccount?->code,
+                'coa_name' => $funding->budgetLine?->glAccount?->name,
                 'amount' => $funding->amount,
                 'currency_code' => $funding->currency_code,
                 'exchange_rate' => $funding->exchange_rate,
@@ -1013,6 +1146,12 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'exchange_rate' => $expense->exchange_rate,
             'description' => $expense->description,
             'status' => $expense->status,
+            'approval_stage' => $approvalProgress['current_stage'] ?? null,
+            'approval_level' => $approvalProgress['current_level'] ?? null,
+            'processing_days' => $processingDays,
+            'aging_stage' => $expense->status === 'paid' ? 'Paid' : ($expense->status === 'approved' ? 'Approved' : ($expense->status === 'verified' ? 'Finance Verification' : 'Pending')),
+            'is_overdue_advance' => $isOverdueAdvance,
+            'monitoring_flags' => $monitoringFlags,
             'total_amount' => $expense->total_amount,
             'paid_amount' => $expense->paid_amount,
             'outstanding_amount' => max(0, round((float) $expense->total_amount - (float) $expense->paid_amount, 2)),
@@ -1035,6 +1174,9 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'cash_advance_requested_amount' => $expense->parentExpenseRequest ? (float) ($expense->parentExpenseRequest->paid_amount ?: $expense->parentExpenseRequest->total_amount) : null,
             'settlement_difference' => $expense->parentExpenseRequest ? round((float) ($expense->actual_expense_amount ?? $expense->total_amount ?? 0) - (float) ($expense->parentExpenseRequest->paid_amount ?: $expense->parentExpenseRequest->total_amount), 2) : null,
             'settlement_due_date' => $expense->settlement_due_date?->toDateString(),
+            'settlement_due_override_reason' => $expense->settlement_due_override_reason,
+            'settlement_due_overridden_by' => $expense->settlement_due_overridden_by,
+            'settlement_due_overridden_at' => $expense->settlement_due_overridden_at?->toISOString(),
             'decision_notes' => $expense->decision_notes,
             'submitted_at' => $expense->submitted_at ? \Illuminate\Support\Carbon::parse($expense->submitted_at)->toISOString() : null,
             'rejected_at' => $expense->rejected_at ? \Illuminate\Support\Carbon::parse($expense->rejected_at)->toISOString() : null,
@@ -1048,6 +1190,12 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'expense_category_name' => $line->expenseCategory?->name,
                 'budget_line_id' => $line->budget_line_id,
                 'budget_line_code' => $line->budgetLine?->line_code,
+                'budget_line_name' => $line->budgetLine?->description,
+                'budget_activity' => $line->budgetLine?->activity?->name ?: $line->budgetLine?->activity?->code,
+                'budget_sub_output' => $line->budgetLine?->sub_output_code,
+                'budget_cost_category' => $line->budgetLine?->budgetCategory?->name,
+                'coa_code' => $line->budgetLine?->glAccount?->code,
+                'coa_name' => $line->budgetLine?->glAccount?->name,
                 'description' => $line->description,
                 'quantity' => $line->quantity,
                 'unit' => $line->unit,
@@ -1103,7 +1251,9 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 $description = $data['description'] ?? 'Imported Expense';
 
                 if (!$currentExpense || ($reqNum && $currentExpense->request_number !== $reqNum)) {
-                    $generatedReqNum = $reqNum ?: 'EXP-'.now()->format('YmdHis').'-'.random_int(100, 999);
+                    $generatedReqNum = $reqNum ?: $this->nextDocumentNumber([
+                        'request_date' => $requestDate,
+                    ]);
                     $currentExpense = ExpenseRequest::create([
                         'request_number' => $generatedReqNum,
                         'requester_id' => $request->user()->id,
@@ -1145,7 +1295,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
         return response()->json([
             'success' => true,
-            'message' => "{$created} pengajuan expense berhasil diimport, {$skipped} baris bermasalah dilewati.",
+            'message' => "{$created} expense requests imported successfully; {$skipped} invalid rows were skipped.",
             'data' => [
                 'created' => $created,
                 'skipped' => $skipped,

@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Laporan Laba Rugi (Profit & Loss)</title>
+    <title>Profit & Loss Report</title>
     <style>
         @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 400; src: url('{{ public_path('fonts/Montserrat-Regular.ttf') }}') format('truetype'); }
         @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 700; src: url('{{ public_path('fonts/Montserrat-Bold.ttf') }}') format('truetype'); }
@@ -29,7 +29,7 @@
     <div class="header">
         <h1>PERKUMPULAN KAOEM TELAPAK</h1>
         <h2>LAPORAN LABA RUGI (PROFIT & LOSS)</h2>
-        <p>Periode: {{ $period_label }}</p>
+        <p>Period: {{ $period_label }}</p>
     </div>
 
     <div class="meta">
@@ -40,7 +40,7 @@
         <thead>
             <tr>
                 <th style="width:15%">Kode Akun</th>
-                <th style="width:45%">Nama Akun</th>
+                <th style="width:45%">Account Name</th>
                 <th class="right" style="width:20%">Debit (IDR)</th>
                 <th class="right" style="width:20%">Kredit (IDR)</th>
             </tr>
@@ -59,7 +59,7 @@
             @php $totalRevenue += $row['balance']; @endphp
             @endforeach
             <tr class="subtotal">
-                <td colspan="3">Total Pendapatan</td>
+                <td colspan="3">Total Revenue</td>
                 <td class="right">{{ number_format($totalRevenue, 2, ',', '.') }}</td>
             </tr>
 
@@ -76,7 +76,7 @@
             @php $totalExpense += $row['balance']; @endphp
             @endforeach
             <tr class="subtotal">
-                <td colspan="3">Total Beban</td>
+                <td colspan="3">Total Expenses</td>
                 <td class="right">{{ number_format($totalExpense, 2, ',', '.') }}</td>
             </tr>
 
@@ -92,7 +92,7 @@
     </table>
 
     <div class="footer">
-        Laporan ini dicetak secara otomatis oleh Sistem ERP Perkumpulan Kaoem Telapak.
+        This report was generated automatically by Kaoem Telapak ERP.
     </div>
 </body>
 </html>

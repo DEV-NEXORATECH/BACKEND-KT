@@ -120,6 +120,7 @@ class RoleSeeder extends Seeder
                     ['title' => 'Currencies', 'slug' => 'master-currencies', 'path' => '/master-data/currencies', 'sort_order' => 171],
                     ['title' => 'Fiscal Years', 'slug' => 'master-fiscal-years', 'path' => '/master-data/fiscal-years', 'sort_order' => 173],
                     ['title' => 'Accounting Periods', 'slug' => 'master-accounting-periods', 'path' => '/master-data/accounting-periods', 'sort_order' => 174],
+                    ['title' => 'Holiday Calendar', 'slug' => 'master-holidays', 'path' => '/master-data/holidays', 'sort_order' => 175],
                     ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
                     ['title' => 'Members / Anggota', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 178],
                     ['title' => 'Iuran Anggota', 'slug' => 'master-membership-dues', 'path' => '/master-data/membership-dues', 'sort_order' => 181],
@@ -151,6 +152,7 @@ class RoleSeeder extends Seeder
                 ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/project-timeline-workplan', 'sort_order' => 23.2],
                 ['title' => 'Grant Agreements', 'slug' => 'donor-grant-grants', 'path' => '/donor-grant/grants', 'sort_order' => 24],
                 ['title' => 'Grant Reporting', 'slug' => 'donor-grant-reporting', 'path' => '/donor-grant/reporting', 'sort_order' => 27],
+                ['title' => 'Donor Reporting', 'slug' => 'donor-grant-donor-reporting', 'path' => '/donor-grant/donor-reporting', 'sort_order' => 28],
             ]],
             ['title' => 'Budget & Forecast', 'slug' => 'budget-forecast', 'path' => '/donor-grant/budget', 'icon' => 'chart', 'sort_order' => 28, 'children' => [
                 ['title' => 'Budget Planning', 'slug' => 'budget-forecast-planning', 'path' => '/donor-grant/budget', 'sort_order' => 281],
@@ -283,7 +285,8 @@ class RoleSeeder extends Seeder
                 'accounting', 'accounting-dashboard', 'accounting-chart-of-accounts', 'journal', 'general-ledger', 'accounts-payable', 'accounts-receivable', 'banking', 'bank-reconciliation', 'fixed-assets', 'period-closing',
             ],
             'Donor / Grant' => [
-                'donor-grant', 'donor-grant-dashboard', 'donor-grant-donors', 'donor-grant-project-frameworks', 'donor-grant-project-workplan', 'donor-grant-grants', 'donor-grant-budget', 'donor-grant-budget-monitoring', 'donor-grant-reporting',
+                'donor-grant', 'donor-grant-dashboard', 'donor-grant-donors', 'donor-grant-project-frameworks', 'donor-grant-project-workplan', 'donor-grant-grants', 'donor-grant-budget', 'donor-grant-budget-monitoring', 'donor-grant-reporting', 'donor-grant-donor-reporting',
+                'budget-forecast', 'budget-forecast-planning', 'budget-forecast-monitoring', 'budget-forecast-forecast', 'budget-forecast-reallocation',
             ],
             'Expenses / Approval' => [
                 'expenses-approvals', 'expenses-dashboard', 'expense-requests', 'reimbursements', 'cash-advances', 'settlement', 'approval-center', 'finance-verification', 'payment-processing', 'expense-monitoring',

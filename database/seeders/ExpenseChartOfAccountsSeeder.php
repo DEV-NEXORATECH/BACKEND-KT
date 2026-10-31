@@ -6,6 +6,7 @@ use App\Models\Master\BudgetLine;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\ExpenseCategory;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
@@ -23,6 +24,7 @@ class ExpenseChartOfAccountsSeeder extends Seeder
             ['code' => '5300', 'name' => 'Travel and Field Accommodation', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '5000'],
             ['code' => '5400', 'name' => 'Office and Administration', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '5000'],
             ['code' => '5500', 'name' => 'Depreciation Expense', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '5000'],
+            ['code' => '11000', 'name' => 'CURRENT ASSETS', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => true, 'parent_code' => null],
             ['code' => '11510', 'name' => 'Employee Loan Receivable', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 2, 'is_header' => false, 'parent_code' => '11000'],
             ['code' => '2000', 'name' => 'LIABILITIES', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => true, 'parent_code' => null],
             ['code' => '2100', 'name' => 'ACCOUNTS PAYABLE', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 2, 'is_header' => true, 'parent_code' => '2000'],
@@ -36,8 +38,7 @@ class ExpenseChartOfAccountsSeeder extends Seeder
                 ? (($created[$account['parent_code']] ?? null)?->id
                     ?? ChartOfAccount::withoutGlobalScopes()->withTrashed()->where('code', $account['parent_code'])->value('id'))
                 : null;
-            $coa = ChartOfAccount::withoutGlobalScopes()->withTrashed()->firstOrNew(['code' => $account['code']]);
-            $coa->fill([
+            $attributes = [
                 'name' => $account['name'],
                 'account_type' => $account['account_type'],
                 'normal_balance' => $account['normal_balance'],
@@ -46,8 +47,18 @@ class ExpenseChartOfAccountsSeeder extends Seeder
                 'parent_id' => $parentId,
                 'is_active' => true,
                 'deleted_at' => null,
-            ]);
-            $coa->save();
+                'updated_at' => now(),
+            ];
+            $existingId = DB::table('chart_of_accounts')->where('code', $account['code'])->value('id');
+            if ($existingId) {
+                DB::table('chart_of_accounts')->where('id', $existingId)->update($attributes);
+                $coa = ChartOfAccount::withoutGlobalScopes()->withTrashed()->find($existingId);
+            } else {
+                $attributes['code'] = $account['code'];
+                $attributes['created_at'] = now();
+                $existingId = DB::table('chart_of_accounts')->insertGetId($attributes);
+                $coa = ChartOfAccount::withoutGlobalScopes()->withTrashed()->find($existingId);
+            }
             $created[$account['code']] = $coa;
         }
 

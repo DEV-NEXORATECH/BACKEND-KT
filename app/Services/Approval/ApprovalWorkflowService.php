@@ -16,12 +16,13 @@ class ApprovalWorkflowService
     public function start(string $module, Model $entity, float $amount, ?int $submittedBy = null): ?ApprovalWorkflowRun
     {
         $matrices = $this->matricesFor($module, $entity, $amount);
-        if ($module === 'expense' && $submittedBy) {
+        if ($submittedBy) {
             $requester = User::with('employee')->find($submittedBy);
             if ($requester) {
-                $matrices = $matrices->reject(fn ($matrix) => ($matrix->user_id && (int) $matrix->user_id === (int) $submittedBy)
-                    || ($matrix->employee_id && (int) $matrix->employee_id === (int) $requester->employee_id)
-                    || ($matrix->role_id && (int) $matrix->role_id === (int) $requester->role_id))->values();
+                // A role is not a person. Do not remove an entire role stage
+                // just because the requester has the same role; remove only
+                // matrix rows that resolve to the requester themselves.
+                $matrices = $matrices->reject(fn ($matrix) => $this->matrixBelongsToUser($matrix, $requester))->values();
             }
         }
         // A person may be represented by both an explicit user and employee
@@ -29,9 +30,7 @@ class ApprovalWorkflowService
         // twice in a single approval chain.
         $seenPeople = [];
         $matrices = $matrices->filter(function ($matrix) use (&$seenPeople) {
-            $identity = $matrix->user_id
-                ? 'user:' . (int) $matrix->user_id
-                : ($matrix->employee_id ? 'employee:' . (int) $matrix->employee_id : null);
+            $identity = $this->matrixPersonKey($matrix);
             if ($identity === null) return true;
             if (isset($seenPeople[$identity])) return false;
             $seenPeople[$identity] = true;
@@ -71,7 +70,11 @@ class ApprovalWorkflowService
             }
 
             $run = $run->fresh('actions');
-            $this->recordEvent($run, 'resubmitted', null, $run->current_level, $submittedBy, 'Dokumen disubmit/resubmit untuk approval.');
+            // Also protect legacy runs that were created before the
+            // requester/self-approval rule was enabled.
+            $this->skipRequesterActions($run, $entity);
+            $run = $run->fresh('actions');
+            $this->recordEvent($run, 'resubmitted', null, $run->current_level, $submittedBy, 'Document submitted or resubmitted for approval.');
             return $run;
         });
     }
@@ -97,9 +100,11 @@ class ApprovalWorkflowService
             if ($run->status === 'approved') return ['managed' => true, 'completed' => true, 'next_level' => null];
             if ($run->status !== 'in_progress') throw ValidationException::withMessages(['approval' => 'Workflow approval tidak aktif.']);
             $run->load('actions.approvalMatrix');
+            $this->skipRequesterActions($run, $entity);
+            $run->refresh()->load('actions.approvalMatrix');
             $actions = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get();
             $action = $actions->first(fn ($item) => $this->matchesApprover($item, $user, $run->approvable));
-            if (! $action) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap approval saat ini.']);
+            if (! $action) throw ValidationException::withMessages(['approval' => 'You are not the approver for the current approval stage.']);
             $action->update(['status' => 'approved', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
             $this->recordEvent($run, 'approved', $run->current_level, $run->current_level, $user->id, $notes);
 
@@ -127,7 +132,7 @@ class ApprovalWorkflowService
             if (! $run) return;
             $run->load('actions.approvalMatrix');
             $action = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get()->first(fn ($item) => $this->matchesApprover($item, $user, $run->approvable));
-            if (! $action) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap approval saat ini.']);
+            if (! $action) throw ValidationException::withMessages(['approval' => 'You are not the approver for the current approval stage.']);
             $action->update(['status' => 'rejected', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
             $run->update(['status' => 'rejected', 'completed_at' => now()]);
             $this->recordEvent($run, 'rejected', $run->current_level, null, $user->id, $notes);
@@ -136,15 +141,15 @@ class ApprovalWorkflowService
 
     public function returnToLevel(string $module, Model $entity, User $user, int $targetLevel, string $notes): array
     {
-        if (trim($notes) === '') throw ValidationException::withMessages(['notes' => 'Alasan pengembalian wajib diisi.']);
+        if (trim($notes) === '') throw ValidationException::withMessages(['notes' => 'A return reason is required.']);
         return DB::transaction(function () use ($module, $entity, $user, $targetLevel, $notes) {
             $run = ApprovalWorkflowRun::query()->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])->lockForUpdate()->first();
             if (! $run || ! in_array($run->status, ['in_progress', 'approved'], true)) throw ValidationException::withMessages(['approval' => 'Workflow approval tidak aktif.']);
-            if ($targetLevel < 1 || $targetLevel >= (int) $run->current_level) throw ValidationException::withMessages(['target_level' => 'Dokumen hanya dapat dikembalikan ke level sebelumnya.']);
+            if ($targetLevel < 1 || $targetLevel >= (int) $run->current_level) throw ValidationException::withMessages(['target_level' => 'A document can only be returned to a previous level.']);
             $run->load('actions.approvalMatrix');
             $fromLevel = (int) $run->current_level;
             $current = $run->actions()->where('level', $run->current_level)->whereIn('status', ['pending', 'approved'])->first();
-            if (! $current || (! $this->isSuperAdmin($user) && ! $this->matchesApprover($current, $user, $entity))) throw ValidationException::withMessages(['approval' => 'Anda bukan approver pada tahap ini.']);
+            if (! $current || (! $this->isSuperAdmin($user) && ! $this->matchesApprover($current, $user, $entity))) throw ValidationException::withMessages(['approval' => 'You are not the approver for this stage.']);
             $current->update(['notes' => trim(($current->notes ? $current->notes."\n" : '').'Returned to level '.$targetLevel.': '.$notes), 'action_by' => $user->id, 'action_at' => now()]);
             $run->actions()->where('level', $targetLevel)->update(['status' => 'pending', 'action_by' => null, 'action_at' => null, 'notes' => 'Returned for revision: '.$notes]);
             $run->actions()->where('level', '>', $targetLevel)->update(['status' => 'queued', 'action_by' => null, 'action_at' => null]);
@@ -154,7 +159,39 @@ class ApprovalWorkflowService
                 'reason' => $notes,
                 'target_level' => $targetLevel,
             ]);
-            return ['target_level' => $targetLevel, 'message' => 'Dokumen dikembalikan untuk revisi.'];
+            return ['target_level' => $targetLevel, 'message' => 'Document returned for revision.'];
+        });
+    }
+
+    public function returnToRequester(string $module, Model $entity, User $user, string $notes): array
+    {
+        if (trim($notes) === '') throw ValidationException::withMessages(['notes' => 'A return reason is required.']);
+
+        return DB::transaction(function () use ($module, $entity, $user, $notes) {
+            $run = ApprovalWorkflowRun::query()
+                ->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])
+                ->lockForUpdate()->first();
+            if (! $run) throw ValidationException::withMessages(['approval' => 'Workflow approval belum tersedia.']);
+
+            $fromLevel = (int) $run->current_level;
+            $run->actions()->update([
+                'status' => 'queued',
+                'action_by' => null,
+                'action_at' => null,
+                'notes' => 'Returned to requester: '.$notes,
+            ]);
+            $run->update([
+                'status' => 'returned_for_revision',
+                'current_level' => 1,
+                'completed_at' => null,
+                'submitted_by' => $entity->getAttribute('requester_id') ?: $entity->getAttribute('submitted_by'),
+            ]);
+            $this->recordEvent($run, 'returned_for_revision', $fromLevel ?: null, null, $user->id, $notes, [
+                'reason' => $notes,
+                'returned_to' => 'requester',
+            ]);
+
+            return ['message' => 'Document returned to the requester for correction.', 'status' => 'draft'];
         });
     }
 
@@ -340,14 +377,24 @@ class ApprovalWorkflowService
             return $query;
         };
 
-        $highestLevel = (clone $scopeMatrix(ApprovalMatrix::query()))
+        $matrixQuery = $scopeMatrix(ApprovalMatrix::query());
+        $projectId = $entity->getAttribute('project_id');
+        $hasProjectSpecificMatrix = $projectId && (clone $matrixQuery)->where('project_id', $projectId)->exists();
+        if ($hasProjectSpecificMatrix) {
+            // A project-specific chain replaces the generic entity chain.
+            // This keeps Abil project-only and prevents Denny's internal chain
+            // from being merged into project approvals.
+            $matrixQuery->where('project_id', $projectId);
+        }
+
+        $highestLevel = (clone $matrixQuery)
             ->where('min_amount', '<=', $amount)
             ->where(fn ($q) => $q->whereNull('max_amount')->orWhere('max_amount', '>=', $amount))
             ->max('level');
 
         if (! $highestLevel) return collect();
 
-        $matrices = $scopeMatrix(ApprovalMatrix::query())
+        $matrices = $matrixQuery
             ->where('level', '<=', $highestLevel)
             ->orderBy('level')->orderBy('id')->get();
 
@@ -370,8 +417,7 @@ class ApprovalWorkflowService
     {
         // The requester/preparer must never approve their own expense or settlement,
         // even when an old workflow action already contains a matching role/user.
-        $requesterId = $entity?->getAttribute('requester_id') ?? $entity?->getAttribute('submitted_by');
-        if ($requesterId && (int) $requesterId === (int) $user->id) {
+        if ($entity && $this->isRequester($entity, $user)) {
             return false;
         }
         if ($this->isSuperAdmin($user)) {
@@ -381,20 +427,22 @@ class ApprovalWorkflowService
         $matrix = $action->approvalMatrix;
         if ($matrix?->role && in_array($matrix->role->slug, ['budget-holder', 'budget-holder-project-manager'], true)) {
             // Only the configured budget holders may approve at this stage.
-            // The President may be one of them, but is not a mandatory final stage.
+            // Only the configured Budget Holders may approve this stage. The
+            // requester is rejected above, so a requester who is also a
+            // Budget Holder is automatically skipped to the next level.
             $allowedBudgetHolders = [
                 'denny bhatara',
                 'abil ahmad akbar',
                 'sarah megumi',
                 'sarah rosemery megumi w',
+                'sarah rosemery megumi wouthuyzen',
                 'sandika ariansyah',
             ];
             $names = array_map('strtolower', array_filter([$user->name, $user->employee?->name]));
             $isAllowed = collect($names)->contains(function ($name) use ($allowedBudgetHolders) {
                 $normalized = preg_replace('/\s+/', ' ', trim((string) $name));
                 return in_array($normalized, $allowedBudgetHolders, true)
-                    || str_contains($normalized, 'sandika ariansyah')
-                    || str_contains($normalized, 'megumi');
+                    || str_contains($normalized, 'sandika ariansyah');
             });
             if (! $isAllowed) return false;
         }
@@ -412,6 +460,83 @@ class ApprovalWorkflowService
         return ($action->user_id && (int) $action->user_id === (int) $user->id)
             || ($action->role_id && (int) $action->role_id === (int) $user->role_id)
             || ($action->employee_id && (int) $action->employee_id === (int) $employeeId);
+    }
+
+    private function matrixBelongsToUser($matrix, User $user): bool
+    {
+        if (! $matrix) return false;
+        $employeeId = $user->employee_id ?: $user->employee?->id;
+        return ($matrix->user_id && (int) $matrix->user_id === (int) $user->id)
+            || ($matrix->employee_id && $employeeId && (int) $matrix->employee_id === (int) $employeeId);
+    }
+
+    private function matrixPersonKey($matrix): ?string
+    {
+        if (! $matrix) return null;
+        if ($matrix->employee_id) return 'employee:' . (int) $matrix->employee_id;
+        if (! $matrix->user_id) return null;
+
+        // Prefer the employee identity when an explicit user is linked to an
+        // employee. This prevents the same person from appearing once through
+        // user_id and again through employee_id in the same chain.
+        $employeeId = $matrix->relationLoaded('user')
+            ? $matrix->user?->employee_id
+            : User::query()->whereKey($matrix->user_id)->value('employee_id');
+        return $employeeId
+            ? 'employee:' . (int) $employeeId
+            : 'user:' . (int) $matrix->user_id;
+    }
+
+    private function isRequester(Model $entity, User $user): bool
+    {
+        $requesterId = $entity->getAttribute('requester_id')
+            ?? $entity->getAttribute('submitted_by')
+            ?? $entity->getAttribute('created_by');
+        if ($requesterId && (int) $requesterId === (int) $user->id) return true;
+
+        $requesterEmployeeId = $entity->getAttribute('requester_employee_id')
+            ?? $entity->getAttribute('submitted_by_employee_id')
+            ?? $entity->getAttribute('employee_id');
+        $employeeId = $user->employee_id ?: $user->employee?->id;
+        return $requesterEmployeeId && $employeeId
+            && (int) $requesterEmployeeId === (int) $employeeId;
+    }
+
+    private function skipRequesterActions(ApprovalWorkflowRun $run, Model $entity): void
+    {
+        $requesterId = $entity->getAttribute('requester_id')
+            ?? $entity->getAttribute('submitted_by')
+            ?? $entity->getAttribute('created_by');
+        $requesterEmployeeId = $entity->getAttribute('requester_employee_id')
+            ?? $entity->getAttribute('submitted_by_employee_id')
+            ?? $entity->getAttribute('employee_id');
+        $requester = $requesterId ? User::with('employee')->find($requesterId) : null;
+        if (! $requester && ! $requesterEmployeeId) return;
+
+        $run->loadMissing('actions.approvalMatrix');
+        while (true) {
+            $current = $run->actions->first(fn ($action) => (int) $action->level === (int) $run->current_level && $action->status === 'pending');
+            $isRequesterAction = $requester
+                ? $this->matrixBelongsToUser($current?->approvalMatrix, $requester)
+                : ($current?->approvalMatrix?->employee_id && (int) $current->approvalMatrix->employee_id === (int) $requesterEmployeeId);
+            if (! $current || ! $isRequesterAction) return;
+
+            $level = (int) $current->level;
+            $current->update([
+                'status' => 'skipped',
+                'notes' => 'Skipped: requester cannot approve their own document.',
+            ]);
+            $nextLevel = $run->actions->where('level', '>', $level)->where('status', 'queued')->min('level');
+            if ($nextLevel) {
+                $run->actions()->where('level', $nextLevel)->where('status', 'queued')->update(['status' => 'pending']);
+                $run->update(['current_level' => $nextLevel]);
+                $run->refresh()->load('actions.approvalMatrix');
+                continue;
+            }
+
+            $run->update(['status' => 'approved', 'completed_at' => now()]);
+            return;
+        }
     }
 
     private function isSuperAdmin(User $user): bool

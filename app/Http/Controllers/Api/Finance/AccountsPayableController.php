@@ -46,14 +46,14 @@ class AccountsPayableController extends Controller
     public function submitInvoice(Request $request, SupplierInvoice $supplierInvoice, ApprovalWorkflowService $workflow): JsonResponse
     {
         if (! in_array($supplierInvoice->match_status, ['matched', 'partial_match'], true)) {
-            throw ValidationException::withMessages(['match_status' => 'Invoice harus matched atau partial match sebelum diajukan approval AP.']);
+            throw ValidationException::withMessages(['match_status' => 'The invoice must be matched or partially matched before AP approval.']);
         }
         if (in_array($supplierInvoice->status, ['posted', 'paid', 'cancelled'], true)) {
             throw ValidationException::withMessages(['status' => 'Invoice tidak dapat diajukan pada status saat ini.']);
         }
 
         $run = $workflow->start('ap', $supplierInvoice, (float) $supplierInvoice->total_amount, $request->user()->id);
-        return response()->json(['success' => true, 'message' => $run ? 'Invoice diajukan ke Approval Matrix AP.' : 'Tidak ada Approval Matrix AP aktif; invoice siap diposting.', 'workflow_managed' => (bool) $run, 'data' => $this->formatInvoice($supplierInvoice->fresh(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines']))]);
+        return response()->json(['success' => true, 'message' => $run ? 'Invoice submitted to the AP Approval Matrix.' : 'No active AP Approval Matrix; the invoice is ready to post.', 'workflow_managed' => (bool) $run, 'data' => $this->formatInvoice($supplierInvoice->fresh(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines']))]);
     }
 
     public function rejectInvoice(Request $request, SupplierInvoice $supplierInvoice, ApprovalWorkflowService $workflow): JsonResponse
@@ -73,7 +73,7 @@ class AccountsPayableController extends Controller
     {
         app(AccountingPeriodService::class)->ensureOpen($supplierInvoice->invoice_date->toDateString(), 'invoice_date');
         if (! in_array($supplierInvoice->match_status, ['matched', 'partial_match'], true)) {
-            throw ValidationException::withMessages(['match_status' => 'Invoice harus matched atau partial match sebelum posting AP.']);
+            throw ValidationException::withMessages(['match_status' => 'The invoice must be matched or partially matched before AP posting.']);
         }
         if (in_array($supplierInvoice->status, ['posted', 'paid'], true)) {
             throw ValidationException::withMessages(['status' => 'Invoice sudah diposting.']);
@@ -81,7 +81,7 @@ class AccountsPayableController extends Controller
 
         $approval = $workflow->approve('ap', $supplierInvoice, $request->user(), $request->input('notes'));
         if (! $approval['managed'] && $workflow->requiresApproval('ap', $supplierInvoice, (float) $supplierInvoice->total_amount)) {
-            throw ValidationException::withMessages(['approval' => 'Invoice harus disubmit ke Approval Matrix AP sebelum posting.']);
+            throw ValidationException::withMessages(['approval' => 'The invoice must be submitted to the AP Approval Matrix before posting.']);
         }
         if ($approval['managed'] && ! $approval['completed']) {
             return response()->json(['success' => true, 'message' => "Approval AP tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->formatInvoice($supplierInvoice->fresh(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines']))]);
@@ -188,7 +188,7 @@ class AccountsPayableController extends Controller
     public function payInvoice(Request $request, SupplierInvoice $supplierInvoice, ApprovalWorkflowService $workflow): JsonResponse
     {
         if (! in_array($supplierInvoice->status, ['posted', 'paid'], true)) {
-            throw ValidationException::withMessages(['status' => 'Invoice harus posted sebelum payment.']);
+            throw ValidationException::withMessages(['status' => 'The invoice must be posted before payment.']);
         }
 
         $data = $request->validate([
@@ -423,7 +423,7 @@ class AccountsPayableController extends Controller
                     throw new \InvalidArgumentException('Nominal debit/credit tidak boleh negatif.');
                 }
                 if ($debit <= 0 && $credit <= 0) {
-                    throw new \InvalidArgumentException('Baris harus memiliki debit atau credit.');
+                    throw new \InvalidArgumentException('Each line must have either a debit or a credit.');
                 }
                 $duplicate = BankTransaction::where('bank_account_id', $data['bank_account_id'])
                     ->whereDate('transaction_date', $date)
@@ -552,7 +552,7 @@ class AccountsPayableController extends Controller
 
         $amount = round(max((float) $bankTransaction->debit, (float) $bankTransaction->credit), 2);
         if ($amount <= 0) {
-            throw ValidationException::withMessages(['amount' => 'Nilai transaksi bank harus lebih besar dari nol untuk auto-match.']);
+            throw ValidationException::withMessages(['amount' => 'The bank transaction amount must be greater than zero for auto-matching.']);
         }
 
         $date = $bankTransaction->transaction_date;
@@ -615,7 +615,7 @@ class AccountsPayableController extends Controller
         $data = $request->validate(['payment_id' => ['required', 'integer', 'exists:payments,id']]);
         $payment = Payment::findOrFail($data['payment_id']);
         if ((int) $payment->bank_account_id !== (int) $bankTransaction->bank_account_id) {
-            throw ValidationException::withMessages(['payment_id' => 'Payment harus menggunakan bank account yang sama.']);
+            throw ValidationException::withMessages(['payment_id' => 'The payment must use the same bank account.']);
         }
         if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user()) && (int) $payment->created_by !== (int) $request->user()->id) {
             abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mencocokkan payment milik user lain.');
@@ -664,7 +664,7 @@ class AccountsPayableController extends Controller
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
-        return response()->json(['success' => true, 'message' => 'Status rekonsiliasi diperbarui.', 'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number'])]);
+        return response()->json(['success' => true, 'message' => 'Reconciliation status updated.', 'data' => $bankTransaction->fresh(['bankAccount:id,bank_name,account_number'])]);
     }
 
     public function unmatchBankTransaction(Request $request, BankTransaction $bankTransaction): JsonResponse

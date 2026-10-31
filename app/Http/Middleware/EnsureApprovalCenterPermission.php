@@ -24,7 +24,7 @@ class EnsureApprovalCenterPermission
         ];
 
         if (! $user->hasAnyPermission($permissions) && ! (bool) ($user->is_super_admin ?? false)) {
-            abort(403, 'Tidak memiliki permission untuk mengakses Approval Center.');
+            abort(403, 'You do not have permission to access the Approval Center.');
         }
 
         return $next($request);

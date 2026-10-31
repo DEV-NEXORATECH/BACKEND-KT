@@ -30,7 +30,7 @@ class JournalWorkflowTest extends TestCase
                 ],
             ])
             ->assertUnprocessable()
-            ->assertJsonPath('message', 'Total debit harus sama dengan total credit.');
+            ->assertJsonPath('message', 'Total debits must equal total credits.');
     }
 
     public function test_journal_can_move_through_review_and_posting_flow(): void

@@ -317,7 +317,7 @@ class PurchaseRequestController extends Controller
             }
             if (blank($payload['lines'][$index]['item_description'] ?? null)) {
                 throw ValidationException::withMessages([
-                    "lines.{$index}.item_description" => 'Pilih item/service master atau isi deskripsi item.',
+                    "lines.{$index}.item_description" => 'Select an item or service from the master data, or enter an item description.',
                 ]);
             }
             $quantity = round((float) $line['quantity'], 2);

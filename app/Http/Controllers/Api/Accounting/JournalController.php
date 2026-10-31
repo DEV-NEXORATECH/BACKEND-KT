@@ -217,7 +217,7 @@ class JournalController extends Controller
         $amount = (float) $journal->lines()->sum('debit');
         $approval = $workflow->approve('journal', $journal, $request->user(), $request->input('notes'));
         if (! $approval['managed'] && $workflow->requiresApproval('journal', $journal, $amount)) {
-            throw ValidationException::withMessages(['approval' => 'Journal harus disubmit ke Approval Matrix sebelum posting.']);
+            throw ValidationException::withMessages(['approval' => 'The journal must be submitted to the Approval Matrix before posting.']);
         }
         if ($approval['managed'] && ! $approval['completed']) {
             return response()->json(['success' => true, 'message' => "Approval journal tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->formatJournal($journal->fresh($this->with))]);
@@ -336,7 +336,7 @@ class JournalController extends Controller
 
             if (($debit > 0 && $credit > 0) || ($debit <= 0 && $credit <= 0)) {
                 throw ValidationException::withMessages([
-                    "lines.{$index}" => 'Setiap baris journal harus memiliki debit atau credit, bukan keduanya.',
+                    "lines.{$index}" => 'Each journal line must have either a debit or a credit, not both.',
                 ]);
             }
 
@@ -349,7 +349,7 @@ class JournalController extends Controller
 
         if (round($totalDebit, 2) !== round($totalCredit, 2)) {
             throw ValidationException::withMessages([
-                'lines' => 'Total debit harus sama dengan total credit.',
+                'lines' => 'Total debits must equal total credits.',
             ]);
         }
 
@@ -390,7 +390,7 @@ class JournalController extends Controller
 
         if ($journal->status !== $from) {
             throw ValidationException::withMessages([
-                'status' => "Journal harus berstatus {$from} untuk aksi ini.",
+                'status' => "The journal must have {$from} status for this action.",
             ]);
         }
 

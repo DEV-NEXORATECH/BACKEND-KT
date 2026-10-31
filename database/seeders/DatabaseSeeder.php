@@ -19,11 +19,11 @@ class DatabaseSeeder extends Seeder
             DonorTypeSeeder::class,
             MasterMenuSeeder::class,
             UserSeeder::class,
-            // Users must exist before the approval matrix is created so
-            // configured budget holders can be linked to their employees.
-            ExpenseApprovalChainSeeder::class,
             ApprovalMatrixSeeder::class,
             ProcessDataSeeder::class,
+            // Process data creates the projects. Seed the expense chain last
+            // so every project receives its own three-level matrix.
+            ExpenseApprovalChainSeeder::class,
         ]);
     }
 }

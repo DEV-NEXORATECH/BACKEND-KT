@@ -9,6 +9,8 @@ use App\Models\Master\GrantAgreement;
 use App\Models\Master\Project;
 use App\Models\Master\ProjectLogframe;
 use App\Models\Master\ProjectWorkplan;
+use App\Models\Master\BudgetCategory;
+use App\Models\Master\ChartOfAccount;
 use App\Models\Master\GrantReportingDeadline;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +20,30 @@ use Throwable;
 
 class IntegratedDonorGrantController extends Controller
 {
+    private function budgetLineDefaults(array $budget, GrantAgreement $grant): array
+    {
+        // Integrated Donor & Grant writes BudgetLine directly, so keep the same
+        // automatic Cost Category -> expense CoA mapping as the normal endpoint.
+        if (empty($budget['gl_account_id'])) {
+            $mapping = ['BCAT-100' => '5100', 'BCAT-200' => '5200', 'BCAT-300' => '5300'];
+            $categoryCode = BudgetCategory::query()->whereKey($budget['budget_category_id'] ?? null)->value('code');
+            $coaCode = $mapping[$categoryCode] ?? null;
+            if ($coaCode) {
+                $budget['gl_account_id'] = ChartOfAccount::query()->where('code', $coaCode)->where('account_type', 'expense')->value('id');
+                $budget['cost_type'] = $coaCode;
+            }
+        }
+
+        return array_merge($budget, [
+            'currency_id' => $budget['currency_id'] ?? $grant->currency_id,
+            'proposal_period' => $budget['proposal_period'] ?? 'annual',
+            'unit_price' => $budget['unit_price'] ?? $budget['total_amount'],
+            'quantity' => $budget['quantity'] ?? 1,
+            'period_allocations' => $budget['period_allocations'] ?? [],
+            'is_active' => true,
+        ]);
+    }
+
     public function update(Request $request, Donor $donor)
     {
         $data = $request->validate([
@@ -39,10 +65,17 @@ class IntegratedDonorGrantController extends Controller
 
             ProjectLogframe::where('project_id', $project->id)->delete();
             ProjectWorkplan::where('project_id', $project->id)->delete();
-            BudgetLine::where('project_id', $project->id)->delete();
             foreach ($data['frameworks'] ?? [] as $framework) ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id]));
             foreach ($data['workplans'] ?? [] as $workplan) ProjectWorkplan::create(array_merge($workplan, ['project_id' => $project->id, 'grant_agreement_id' => $grant->id, 'donor_id' => $donor->id]));
-            foreach ($data['budgets'] ?? [] as $budget) BudgetLine::create(array_merge($budget, ['project_id' => $project->id, 'grant_agreement_id' => $grant->id, 'currency_id' => $grant->currency_id, 'proposal_period' => 'annual', 'unit_price' => $budget['total_amount'], 'quantity' => 1, 'is_active' => true]));
+            // Budget is maintained in the dedicated Project Budget editor.
+            // Only legacy callers that explicitly send budgets may replace
+            // them; normal master-data edits must never delete budget history.
+            if (array_key_exists('budgets', $data)) {
+                BudgetLine::where('project_id', $project->id)->delete();
+                foreach ($data['budgets'] ?? [] as $budget) {
+                    BudgetLine::create($this->budgetLineDefaults(array_merge($budget, ['project_id' => $project->id, 'grant_agreement_id' => $grant->id]), $grant));
+                }
+            }
 
             if (isset($data['deadlines'])) {
                 GrantReportingDeadline::where('grant_agreement_id', $grant->id)->delete();
@@ -166,6 +199,12 @@ class IntegratedDonorGrantController extends Controller
             'budgets.*.document_path' => 'nullable|string|max:255',
             'budgets.*.budget_category_id' => 'required|exists:budget_categories,id',
             'budgets.*.total_amount' => 'required|numeric|min:0',
+            'budgets.*.activity_id' => 'nullable|exists:activities,id',
+            'budgets.*.sub_output_code' => 'nullable|string|max:80',
+            'budgets.*.proposal_period' => 'nullable|in:monthly,quarterly,semester,annual',
+            'budgets.*.period_allocations' => 'nullable|array',
+            'budgets.*.period_allocations.*.period' => 'required_with:budgets.*.period_allocations|string|max:20',
+            'budgets.*.period_allocations.*.amount' => 'required_with:budgets.*.period_allocations|numeric|min:0',
             'deadlines' => 'array',
             'deadlines.*.report_type' => 'required|string|max:100',
             'deadlines.*.period_label' => 'nullable|string|max:100',
@@ -252,16 +291,12 @@ class IntegratedDonorGrantController extends Controller
                 ]));
             }
             foreach ($data['budgets'] ?? [] as $budget) {
-                BudgetLine::create(array_merge($budget, [
+                BudgetLine::create($this->budgetLineDefaults(array_merge($budget, [
                     'project_id' => $project->id,
                     'grant_agreement_id' => $grant->id,
-                    'currency_id' => $budget['currency_id'] ?? $grant->currency_id,
                     'proposal_period' => $budget['proposal_period'] ?? 'annual',
                     'document_path' => $budget['document_path'] ?? ($documents['detailed_budget'] ?? null),
-                    'unit_price' => $budget['unit_price'] ?? $budget['total_amount'],
-                    'quantity' => $budget['quantity'] ?? 1,
-                    'is_active' => true,
-                ]));
+                ]), $grant));
             }
 
             $today = now()->toDateString();

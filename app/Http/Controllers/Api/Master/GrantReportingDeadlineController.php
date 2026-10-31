@@ -12,6 +12,14 @@ use Illuminate\Support\Facades\Storage;
 
 class GrantReportingDeadlineController extends Controller
 {
+    private const REPORT_TYPES = [
+        'Financial Report',
+        'Narrative Report',
+        'Interim Progress Report',
+        'Annual Report',
+        'Final Project Report',
+        'External Audit Report',
+    ];
     /**
      * List all reporting deadlines with optional filtering & search
      */
@@ -202,7 +210,7 @@ class GrantReportingDeadlineController extends Controller
     {
         $validated = $request->validate([
             'grant_agreement_id' => 'required|exists:grant_agreements,id',
-            'report_type' => 'required|string|max:100',
+            'report_type' => 'required|in:' . implode(',', self::REPORT_TYPES),
             'period_label' => 'nullable|string|max:100',
             'due_date' => 'required|date',
             'status' => 'nullable|in:upcoming,in_progress,submitted,overdue',
@@ -228,7 +236,7 @@ class GrantReportingDeadlineController extends Controller
     {
         $validated = $request->validate([
             'grant_agreement_id' => 'sometimes|exists:grant_agreements,id',
-            'report_type' => 'sometimes|string|max:100',
+            'report_type' => 'sometimes|in:' . implode(',', self::REPORT_TYPES),
             'period_label' => 'nullable|string|max:100',
             'due_date' => 'sometimes|date',
             'submitted_date' => 'nullable|date',
@@ -292,7 +300,7 @@ class GrantReportingDeadlineController extends Controller
             'grant_agreement_id' => 'required|exists:grant_agreements,id',
             'frequency' => 'required|in:quarterly,semi-annual,annual',
             'report_types' => 'required|array|min:1',
-            'report_types.*' => 'string|max:100',
+            'report_types.*' => 'in:' . implode(',', self::REPORT_TYPES),
             'lead_time_days' => 'nullable|integer|min:0|max:60', // Hari setelah akhir periode untuk due date, misal 30 hari
         ]);
 

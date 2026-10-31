@@ -167,7 +167,7 @@ class TaxTransactionController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
         if (! array_filter([$data['e_faktur_reference'] ?? null, $data['e_bupot_reference'] ?? null, $data['e_faktur_number'] ?? null, $data['e_bupot_number'] ?? null])) {
-            return response()->json(['success' => false, 'message' => 'Referensi e-Faktur atau e-Bupot wajib diisi sebelum pelaporan.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return response()->json(['success' => false, 'message' => 'An e-Faktur or e-Bupot reference is required before reporting.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $approval = $workflow->approve('tax_transaction', $taxTransaction, $request->user(), $data['notes'] ?? null);
@@ -175,7 +175,7 @@ class TaxTransactionController extends Controller
             return response()->json(['success' => true, 'message' => "Approval transaksi pajak selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->format($taxTransaction->fresh('tax:id,code,name,tax_type,rate_percent'))]);
         }
         if (! $approval['managed'] && $workflow->requiresApproval('tax_transaction', $taxTransaction, (float) $taxTransaction->tax_amount)) {
-            throw \Illuminate\Validation\ValidationException::withMessages(['approval' => 'Transaksi pajak harus disubmit ke Approval Matrix.']);
+            throw \Illuminate\Validation\ValidationException::withMessages(['approval' => 'The tax transaction must be submitted to the Approval Matrix.']);
         }
 
         $previous = ['status' => $taxTransaction->status];
@@ -216,10 +216,10 @@ class TaxTransactionController extends Controller
 
             // Header row matching DJP Online CSV import format
             fputcsv($handle, [
-                'Tanggal', 'Jenis Pajak', 'Kode Pajak', 'Arah',
+                'Date', 'Tax Type', 'Tax Code', 'Direction',
                 'NPWP Lawan', 'No Faktur/Bupot', 'Referensi',
                 'DPP (Rp)', 'Tarif (%)', 'PPh/PPN (Rp)',
-                'Bruto (Rp)', 'Neto (Rp)', 'Status', 'Catatan',
+                'Gross (IDR)', 'Net (IDR)', 'Status', 'Notes',
             ]);
 
             foreach ($items as $item) {
@@ -393,7 +393,7 @@ class TaxTransactionController extends Controller
             abort(Response::HTTP_UNPROCESSABLE_ENTITY, 'PPN/VAT tidak diaktifkan untuk organisasi ini.');
         }
         if (! $tax->is_active) {
-            abort(Response::HTTP_UNPROCESSABLE_ENTITY, 'Tarif pajak tidak aktif. Pilih tarif aktif dari Tax Master.');
+            abort(Response::HTTP_UNPROCESSABLE_ENTITY, 'The tax rate is inactive. Select an active rate from Tax Master.');
         }
         if ($tax->effective_start_date && $date < $tax->effective_start_date->toDateString()) {
             abort(Response::HTTP_UNPROCESSABLE_ENTITY, 'Tarif pajak belum berlaku pada tanggal transaksi.');
