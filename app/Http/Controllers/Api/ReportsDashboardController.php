@@ -478,8 +478,75 @@ class ReportsDashboardController extends Controller
         }
 
         $donors = \App\Models\Master\Donor::query()->with(['grantAgreements'])->get();
-        $grants = \App\Models\Master\GrantAgreement::query()->with(['donor', 'currency', 'projects'])->get();
+        $grants = \App\Models\Master\GrantAgreement::query()->with(['donor', 'currency', 'projects', 'bankAccount'])->get();
         $grantDeadlines = GrantReportingDeadline::query()->whereIn('grant_agreement_id', $grants->pluck('id'))->orderBy('due_date')->get()->groupBy('grant_agreement_id');
+
+        $bankBalances = BankTransaction::query()
+            ->selectRaw('bank_account_id, COALESCE(SUM(debit - credit), 0) as balance')
+            ->groupBy('bank_account_id')
+            ->pluck('balance', 'bank_account_id');
+
+        $cashPositions = $grants->filter(fn ($g) => $g->bank_account_id !== null)->map(function ($grant) use ($bankBalances) {
+            $bank = $grant->bankAccount;
+            $bal = round((float) ($bankBalances[$bank?->id] ?? 0), 2);
+            return [
+                'grant_id' => $grant->id,
+                'grant_no' => $grant->grant_no,
+                'agreement_name' => $grant->agreement_name,
+                'donor_name' => $grant->donor?->name ?? '—',
+                'bank_account_id' => $bank?->id,
+                'bank_name' => $bank?->bank_name,
+                'account_number' => $bank?->account_number,
+                'account_name' => $bank?->account_name,
+                'currency' => $grant->currency?->code ?? 'IDR',
+                'balance' => $bal,
+            ];
+        })->values()->all();
+        $totalCashBalance = collect($cashPositions)->sum('balance');
+
+        $upcomingDeadlines = GrantReportingDeadline::query()
+            ->with(['grantAgreement:id,grant_no,agreement_name,donor_id', 'grantAgreement.donor:id,name,code'])
+            ->whereIn('grant_agreement_id', $grants->pluck('id'))
+            ->whereNotIn('status', ['approved'])
+            ->orderBy('due_date', 'asc')
+            ->limit(10)
+            ->get()
+            ->map(function ($dl) {
+                $days = $dl->due_date ? (int) now()->startOfDay()->diffInDays($dl->due_date, false) : null;
+                $status = $dl->status;
+                if ($days !== null && $days < 0 && $status !== 'submitted' && $status !== 'approved') {
+                    $status = 'overdue';
+                }
+                return [
+                    'id' => $dl->id,
+                    'grant_id' => $dl->grant_agreement_id,
+                    'grant_no' => $dl->grantAgreement?->grant_no,
+                    'agreement_name' => $dl->grantAgreement?->agreement_name,
+                    'donor_name' => $dl->grantAgreement?->donor?->name ?? '—',
+                    'report_type' => $dl->report_type,
+                    'period_label' => $dl->period_label,
+                    'due_date' => $dl->due_date?->toDateString(),
+                    'status' => $status,
+                    'days_remaining' => $days,
+                    'notes' => $dl->notes,
+                    'document_path' => $dl->document_path,
+                    'document_name' => $dl->document_name,
+                ];
+            });
+
+        $overdueCount = GrantReportingDeadline::query()
+            ->whereIn('grant_agreement_id', $grants->pluck('id'))
+            ->where(function ($q) {
+                $q->where('status', 'overdue')
+                  ->orWhere(fn ($sq) => $sq->where('due_date', '<', now()->toDateString())->whereNotIn('status', ['submitted', 'approved']));
+            })->count();
+
+        $dueSoonCount = GrantReportingDeadline::query()
+            ->whereIn('grant_agreement_id', $grants->pluck('id'))
+            ->where('due_date', '>=', now()->toDateString())
+            ->where('due_date', '<=', now()->addDays(30)->toDateString())
+            ->whereNotIn('status', ['submitted', 'approved'])
+            ->count();
 
         $budgetRows = $budgetService->summary($request->only(['fiscal_year_id', 'project_id', 'grant_agreement_id', 'donor_id']));
         $postedLines = $this->postedLines($period['start'], $period['end'], null, null, $period['fiscal_year_id']);
@@ -507,10 +574,14 @@ class ReportsDashboardController extends Controller
             ];
         });
 
+<<<<<<< HEAD
         $today = now()->toDateString();
         $deadlineWindowEnd = now()->addDays(60)->toDateString();
 
         $grantSummaries = $grants->map(function ($grant) use ($budgetRows, $grantDeadlines, $today, $deadlineWindowEnd) {
+=======
+        $grantSummaries = $grants->map(function ($grant) use ($budgetRows, $grantDeadlines, $bankBalances) {
+>>>>>>> f43874195204991ff2ac8f360cd50738da12243e
             $grantLines = collect($budgetRows)->filter(fn ($r) => ($r['grant_agreement']['id'] ?? null) == $grant->id);
             $approved = (float) $grantLines->sum('approved_budget');
             $actual = (float) $grantLines->sum('actual');
@@ -518,6 +589,7 @@ class ReportsDashboardController extends Controller
             $available = (float) $grantLines->sum('available');
             $grantTotal = $approved > 0 ? $approved : (float) $grant->total_amount;
 
+<<<<<<< HEAD
             $deadlines = $grantDeadlines->get($grant->id, collect())->map(function ($deadline) {
                 return [
                     'id' => $deadline->id,
@@ -533,6 +605,9 @@ class ReportsDashboardController extends Controller
                 $deadline['due_date'] <= $deadlineWindowEnd &&
                 ! in_array($deadline['status'], ['submitted'], true)
             )->values();
+=======
+            $cashBal = round((float) ($bankBalances[$grant->bank_account_id] ?? 0), 2);
+>>>>>>> f43874195204991ff2ac8f360cd50738da12243e
 
             return [
                 'id' => $grant->id,
@@ -547,9 +622,17 @@ class ReportsDashboardController extends Controller
                 'actual' => round($actual, 2),
                 'committed' => round($committed, 2),
                 'available' => round($available, 2),
+<<<<<<< HEAD
                 // Cash position is the currently available grant balance after
                 // actual spending and committed spending have been deducted.
                 'cash_position' => round($available, 2),
+=======
+                'cash_balance' => $cashBal,
+                'bank_name' => $grant->bankAccount?->bank_name,
+                'account_number' => $grant->bankAccount?->account_number,
+                'projects_count' => $grant->projects->count(),
+                'currency_code' => $grant->currency?->code ?? 'IDR',
+>>>>>>> f43874195204991ff2ac8f360cd50738da12243e
                 'utilization_percent' => $grantTotal > 0
                     ? round((($actual + $committed) / $grantTotal) * 100, 2)
                     : 0,
@@ -575,13 +658,21 @@ class ReportsDashboardController extends Controller
                 'total_actual' => $totals['actual'],
                 'total_committed' => $totals['committed'],
                 'total_available' => $totals['available'],
+<<<<<<< HEAD
                 'total_cash_position' => $totals['available'],
+=======
+                'total_cash_balance' => round((float) $totalCashBalance, 2),
+>>>>>>> f43874195204991ff2ac8f360cd50738da12243e
                 'overall_utilization' => $totals['utilization_percent'],
                 'grants_ending_soon' => $endingSoon,
                 'reporting_deadlines' => $reportingSoon,
+                'reporting_overdue' => $overdueCount,
+                'reporting_due_soon' => $dueSoonCount,
             ],
             'donors' => $donorSummaries,
             'grants' => $grantSummaries,
+            'cash_positions' => $cashPositions,
+            'upcoming_deadlines' => $upcomingDeadlines,
         ]);
     }
 

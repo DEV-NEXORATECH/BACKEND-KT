@@ -22,11 +22,21 @@ class UpdateBudgetLineRequest extends FormRequest
             'grant_agreement_id' => 'nullable|integer|exists:grant_agreements,id',
             'project_id' => 'nullable|integer|exists:projects,id',
             'activity_id' => 'nullable|integer|exists:activities,id',
+<<<<<<< HEAD
             'sub_output_code' => 'nullable|string|max:80',
             'budget_category_id' => 'required|integer|exists:budget_categories,id',
+=======
+            'activity_code' => 'nullable|string|max:50',
+            'activity_name' => 'nullable|string|max:255',
+            'sub_output_code' => 'nullable|string|max:50',
+            'sub_output_name' => 'nullable|string|max:255',
+            'budget_category_id' => 'nullable|integer|exists:budget_categories,id',
+>>>>>>> f43874195204991ff2ac8f360cd50738da12243e
             'line_code' => 'required|string|max:50',
             'description' => 'required|string|max:255',
             'proposal_period' => 'nullable|in:monthly,quarterly,semester,annual',
+            'allocation_type' => 'nullable|in:annual,quarterly,monthly',
+            'period_allocations' => 'nullable|array',
             'currency_id' => 'nullable|integer|exists:currencies,id',
             'exchange_rate' => 'nullable|numeric|min:0.000001',
             'unit_of_measure_id' => 'nullable|integer|exists:unit_of_measures,id',

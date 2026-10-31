@@ -82,6 +82,7 @@ use App\Http\Controllers\Api\Master\ProjectLogframeController;
 use App\Http\Controllers\Api\Master\ProjectWorkplanController;
 use App\Http\Controllers\Api\Master\IntegratedDonorGrantController;
 use App\Http\Controllers\Api\Master\GrantReportingDeadlineController;
+use App\Http\Controllers\Api\Master\GrantDisbursementRequestController;
 use App\Http\Controllers\Api\Master\OrganizationStructureController;
 use App\Http\Controllers\Api\Master\MembershipDueController;
 
@@ -396,6 +397,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('grant-reporting-deadlines/generate-schedule', [GrantReportingDeadlineController::class, 'generateSchedule'])->middleware('permission:master-data.manage');
         Route::post('grant-reporting-deadlines/{grantReportingDeadline}/submit', [GrantReportingDeadlineController::class, 'submitReport'])->middleware('permission:master-data.manage');
         Route::apiResource('grant-reporting-deadlines', GrantReportingDeadlineController::class)->middleware('permission:master-data');
+        Route::get('grant-disbursements/baseline', [GrantDisbursementRequestController::class, 'baseline'])->middleware('permission:master-data.view');
+        Route::post('grant-disbursements/{grantDisbursement}/submit', [GrantDisbursementRequestController::class, 'submit'])->middleware('permission:master-data.manage');
+        Route::post('grant-disbursements/{grantDisbursement}/approve', [GrantDisbursementRequestController::class, 'approve'])->middleware('permission:master-data.manage');
+        Route::post('grant-disbursements/{grantDisbursement}/receive', [GrantDisbursementRequestController::class, 'receiveFunds'])->middleware('permission:master-data.manage');
+        Route::apiResource('grant-disbursements', GrantDisbursementRequestController::class)->middleware('permission:master-data');
         Route::get('roles', [RoleMenuController::class, 'options'])->middleware('permission:master-data.view');
         Route::get('exchange-rates/resolve', [ExchangeRateController::class, 'resolve'])->middleware('permission:master-data.view');
         Route::get('holidays', [HolidayCalendarController::class, 'index'])->middleware('permission:master-data.view');
