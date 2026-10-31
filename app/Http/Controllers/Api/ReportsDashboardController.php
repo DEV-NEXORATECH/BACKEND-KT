@@ -33,6 +33,12 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ReportsDashboardController extends Controller
 {
+    public function exportPdf(Request $request, string $report): Response
+    {
+        abort_unless($report === 'profit-loss', 404);
+        $request->merge(['format' => 'pdf']);
+        return $this->exportStandard($request, $report, 'pdf');
+    }
         public function procurementDashboard(Request $request): JsonResponse
     {
         $requests = PurchaseRequest::query()->with(['requester:id,name', 'project:id,code,name'])->latest('id')->limit(100)->get();
@@ -998,7 +1004,7 @@ class ReportsDashboardController extends Controller
     {
         $this->ensureExportScope($request);
         abort_unless(in_array($report, ['profit-loss', 'balance-sheet', 'aging', 'cash-bank', 'procurement', 'donor-grant'], true), 404);
-        abort_unless(in_array($format, ['csv', 'xlsx'], true), 422, 'Format export tidak didukung. PDF dibuat oleh frontend professionalPdf.js.');
+        abort_unless(in_array($format, ['csv', 'xlsx', 'pdf'], true), 422, 'Format export tidak didukung.');
 
         if ($report === 'profit-loss') {
             $period = $this->period($request);
@@ -1035,6 +1041,16 @@ class ReportsDashboardController extends Controller
 
         $headers = array_keys((array) ($rows[0] ?? ['No data' => '']));
         $normalized = collect($rows)->map(fn ($row) => (array) $row)->values();
+        if ($format === 'pdf') {
+            $html = '<h1>'.e($title).'</h1><p>'.e($filename).'</p><table border="1" cellpadding="5" cellspacing="0"><thead><tr>'.collect($headers)->map(fn ($header) => '<th>'.e($header).'</th>')->implode('').'</tr></thead><tbody>';
+            foreach ($normalized as $row) $html .= '<tr>'.collect($headers)->map(fn ($header) => '<td>'.e((string) ($row[$header] ?? '')).'</td>')->implode('').'</tr>';
+            $html .= '</tbody></table>';
+            $pdf = app('dompdf.wrapper')->loadHTML('<html><body>'.$html.'</body></html>')->output();
+            return response($pdf, 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename="'.$filename.'.pdf"',
+            ]);
+        }
         if ($format === 'csv') {
             return response()->streamDownload(function () use ($normalized, $headers) {
                 $handle = fopen('php://output', 'w'); fwrite($handle, "\xEF\xBB\xBF"); fputcsv($handle, $headers);

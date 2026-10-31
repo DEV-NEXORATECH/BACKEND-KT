@@ -72,7 +72,7 @@ class CashAdvanceWorkflowTest extends TestCase
 
     private function createAndApprove(User $user, BudgetLine $line, ExpenseCategory $category, float $amount): int
     {
-        $id = $this->actingAs($user, 'sanctum')->postJson('/api/v1/expenses/requests', ['request_number' => 'CA-TEST-1000', 'expense_type' => 'cash_advance', 'request_date' => '2026-09-20', 'description' => 'Cash Advance test', 'attachments' => ['receipt.pdf'], 'lines' => [['expense_category_id' => $category->id, 'budget_line_id' => $line->id, 'description' => 'Advance', 'amount' => $amount]]])->assertCreated()->json('data.id');
+        $id = $this->actingAs($user, 'sanctum')->postJson('/api/v1/expenses/requests', ['request_number' => 'CA-TEST-1000', 'expense_type' => 'cash_advance', 'request_date' => '2026-09-20', 'activity_start_date' => '2026-09-20', 'activity_end_date' => '2026-09-22', 'description' => 'Cash Advance test', 'attachments' => ['activity-plan.pdf'], 'lines' => [['expense_category_id' => $category->id, 'budget_line_id' => $line->id, 'description' => 'Advance', 'quantity' => 1, 'frequency' => 1, 'unit' => 'lump sum', 'unit_price' => $amount, 'amount' => $amount]]])->assertCreated()->json('data.id');
         $this->postJson("/api/v1/expenses/requests/{$id}/submit")->assertJsonPath('data.status', 'submitted');
         $this->postJson("/api/v1/expenses/requests/{$id}/verify")->assertJsonPath('data.status', 'verified');
         $this->postJson("/api/v1/expenses/requests/{$id}/approve")->assertJsonPath('data.status', 'approved');

@@ -151,6 +151,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/reports/cash-bank', [ReportsDashboardController::class, 'cashBankReport'])->middleware('permission:reports.view');
     Route::get('/v1/reports/drilldown', [ReportsDashboardController::class, 'drilldown'])->middleware('permission:reports.view');
     Route::get('/v1/reports/export/{report}/{format}', [ReportsDashboardController::class, 'exportStandard'])->middleware('permission:reports.export');
+    Route::get('/v1/reports/{report}/pdf', [ReportsDashboardController::class, 'exportPdf'])->middleware('permission:reports.export');
     Route::get('/v1/reports/fx-adjustments', [ReportsDashboardController::class, 'fxAdjustments'])->middleware('permission:reports.view');
     Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');
     Route::get('/v1/reports/forecast/entries', [ReportsDashboardController::class, 'forecastEntries'])->middleware('permission:reports.view');
@@ -233,6 +234,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('purchase-requests', [PurchaseRequestController::class, 'index'])->middleware('permission:procurement.pr.view');
         Route::post('purchase-requests', [PurchaseRequestController::class, 'store'])->middleware('permission:procurement.pr.create');
         Route::get('purchase-requests/{purchaseRequest}', [PurchaseRequestController::class, 'show'])->middleware('permission:procurement.pr.view');
+        Route::get('purchase-requests/{purchaseRequest}/pdf', [PurchaseRequestController::class, 'pdf'])->middleware('permission:procurement.pr.view');
         Route::put('purchase-requests/{purchaseRequest}', [PurchaseRequestController::class, 'update'])->middleware('permission:procurement.pr.update');
         Route::delete('purchase-requests/{purchaseRequest}', [PurchaseRequestController::class, 'destroy'])->middleware('permission:procurement.pr.delete');
         Route::post('purchase-requests/{purchaseRequest}/submit', [PurchaseRequestController::class, 'submit'])->middleware('permission:procurement.pr.submit');
