@@ -62,4 +62,13 @@ class GrantAgreement extends Model
         return $this->hasMany(\App\Models\Master\GrantReportingDeadline::class);
     }
 
+    public function disbursementRequests()
+    {
+        return $this->hasMany(\App\Models\Master\GrantDisbursementRequest::class);
+    }
+
+    public function forecastItems()
+    {
+        return $this->hasMany(\App\Models\Master\GrantForecastItem::class);
+    }
 }
