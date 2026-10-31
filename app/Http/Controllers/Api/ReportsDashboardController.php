@@ -574,14 +574,10 @@ class ReportsDashboardController extends Controller
             ];
         });
 
-<<<<<<< HEAD
         $today = now()->toDateString();
         $deadlineWindowEnd = now()->addDays(60)->toDateString();
 
         $grantSummaries = $grants->map(function ($grant) use ($budgetRows, $grantDeadlines, $today, $deadlineWindowEnd) {
-=======
-        $grantSummaries = $grants->map(function ($grant) use ($budgetRows, $grantDeadlines, $bankBalances) {
->>>>>>> f43874195204991ff2ac8f360cd50738da12243e
             $grantLines = collect($budgetRows)->filter(fn ($r) => ($r['grant_agreement']['id'] ?? null) == $grant->id);
             $approved = (float) $grantLines->sum('approved_budget');
             $actual = (float) $grantLines->sum('actual');
@@ -589,7 +585,6 @@ class ReportsDashboardController extends Controller
             $available = (float) $grantLines->sum('available');
             $grantTotal = $approved > 0 ? $approved : (float) $grant->total_amount;
 
-<<<<<<< HEAD
             $deadlines = $grantDeadlines->get($grant->id, collect())->map(function ($deadline) {
                 return [
                     'id' => $deadline->id,
@@ -605,9 +600,6 @@ class ReportsDashboardController extends Controller
                 $deadline['due_date'] <= $deadlineWindowEnd &&
                 ! in_array($deadline['status'], ['submitted'], true)
             )->values();
-=======
-            $cashBal = round((float) ($bankBalances[$grant->bank_account_id] ?? 0), 2);
->>>>>>> f43874195204991ff2ac8f360cd50738da12243e
 
             return [
                 'id' => $grant->id,
@@ -622,17 +614,9 @@ class ReportsDashboardController extends Controller
                 'actual' => round($actual, 2),
                 'committed' => round($committed, 2),
                 'available' => round($available, 2),
-<<<<<<< HEAD
                 // Cash position is the currently available grant balance after
                 // actual spending and committed spending have been deducted.
                 'cash_position' => round($available, 2),
-=======
-                'cash_balance' => $cashBal,
-                'bank_name' => $grant->bankAccount?->bank_name,
-                'account_number' => $grant->bankAccount?->account_number,
-                'projects_count' => $grant->projects->count(),
-                'currency_code' => $grant->currency?->code ?? 'IDR',
->>>>>>> f43874195204991ff2ac8f360cd50738da12243e
                 'utilization_percent' => $grantTotal > 0
                     ? round((($actual + $committed) / $grantTotal) * 100, 2)
                     : 0,
@@ -658,11 +642,7 @@ class ReportsDashboardController extends Controller
                 'total_actual' => $totals['actual'],
                 'total_committed' => $totals['committed'],
                 'total_available' => $totals['available'],
-<<<<<<< HEAD
                 'total_cash_position' => $totals['available'],
-=======
-                'total_cash_balance' => round((float) $totalCashBalance, 2),
->>>>>>> f43874195204991ff2ac8f360cd50738da12243e
                 'overall_utilization' => $totals['utilization_percent'],
                 'grants_ending_soon' => $endingSoon,
                 'reporting_deadlines' => $reportingSoon,
