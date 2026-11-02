@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class ApprovalWorkflowRun extends Model
 {
+    use SoftDeletes;
     protected $fillable = ['module', 'approvable_type', 'approvable_id', 'status', 'current_level', 'submitted_by', 'completed_at'];
     protected $casts = ['completed_at' => 'datetime'];
 

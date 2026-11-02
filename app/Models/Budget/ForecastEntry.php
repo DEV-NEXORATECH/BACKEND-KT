@@ -7,9 +7,11 @@ use App\Models\Master\FiscalYear;
 use App\Models\Master\GrantAgreement;
 use App\Models\Master\Project;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ForecastEntry extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'fiscal_year_id', 'grant_agreement_id', 'project_id', 'entry_type',
         'period_date', 'reference', 'amount', 'currency_id', 'exchange_rate',

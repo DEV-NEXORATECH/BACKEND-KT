@@ -63,22 +63,22 @@ class IntegratedDonorGrantController extends Controller
             $project = $grant->projects()->firstOrFail();
             $project->update($data['project']);
 
-            ProjectLogframe::where('project_id', $project->id)->delete();
-            ProjectWorkplan::where('project_id', $project->id)->delete();
+            ProjectLogframe::where('project_id', $project->id)->get()->each->delete();
+            ProjectWorkplan::where('project_id', $project->id)->get()->each->delete();
             foreach ($data['frameworks'] ?? [] as $framework) ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id]));
             foreach ($data['workplans'] ?? [] as $workplan) ProjectWorkplan::create(array_merge($workplan, ['project_id' => $project->id, 'grant_agreement_id' => $grant->id, 'donor_id' => $donor->id]));
             // Budget is maintained in the dedicated Project Budget editor.
             // Only legacy callers that explicitly send budgets may replace
             // them; normal master-data edits must never delete budget history.
             if (array_key_exists('budgets', $data)) {
-                BudgetLine::where('project_id', $project->id)->delete();
+                BudgetLine::where('project_id', $project->id)->get()->each->delete();
                 foreach ($data['budgets'] ?? [] as $budget) {
                     BudgetLine::create($this->budgetLineDefaults(array_merge($budget, ['project_id' => $project->id, 'grant_agreement_id' => $grant->id]), $grant));
                 }
             }
 
             if (isset($data['deadlines'])) {
-                GrantReportingDeadline::where('grant_agreement_id', $grant->id)->delete();
+                GrantReportingDeadline::where('grant_agreement_id', $grant->id)->get()->each->delete();
                 $today = now()->toDateString();
                 foreach ($data['deadlines'] as $deadline) {
                     GrantReportingDeadline::create([
@@ -102,11 +102,11 @@ class IntegratedDonorGrantController extends Controller
     {
         DB::transaction(function () use ($donor) {
             foreach ($donor->grantAgreements as $grant) {
-                GrantReportingDeadline::where('grant_agreement_id', $grant->id)->delete();
+                GrantReportingDeadline::where('grant_agreement_id', $grant->id)->get()->each->delete();
                 foreach ($grant->projects as $project) {
-                    ProjectLogframe::where('project_id', $project->id)->delete();
-                    ProjectWorkplan::where('project_id', $project->id)->delete();
-                    BudgetLine::where('project_id', $project->id)->delete();
+                    ProjectLogframe::where('project_id', $project->id)->get()->each->delete();
+                    ProjectWorkplan::where('project_id', $project->id)->get()->each->delete();
+                    BudgetLine::where('project_id', $project->id)->get()->each->delete();
                     $project->delete();
                 }
                 $grant->delete();

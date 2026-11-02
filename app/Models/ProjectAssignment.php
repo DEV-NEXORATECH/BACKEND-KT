@@ -5,11 +5,12 @@ namespace App\Models;
 use App\Models\Master\Project;
 use App\Traits\AuditTrailTrait;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ProjectAssignment extends Model
 {
-    use AuditTrailTrait;
+    use AuditTrailTrait, SoftDeletes;
 
     protected $fillable = [
         'user_id',

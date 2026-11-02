@@ -158,7 +158,7 @@ class RecurringJournalController extends Controller
 
     private function syncLines(RecurringJournal $journal, array $lines): void
     {
-        $journal->lines()->delete();
+        $journal->lines()->get()->each->delete();
         $journal->lines()->createMany(collect($lines)->values()->map(fn ($line, int $index) => [
             'account_id' => $line['account_id'],
             'description' => $line['description'] ?? null,

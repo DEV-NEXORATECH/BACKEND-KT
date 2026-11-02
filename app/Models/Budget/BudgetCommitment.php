@@ -5,10 +5,12 @@ namespace App\Models\Budget;
 use App\Models\Master\BudgetLine;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class BudgetCommitment extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'budget_line_id',
         'source_type',

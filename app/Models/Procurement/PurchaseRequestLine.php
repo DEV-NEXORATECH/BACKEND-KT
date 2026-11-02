@@ -5,10 +5,12 @@ namespace App\Models\Procurement;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\ProcurementItem;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PurchaseRequestLine extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'purchase_request_id',
         'budget_line_id',

@@ -329,7 +329,7 @@ class AccountsReceivableController extends Controller
 
     private function syncLines(CustomerInvoice $invoice, array $lines): void
     {
-        $invoice->lines()->delete();
+        $invoice->lines()->get()->each->delete();
         foreach ($lines as $index => $line) {
             $quantity = (float) $line['quantity'];
             $unitPrice = (float) $line['unit_price'];

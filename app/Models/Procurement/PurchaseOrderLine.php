@@ -4,10 +4,12 @@ namespace App\Models\Procurement;
 
 use App\Models\Master\BudgetLine;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PurchaseOrderLine extends Model
 {
+    use SoftDeletes;
     protected $fillable = ['purchase_order_id', 'purchase_request_line_id', 'budget_line_id', 'item_description', 'quantity', 'unit_price', 'total_amount', 'line_order'];
 
     protected $casts = ['quantity' => 'decimal:2', 'unit_price' => 'decimal:2', 'total_amount' => 'decimal:2'];

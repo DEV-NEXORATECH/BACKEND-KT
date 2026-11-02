@@ -6,10 +6,12 @@ use App\Models\Master\BudgetLine;
 use App\Models\Master\Donor;
 use App\Models\Master\Program;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ExpenseRequestFunding extends Model
 {
+    use SoftDeletes;
     protected $fillable = ['expense_request_id', 'donor_id', 'program_id', 'budget_line_id', 'amount', 'currency_code', 'exchange_rate'];
     protected $casts = ['amount' => 'decimal:2', 'exchange_rate' => 'decimal:6'];
 

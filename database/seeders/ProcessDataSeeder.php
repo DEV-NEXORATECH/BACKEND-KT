@@ -25,6 +25,10 @@ class ProcessDataSeeder extends Seeder
             // Apply fiscal-year backfill and create the 2025/2027 counterparts
             // after every feature seeder has finished creating its records.
             FiscalYearDemoSeeder::class,
+            // Fill secondary screens and detail tabs that are not reached by
+            // the main donor-to-payment transaction chain.
+            FullTrialFeatureSeeder::class,
+            TrialDataCoverageSeeder::class,
         ]);
     }
 }

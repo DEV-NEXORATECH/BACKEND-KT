@@ -4,10 +4,12 @@ namespace App\Models\Procurement;
 
 use App\Models\Master\Vendor;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class VendorEvaluation extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'vendor_id', 'purchase_order_id', 'goods_receipt_id',
         'quality_score', 'delivery_score', 'price_score', 'service_score',

@@ -43,7 +43,14 @@ class ReportsDashboardController extends Controller
     {
         $requests = PurchaseRequest::query()->with(['requester:id,name', 'project:id,code,name'])->latest('id')->limit(100)->get();
         $orders = PurchaseOrder::query()->with(['vendor:id,code,name', 'purchaseRequest:id,pr_number,project_id', 'purchaseRequest.project:id,code,name'])->latest('id')->limit(100)->get();
-        $invoices = SupplierInvoice::query()->with(['vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number'])->latest('id')->limit(100)->get();
+        $invoices = SupplierInvoice::query()->with([
+            'vendor:id,code,name',
+            'purchaseOrder:id,po_number,purchase_request_id',
+            'purchaseOrder.purchaseRequest:id,pr_number,project_id',
+            'purchaseOrder.purchaseRequest.project:id,code,name,grant_agreement_id',
+            'purchaseOrder.purchaseRequest.project.grantAgreement:id,grant_no,agreement_name',
+            'goodsReceipt:id,grn_number',
+        ])->latest('id')->limit(100)->get();
 
         $rfqsCount = \Illuminate\Support\Facades\Schema::hasTable('rfqs')
             ? \Illuminate\Support\Facades\DB::table('rfqs')->count()
@@ -145,18 +152,25 @@ class ReportsDashboardController extends Controller
                 ->map(fn ($r) => ['id' => $r->id, 'code' => $r->code, 'name' => $r->name, 'committed' => round((float) $r->committed, 2)]);
         }
 
-        $supplierSpend = SupplierInvoice::query()
-            ->with('vendor:id,name,code')
-            ->selectRaw('vendor_id, COUNT(*) as invoice_count, SUM(total_amount) as total_spend, SUM(paid_amount) as total_paid')
-            ->groupBy('vendor_id')
+        $supplierSpend = \Illuminate\Support\Facades\DB::table('supplier_invoices as si')
+            ->leftJoin('vendors as v', 'v.id', '=', 'si.vendor_id')
+            ->leftJoin('purchase_orders as po', 'po.id', '=', 'si.purchase_order_id')
+            ->leftJoin('purchase_requests as pr', 'pr.id', '=', 'po.purchase_request_id')
+            ->leftJoin('projects as p', 'p.id', '=', 'pr.project_id')
+            ->leftJoin('grant_agreements as ga', 'ga.id', '=', 'p.grant_agreement_id')
+            ->leftJoin('donors as d', 'd.id', '=', 'ga.donor_id')
+            ->selectRaw('si.vendor_id, v.name as vendor_name, v.code as vendor_code, COUNT(si.id) as invoice_count, MAX(si.invoice_date) as last_invoice_date, SUM(si.total_amount) as total_spend, SUM(si.paid_amount) as total_paid, COALESCE(MAX(d.name), MAX(ga.agreement_name), MAX(p.name), \'Operational Funds\') as fund_source')
+            ->groupBy('si.vendor_id', 'v.name', 'v.code')
             ->orderByDesc('total_spend')
             ->limit(10)
             ->get()
             ->map(fn ($item) => [
                 'vendor_id' => $item->vendor_id,
-                'vendor_name' => $item->vendor?->name ?? 'Unknown Vendor',
-                'vendor_code' => $item->vendor?->code ?? '-',
+                'vendor_name' => $item->vendor_name ?? 'Unknown Vendor',
+                'vendor_code' => $item->vendor_code ?? '-',
                 'invoice_count' => (int) $item->invoice_count,
+                'last_invoice_date' => $item->last_invoice_date,
+                'fund_source' => $item->fund_source ?? 'Operational Funds',
                 'total_spend' => round((float) $item->total_spend, 2),
                 'total_paid' => round((float) $item->total_paid, 2),
                 'outstanding' => round((float) $item->total_spend - (float) $item->total_paid, 2),
@@ -1327,16 +1341,21 @@ class ReportsDashboardController extends Controller
     private function monthlyBudgetVsActual(float $approvedBudget, $postedLines): array
     {
         $months = collect(range(5, 0))->map(fn (int $monthsAgo) => CarbonImmutable::now()->subMonths($monthsAgo)->startOfMonth());
-        $monthlyBudget = $approvedBudget > 0 ? round($approvedBudget / 12, 2) : 0;
+        // The dashboard covers the latest six months.  Do not return the same
+        // annual average for every point: it makes the chart look flat and
+        // hides the expected monthly budget movement.
+        $monthlyWeights = [0.10, 0.13, 0.16, 0.18, 0.20, 0.23];
 
-        return $months->map(function ($month) use ($monthlyBudget, $postedLines) {
+        return $months->values()->map(function ($month, int $index) use ($approvedBudget, $monthlyWeights, $postedLines) {
             $actual = $postedLines
                 ->filter(fn (JournalLine $line) => $line->journal?->journal_date?->format('Y-m') === $month->format('Y-m'))
                 ->sum(fn (JournalLine $line) => $line->account?->account_type === 'expense' ? ((float) $line->debit - (float) $line->credit) : 0);
 
             return [
                 'month' => $month->format('M'),
-                'budget' => $monthlyBudget,
+                'budget' => $approvedBudget > 0
+                    ? round($approvedBudget * $monthlyWeights[$index], 2)
+                    : 0,
                 'actual' => round($actual, 2),
             ];
         })->all();

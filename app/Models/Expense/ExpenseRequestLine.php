@@ -5,10 +5,12 @@ namespace App\Models\Expense;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\ExpenseCategory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ExpenseRequestLine extends Model
 {
+    use SoftDeletes;
     protected $fillable = ['expense_request_id', 'expense_category_id', 'budget_line_id', 'description', 'quantity', 'unit', 'frequency', 'unit_price', 'amount', 'line_order'];
 
     protected $casts = ['quantity' => 'decimal:4', 'frequency' => 'decimal:4', 'unit_price' => 'decimal:2', 'amount' => 'decimal:2'];

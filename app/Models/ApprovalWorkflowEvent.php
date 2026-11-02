@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ApprovalWorkflowEvent extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'approval_workflow_run_id', 'approval_workflow_action_id', 'event',
         'from_level', 'to_level', 'version', 'actor_id', 'actor_name',

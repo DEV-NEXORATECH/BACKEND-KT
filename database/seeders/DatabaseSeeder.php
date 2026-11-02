@@ -24,6 +24,9 @@ class DatabaseSeeder extends Seeder
             // Process data creates the projects. Seed the expense chain last
             // so every project receives its own three-level matrix.
             ExpenseApprovalChainSeeder::class,
+            // Keep budget monitoring free of obsolete synthetic alert rows
+            // after all real budget lines have been created.
+            BudgetAlertThresholdSeeder::class,
         ]);
     }
 }

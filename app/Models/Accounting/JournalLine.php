@@ -9,10 +9,12 @@ use App\Models\Master\Donor;
 use App\Models\Master\Program;
 use App\Models\Master\Project;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class JournalLine extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'journal_id',
         'account_id',

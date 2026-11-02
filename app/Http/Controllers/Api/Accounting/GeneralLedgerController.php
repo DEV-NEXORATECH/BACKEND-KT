@@ -26,7 +26,20 @@ class GeneralLedgerController extends Controller
         $data = $rows->map(function (JournalLine $line) use (&$balances) {
             $accountId = (int) $line->account_id;
             $balances[$accountId] = ($balances[$accountId] ?? 0) + (float) $line->debit - (float) $line->credit;
-            return ['id' => $line->id, 'date' => $line->journal->journal_date?->toDateString(), 'journal_number' => $line->journal->journal_number, 'reference' => $line->journal->reference, 'account_code' => $line->account->code, 'account_name' => $line->account->name, 'description' => $line->line_description, 'debit' => $line->debit, 'credit' => $line->credit, 'running_balance' => round($balances[$accountId], 2)];
+            return [
+                'id' => $line->id,
+                'date' => $line->journal?->journal_date?->toDateString(),
+                'journal_number' => $line->journal?->journal_number,
+                'reference' => $line->journal?->reference,
+                // Legacy/demo journal lines can reference a deleted COA. Keep
+                // the ledger readable instead of failing the entire endpoint.
+                'account_code' => $line->account?->code ?? '-',
+                'account_name' => $line->account?->name ?? 'Unassigned account',
+                'description' => $line->line_description,
+                'debit' => $line->debit,
+                'credit' => $line->credit,
+                'running_balance' => round($balances[$accountId], 2),
+            ];
         });
         return response()->json(['success' => true, 'data' => $data, 'totals' => ['debit' => round((float) $rows->sum('debit'), 2), 'credit' => round((float) $rows->sum('credit'), 2), 'closing_balance' => round((float) $rows->sum('debit') - (float) $rows->sum('credit'), 2)]]);
     }

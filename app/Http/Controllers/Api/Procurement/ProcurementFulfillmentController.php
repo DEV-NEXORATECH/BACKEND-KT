@@ -87,7 +87,7 @@ class ProcurementFulfillmentController extends Controller
         $data = $request->validate(['receipt_date' => ['sometimes', 'date'], 'notes' => ['nullable', 'string'], 'lines' => ['sometimes', 'array', 'min:1'], 'lines.*.purchase_order_line_id' => ['required_with:lines', 'integer', 'exists:purchase_order_lines,id'], 'lines.*.received_quantity' => ['required_with:lines', 'numeric', 'min:0.01']]);
         if (isset($data['lines'])) {
             $this->validateOrderLines($goodsReceipt->purchaseOrder, $data['lines'], $goodsReceipt->id);
-            $goodsReceipt->lines()->delete();
+            $goodsReceipt->lines()->get()->each->delete();
             foreach ($data['lines'] as $line) $goodsReceipt->lines()->create($line);
             unset($data['lines']);
         }
@@ -124,7 +124,7 @@ class ProcurementFulfillmentController extends Controller
         $data = $request->validate(['invoice_date' => ['sometimes', 'date'], 'due_date' => ['nullable', 'date'], 'tax_id' => ['nullable', 'integer', 'exists:taxes,id'], 'notes' => ['nullable', 'string'], 'lines' => ['sometimes', 'array', 'min:1'], 'lines.*.purchase_order_line_id' => ['required_with:lines', 'integer', 'exists:purchase_order_lines,id'], 'lines.*.item_description' => ['required_with:lines', 'string', 'max:255'], 'lines.*.quantity' => ['required_with:lines', 'numeric', 'min:0.01'], 'lines.*.unit_price' => ['required_with:lines', 'numeric', 'min:0.01']]);
         if (isset($data['lines'])) {
             $this->validateOrderLines($supplierInvoice->purchaseOrder, $data['lines']);
-            $supplierInvoice->lines()->delete();
+            $supplierInvoice->lines()->get()->each->delete();
             $total = 0;
             foreach ($data['lines'] as $line) { $line['total_amount'] = round((float) $line['quantity'] * (float) $line['unit_price'], 2); $total += $line['total_amount']; $supplierInvoice->lines()->create($line); }
             $data['total_amount'] = $total;

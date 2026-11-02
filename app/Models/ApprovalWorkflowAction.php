@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\Master\ApprovalMatrix;
 use App\Models\User;
 
 class ApprovalWorkflowAction extends Model
 {
+    use SoftDeletes;
     protected $fillable = ['approval_workflow_run_id', 'approval_matrix_id', 'level', 'role_id', 'user_id', 'employee_id', 'status', 'action_by', 'action_at', 'notes'];
     protected $casts = ['action_at' => 'datetime'];
 

@@ -4,11 +4,12 @@ namespace App\Models\Procurement;
 
 use App\Traits\AuditTrailTrait;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PoAmendment extends Model
 {
-    use AuditTrailTrait;
+    use AuditTrailTrait, SoftDeletes;
 
     protected $fillable = [
         'purchase_order_id', 'amendment_number', 'version', 'changes',

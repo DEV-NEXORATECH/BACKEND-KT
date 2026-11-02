@@ -138,7 +138,7 @@ class PurchaseRequestController extends Controller
             unset($payload['lines']);
 
             $purchaseRequest->update($payload);
-            $purchaseRequest->lines()->delete();
+            $purchaseRequest->lines()->get()->each->delete();
             $this->syncLines($purchaseRequest, $lines);
 
             return $purchaseRequest->fresh()->load($this->with);

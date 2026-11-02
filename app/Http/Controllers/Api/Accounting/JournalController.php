@@ -149,7 +149,7 @@ class JournalController extends Controller
             unset($payload['lines']);
 
             $journal->update($payload);
-            $journal->lines()->delete();
+            $journal->lines()->get()->each->delete();
             $this->syncLines($journal, $lines);
 
             return $journal->fresh()->load($this->with);

@@ -3,10 +3,12 @@
 namespace App\Models\Procurement;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class GoodsReceiptLine extends Model
 {
+    use SoftDeletes;
     protected $fillable = ['goods_receipt_id', 'purchase_order_line_id', 'received_quantity', 'quality_check', 'comment'];
 
     protected $casts = ['received_quantity' => 'decimal:2'];

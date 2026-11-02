@@ -4,10 +4,12 @@ namespace App\Models\Accounting;
 
 use App\Models\Master\ChartOfAccount;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class RecurringJournalLine extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'recurring_journal_id',
         'account_id',

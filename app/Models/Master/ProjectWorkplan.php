@@ -4,10 +4,11 @@ namespace App\Models\Master;
 
 use App\Traits\FiscalYearScopedTrait;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ProjectWorkplan extends Model
 {
-    use FiscalYearScopedTrait;
+    use FiscalYearScopedTrait, SoftDeletes;
 
     protected $fillable = [
         'project_id', 'logframe_id', 'donor_id', 'grant_agreement_id', 'fiscal_year_id', 'activity_id', 'output_code', 'activity_code', 'activity',
