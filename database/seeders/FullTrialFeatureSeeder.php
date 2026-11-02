@@ -371,8 +371,7 @@ class FullTrialFeatureSeeder extends Seeder
         // My Timesheet is scoped by authenticated user_id. Seed entries for
         // the demo login so its personal page is populated as well.
         if (Schema::hasTable('timesheet_entries') && $employee) {
-            // employees are linked to users by matching email; employees.user_id does not exist.
-            $myEmployee = DB::table('employees')->where('email', $user->email)->first() ?: $employee;
+            $myEmployee = DB::table('employees')->where('user_id', $user->id)->first() ?: $employee;
             $myProject = $project;
             $myActivity = DB::table('activities')->where('project_id', $myProject?->id)->orderBy('id')->first();
             $myDepartment = DB::table('departments')->orderBy('id')->first();
