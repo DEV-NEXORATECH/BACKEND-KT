@@ -28,6 +28,25 @@ class FullTrialFeatureSeeder extends Seeder
         $bank = DB::table('bank_accounts')->orderBy('id')->first();
         $vendor = DB::table('vendors')->orderBy('id')->first();
         $employee = DB::table('employees')->orderBy('id')->first();
+        if (Schema::hasTable('employees')) {
+            $employee = DB::table('employees')->where('email', $user->email)->first() ?: $employee;
+            if (! $employee) {
+                $employeePayload = collect([
+                    'employee_id_number' => 'TRIAL-'.str_pad((string) $user->id, 5, '0', STR_PAD_LEFT),
+                    'name' => $user->name ?: 'Trial Staff',
+                    'email' => $user->email,
+                    'join_date' => '2024-01-15',
+                    'employment_type' => 'internal',
+                    'is_active' => true,
+                    'created_by' => $user->id,
+                    'updated_by' => $user->id,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ])->filter(fn ($value, $column) => Schema::hasColumn('employees', $column))->all();
+                $employeeId = DB::table('employees')->insertGetId($employeePayload);
+                $employee = DB::table('employees')->where('id', $employeeId)->first();
+            }
+        }
         $role = DB::table('roles')->orderBy('id')->first();
         $matrix = DB::table('approval_matrices')->orderBy('id')->first();
 
@@ -371,7 +390,7 @@ class FullTrialFeatureSeeder extends Seeder
         // My Timesheet is scoped by authenticated user_id. Seed entries for
         // the demo login so its personal page is populated as well.
         if (Schema::hasTable('timesheet_entries') && $employee) {
-            $myEmployee = DB::table('employees')->where('user_id', $user->id)->first() ?: $employee;
+            $myEmployee = DB::table('employees')->where('email', $user->email)->first() ?: $employee;
             $myProject = $project;
             $myActivity = DB::table('activities')->where('project_id', $myProject?->id)->orderBy('id')->first();
             $myDepartment = DB::table('departments')->orderBy('id')->first();
