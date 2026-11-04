@@ -270,6 +270,7 @@ class AccountsReceivableController extends Controller
                 'fiscal_year_id' => $customerInvoice->fiscal_year_id,
                 'customer_invoice_id' => $customerInvoice->id,
                 'bank_account_id' => $bank->id,
+                'project_id' => $customerInvoice->project_id,
                 'payment_method_id' => $data['payment_method_id'] ?? null,
                 'payment_date' => $data['payment_date'],
                 'amount' => $data['amount'],

@@ -41,8 +41,23 @@ class ReportsDashboardController extends Controller
     }
         public function procurementDashboard(Request $request): JsonResponse
     {
-        $requests = PurchaseRequest::query()->with(['requester:id,name', 'project:id,code,name'])->latest('id')->limit(100)->get();
-        $orders = PurchaseOrder::query()->with(['vendor:id,code,name', 'purchaseRequest:id,pr_number,project_id', 'purchaseRequest.project:id,code,name'])->latest('id')->limit(100)->get();
+        $projectId = $request->integer('project_id') ?: null;
+        $fiscalYearId = $request->integer('fiscal_year_id') ?: null;
+        $startDate = $request->input('start_date');
+        $endDate = $request->input('end_date');
+
+        $requests = PurchaseRequest::query()
+            ->when($projectId, fn ($q) => $q->where('project_id', $projectId))
+            ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId))
+            ->when($startDate, fn ($q) => $q->whereDate('request_date', '>=', $startDate))
+            ->when($endDate, fn ($q) => $q->whereDate('request_date', '<=', $endDate))
+            ->with(['requester:id,name', 'project:id,code,name'])->latest('id')->limit(100)->get();
+        $orders = PurchaseOrder::query()
+            ->when($projectId, fn ($q) => $q->whereHas('purchaseRequest', fn ($r) => $r->where('project_id', $projectId)))
+            ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId))
+            ->when($startDate, fn ($q) => $q->whereDate('po_date', '>=', $startDate))
+            ->when($endDate, fn ($q) => $q->whereDate('po_date', '<=', $endDate))
+            ->with(['vendor:id,code,name', 'purchaseRequest:id,pr_number,project_id', 'purchaseRequest.project:id,code,name'])->latest('id')->limit(100)->get();
         $invoices = SupplierInvoice::query()->with([
             'vendor:id,code,name',
             'purchaseOrder:id,po_number,purchase_request_id',
@@ -50,51 +65,105 @@ class ReportsDashboardController extends Controller
             'purchaseOrder.purchaseRequest.project:id,code,name,grant_agreement_id',
             'purchaseOrder.purchaseRequest.project.grantAgreement:id,grant_no,agreement_name',
             'goodsReceipt:id,grn_number',
-        ])->latest('id')->limit(100)->get();
+        ])
+            ->when($projectId, fn ($q) => $q->whereHas('purchaseOrder.purchaseRequest', fn ($r) => $r->where('project_id', $projectId)))
+            ->when($startDate, fn ($q) => $q->whereDate('invoice_date', '>=', $startDate))
+            ->when($endDate, fn ($q) => $q->whereDate('invoice_date', '<=', $endDate))
+            ->latest('id')->limit(100)->get();
 
         $rfqsCount = \Illuminate\Support\Facades\Schema::hasTable('rfqs')
-            ? \Illuminate\Support\Facades\DB::table('rfqs')->count()
+            ? \Illuminate\Support\Facades\DB::table('rfqs')
+                ->when($projectId, fn ($q) => $q->whereExists(fn ($sub) => $sub->selectRaw('1')->from('purchase_requests as rfq_pr')->whereColumn('rfq_pr.id', 'rfqs.purchase_request_id')->where('rfq_pr.project_id', $projectId)))
+                ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId))
+                ->when($startDate, fn ($q) => $q->whereDate('rfq_date', '>=', $startDate))
+                ->when($endDate, fn ($q) => $q->whereDate('rfq_date', '<=', $endDate))->count()
             : 0;
         $cbaCount = \Illuminate\Support\Facades\Schema::hasTable('comparative_bid_analyses')
-            ? \Illuminate\Support\Facades\DB::table('comparative_bid_analyses')->count()
+            ? \Illuminate\Support\Facades\DB::table('comparative_bid_analyses as cba')
+                ->join('rfqs as cba_rfq', 'cba_rfq.id', '=', 'cba.rfq_id')
+                ->when($projectId, fn ($q) => $q->whereExists(fn ($sub) => $sub->selectRaw('1')->from('purchase_requests as cba_pr')->whereColumn('cba_pr.id', 'cba_rfq.purchase_request_id')->where('cba_pr.project_id', $projectId)))
+                ->when($fiscalYearId, fn ($q) => $q->where('cba_rfq.fiscal_year_id', $fiscalYearId))
+                ->when($startDate, fn ($q) => $q->whereDate('cba.analysis_date', '>=', $startDate))
+                ->when($endDate, fn ($q) => $q->whereDate('cba.analysis_date', '<=', $endDate))->count()
             : 0;
         $grnCount = \Illuminate\Support\Facades\Schema::hasTable('goods_receipt_notes')
-            ? \Illuminate\Support\Facades\DB::table('goods_receipt_notes')->count()
-            : 0;
+            ? 0
+            : (\Illuminate\Support\Facades\Schema::hasTable('goods_receipts')
+                ? \Illuminate\Support\Facades\DB::table('goods_receipts as grn')
+                    ->join('purchase_orders as grn_po', 'grn_po.id', '=', 'grn.purchase_order_id')
+                    ->join('purchase_requests as grn_pr', 'grn_pr.id', '=', 'grn_po.purchase_request_id')
+                    ->when($projectId, fn ($q) => $q->where('grn_pr.project_id', $projectId))
+                    ->when($fiscalYearId, fn ($q) => $q->where('grn.fiscal_year_id', $fiscalYearId))
+                    ->when($startDate, fn ($q) => $q->whereDate('grn.receipt_date', '>=', $startDate))
+                    ->when($endDate, fn ($q) => $q->whereDate('grn.receipt_date', '<=', $endDate))->count()
+                : 0);
 
-        $totalPrAmount = (float) \Illuminate\Support\Facades\DB::table('purchase_request_lines')->sum('total_amount');
-        $totalPoAmount = (float) \Illuminate\Support\Facades\DB::table('purchase_order_lines')->sum('total_amount');
+        $totalPrAmount = (float) \Illuminate\Support\Facades\DB::table('purchase_request_lines')
+            ->join('purchase_requests', 'purchase_requests.id', '=', 'purchase_request_lines.purchase_request_id')
+            ->when($projectId, fn ($q) => $q->where('purchase_requests.project_id', $projectId))
+            ->when($fiscalYearId, fn ($q) => $q->where('purchase_requests.fiscal_year_id', $fiscalYearId))
+            ->when($startDate, fn ($q) => $q->whereDate('purchase_requests.request_date', '>=', $startDate))
+            ->when($endDate, fn ($q) => $q->whereDate('purchase_requests.request_date', '<=', $endDate))
+            ->sum('purchase_request_lines.total_amount');
+        $totalPoAmount = (float) \Illuminate\Support\Facades\DB::table('purchase_order_lines')
+            ->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_lines.purchase_order_id')
+            ->leftJoin('purchase_requests', 'purchase_requests.id', '=', 'purchase_orders.purchase_request_id')
+            ->when($projectId, fn ($q) => $q->where('purchase_requests.project_id', $projectId))
+            ->when($fiscalYearId, fn ($q) => $q->where('purchase_orders.fiscal_year_id', $fiscalYearId))
+            ->when($startDate, fn ($q) => $q->whereDate('purchase_orders.po_date', '>=', $startDate))
+            ->when($endDate, fn ($q) => $q->whereDate('purchase_orders.po_date', '<=', $endDate))
+            ->sum('purchase_order_lines.total_amount');
 
         $pipeline = [
-            ['stage' => 'Purchase Requests (PR)', 'code' => 'PR', 'count' => PurchaseRequest::count(), 'total_amount' => $totalPrAmount, 'color' => '#3b82f6'],
+            ['stage' => 'Purchase Requests (PR)', 'code' => 'PR', 'count' => $requests->count(), 'total_amount' => $totalPrAmount, 'color' => '#3b82f6'],
             ['stage' => 'Requests for Quotation (RFQ)', 'code' => 'RFQ', 'count' => $rfqsCount, 'total_amount' => 0, 'color' => '#6366f1'],
             ['stage' => 'Comparative Bid Analyses (CBA)', 'code' => 'CBA', 'count' => $cbaCount, 'total_amount' => 0, 'color' => '#8b5cf6'],
-            ['stage' => 'Purchase Orders (PO)', 'code' => 'PO', 'count' => PurchaseOrder::count(), 'total_amount' => $totalPoAmount, 'color' => '#059669'],
+            ['stage' => 'Purchase Orders (PO)', 'code' => 'PO', 'count' => $orders->count(), 'total_amount' => $totalPoAmount, 'color' => '#059669'],
             ['stage' => 'Goods Receipt Notes (GRN)', 'code' => 'GRN', 'count' => $grnCount, 'total_amount' => 0, 'color' => '#10b981'],
-            ['stage' => 'Supplier Invoices', 'code' => 'INV', 'count' => SupplierInvoice::count(), 'total_amount' => (float) SupplierInvoice::sum('total_amount'), 'color' => '#d97706'],
+            ['stage' => 'Supplier Invoices', 'code' => 'INV', 'count' => $invoices->count(), 'total_amount' => (float) $invoices->sum('total_amount'), 'color' => '#d97706'],
         ];
 
         // 4.2 Dashboard - 6 KPI Pipeline Statuses
         $rfqOngoingCount = \Illuminate\Support\Facades\Schema::hasTable('rfqs')
-            ? \Illuminate\Support\Facades\DB::table('rfqs')->whereIn('status', ['published', 'open', 'draft'])->count()
+            ? \Illuminate\Support\Facades\DB::table('rfqs')->whereIn('status', ['issued', 'published', 'open', 'draft'])
+                ->when($projectId, fn ($q) => $q->whereExists(fn ($sub) => $sub->selectRaw('1')->from('purchase_requests as rfq_pr')->whereColumn('rfq_pr.id', 'rfqs.purchase_request_id')->where('rfq_pr.project_id', $projectId)))
+                ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId))->count()
             : 0;
         $cbaPendingCount = \Illuminate\Support\Facades\Schema::hasTable('rfqs')
-            ? \Illuminate\Support\Facades\DB::table('rfqs')->where('status', 'closed')->count()
+            ? \Illuminate\Support\Facades\DB::table('rfqs')->where('status', 'closed')
+                ->when($projectId, fn ($q) => $q->whereExists(fn ($sub) => $sub->selectRaw('1')->from('purchase_requests as rfq_pr')->whereColumn('rfq_pr.id', 'rfqs.purchase_request_id')->where('rfq_pr.project_id', $projectId)))
+                ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId))->count()
             : 0;
 
-        $grnPendingCount = PurchaseOrder::where('status', 'approved')
+        $grnPendingCount = PurchaseOrder::query()->where('status', 'approved')
+            ->when($projectId, fn ($q) => $q->whereHas('purchaseRequest', fn ($r) => $r->where('project_id', $projectId)))
+            ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId))
+            ->when($startDate, fn ($q) => $q->whereDate('po_date', '>=', $startDate))
+            ->when($endDate, fn ($q) => $q->whereDate('po_date', '<=', $endDate))
             ->whereDoesntHave('goodsReceipts', fn ($q) => $q->where('status', '!=', 'cancelled'))
             ->count();
 
-        $invoicePendingMatchCount = SupplierInvoice::where(function ($q) {
+        $invoicePendingMatchCount = SupplierInvoice::query()
+            ->when($projectId, fn ($q) => $q->whereHas('purchaseOrder.purchaseRequest', fn ($r) => $r->where('project_id', $projectId)))
+            ->when($startDate, fn ($q) => $q->whereDate('invoice_date', '>=', $startDate))
+            ->when($endDate, fn ($q) => $q->whereDate('invoice_date', '<=', $endDate))
+            ->where(function ($q) {
             $q->whereIn('match_status', ['unchecked', 'mismatch', 'draft'])->orWhere('status', 'draft');
-        })->count();
+            })->count();
 
         $pipelineStatus = [
-            'pr_pending_approval' => PurchaseRequest::where('status', 'submitted')->count(),
+            'pr_pending_approval' => PurchaseRequest::query()->where('status', 'submitted')
+                ->when($projectId, fn ($q) => $q->where('project_id', $projectId))
+                ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId))
+                ->when($startDate, fn ($q) => $q->whereDate('request_date', '>=', $startDate))
+                ->when($endDate, fn ($q) => $q->whereDate('request_date', '<=', $endDate))->count(),
             'rfq_ongoing' => $rfqOngoingCount,
             'cba_pending' => $cbaPendingCount,
-            'po_contract_active' => PurchaseOrder::where('status', 'approved')->count(),
+            'po_contract_active' => PurchaseOrder::query()->where('status', 'approved')
+                ->when($projectId, fn ($q) => $q->whereHas('purchaseRequest', fn ($r) => $r->where('project_id', $projectId)))
+                ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId))
+                ->when($startDate, fn ($q) => $q->whereDate('po_date', '>=', $startDate))
+                ->when($endDate, fn ($q) => $q->whereDate('po_date', '<=', $endDate))->count(),
             'grn_pending' => $grnPendingCount,
             'invoice_pending_match' => $invoicePendingMatchCount,
         ];
@@ -159,6 +228,10 @@ class ReportsDashboardController extends Controller
             ->leftJoin('projects as p', 'p.id', '=', 'pr.project_id')
             ->leftJoin('grant_agreements as ga', 'ga.id', '=', 'p.grant_agreement_id')
             ->leftJoin('donors as d', 'd.id', '=', 'ga.donor_id')
+            ->when($projectId, fn ($q) => $q->where('pr.project_id', $projectId))
+            ->when($fiscalYearId, fn ($q) => $q->where('si.fiscal_year_id', $fiscalYearId))
+            ->when($startDate, fn ($q) => $q->whereDate('si.invoice_date', '>=', $startDate))
+            ->when($endDate, fn ($q) => $q->whereDate('si.invoice_date', '<=', $endDate))
             ->selectRaw('si.vendor_id, v.name as vendor_name, v.code as vendor_code, COUNT(si.id) as invoice_count, MAX(si.invoice_date) as last_invoice_date, SUM(si.total_amount) as total_spend, SUM(si.paid_amount) as total_paid, COALESCE(MAX(d.name), MAX(ga.agreement_name), MAX(p.name), \'Operational Funds\') as fund_source')
             ->groupBy('si.vendor_id', 'v.name', 'v.code')
             ->orderByDesc('total_spend')
@@ -179,12 +252,12 @@ class ReportsDashboardController extends Controller
         return response()->json([
             'success' => true,
             'summary' => [
-                'total_pr' => PurchaseRequest::count(),
-                'total_po' => PurchaseOrder::count(),
+                'total_pr' => $requests->count(),
+                'total_po' => $orders->count(),
                 'total_po_value' => $totalPoAmount,
-                'total_invoices' => SupplierInvoice::count(),
-                'total_invoice_value' => (float) SupplierInvoice::sum('total_amount'),
-                'total_spend' => (float) SupplierInvoice::sum('paid_amount'),
+                'total_invoices' => $invoices->count(),
+                'total_invoice_value' => (float) $invoices->sum('total_amount'),
+                'total_spend' => (float) $invoices->sum('paid_amount'),
             ],
             'pipeline' => $pipeline,
             'pipeline_status' => $pipelineStatus,
@@ -351,12 +424,12 @@ class ReportsDashboardController extends Controller
                 'utilization_percent' => $budgetTotals['utilization_percent'],
                 'total_income' => round($totalIncome, 2),
                 'total_expense' => round($totalExpense, 2),
-                'operating_cash' => $this->cashPosition($period['start'], $period['end']),
-                'cash_bank_balance' => $this->cashPosition($period['start'], $period['end']),
-                'open_ap' => $this->openAp(),
-                'outstanding_payable' => $this->openAp(),
-                'open_ar' => $this->openAr(),
-                'outstanding_receivable' => $this->openAr(),
+                'operating_cash' => $this->cashPosition($period['start'], $period['end'], $request->input('project_id')),
+                'cash_bank_balance' => $this->cashPosition($period['start'], $period['end'], $request->input('project_id')),
+                'open_ap' => $this->openAp($request->input('project_id')),
+                'outstanding_payable' => $this->openAp($request->input('project_id')),
+                'open_ar' => $this->openAr($request->input('project_id')),
+                'outstanding_receivable' => $this->openAr($request->input('project_id')),
                 'active_donors' => $activeDonorsCount,
                 'active_grants' => $activeGrantsCount,
                 'active_programs' => $activeProgramsCount,
@@ -1313,27 +1386,30 @@ class ReportsDashboardController extends Controller
         })->all();
     }
 
-    private function cashPosition(?CarbonInterface $start, ?CarbonInterface $end): float
+    private function cashPosition(?CarbonInterface $start, ?CarbonInterface $end, ?int $projectId = null): float
     {
         return (float) BankTransaction::query()
             ->when($start, fn (Builder $query) => $query->whereDate('transaction_date', '>=', $start))
             ->when($end, fn (Builder $query) => $query->whereDate('transaction_date', '<=', $end))
+            ->when($projectId, fn (Builder $query) => $query->where('project_id', $projectId))
             ->selectRaw('COALESCE(SUM(debit - credit), 0) as balance')
             ->value('balance');
     }
 
-    private function openAp(): float
+    private function openAp(?int $projectId = null): float
     {
         return (float) SupplierInvoice::query()
             ->whereIn('status', ['posted', 'partially_paid', 'approved', 'matched'])
+            ->when($projectId, fn (Builder $query) => $query->whereHas('purchaseOrder.purchaseRequest', fn (Builder $pr) => $pr->where('project_id', $projectId)))
             ->get()
             ->sum(fn (SupplierInvoice $invoice) => max(0, (float) $invoice->total_amount - (float) $invoice->paid_amount));
     }
 
-    private function openAr(): float
+    private function openAr(?int $projectId = null): float
     {
         return (float) CustomerInvoice::query()
             ->whereIn('status', ['posted', 'partially_received'])
+            ->when($projectId, fn (Builder $query) => $query->where('project_id', $projectId))
             ->get()
             ->sum(fn (CustomerInvoice $invoice) => max(0, (float) $invoice->total_amount - (float) $invoice->received_amount));
     }

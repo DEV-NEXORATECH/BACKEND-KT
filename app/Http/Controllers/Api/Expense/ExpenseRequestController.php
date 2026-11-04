@@ -568,6 +568,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'payment_number' => 'EXPPAY-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'expense_request_id' => $expenseRequest->id,
                 'bank_account_id' => $bank->id,
+                'project_id' => $expenseRequest->project_id,
                 'payment_method_id' => $data['payment_method_id'] ?? null,
                 'payment_date' => $data['payment_date'],
                 'amount' => $data['amount'],

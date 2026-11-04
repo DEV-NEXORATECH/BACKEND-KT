@@ -260,6 +260,7 @@ class AccountsPayableController extends Controller
                 'supplier_invoice_id' => $supplierInvoice->id,
                 'vendor_id' => $supplierInvoice->vendor_id,
                 'bank_account_id' => $bank->id,
+                'project_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project_id,
                 'payment_method_id' => $data['payment_method_id'] ?? null,
                 'payment_date' => $data['payment_date'],
                 'amount' => $data['amount'],

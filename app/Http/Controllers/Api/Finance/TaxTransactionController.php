@@ -3,8 +3,12 @@
 namespace App\Http\Controllers\Api\Finance;
 
 use App\Http\Controllers\Controller;
+use App\Models\Expense\ExpenseRequest;
+use App\Models\Finance\CustomerInvoice;
 use App\Models\Finance\TaxTransaction;
 use App\Models\Master\Tax;
+use App\Models\Procurement\SupplierInvoice;
+use App\Models\Finance\TaxCalendarReminder;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Rbac\DataScopeService;
 use App\Services\Settings\SystemPolicyService;
@@ -258,6 +262,39 @@ class TaxTransactionController extends Controller
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
             ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
+            ->when($request->filled('project_id'), function (Builder $query) use ($request) {
+                $projectId = $request->integer('project_id');
+
+                $query->where(function (Builder $sourceQuery) use ($projectId) {
+                    $sourceQuery
+                        ->where(function (Builder $source) use ($projectId) {
+                            $source->where('source_type', ExpenseRequest::class)
+                                ->whereExists(fn ($subQuery) => $subQuery
+                                    ->selectRaw('1')
+                                    ->from('expense_requests')
+                                    ->whereColumn('expense_requests.id', 'tax_transactions.source_id')
+                                    ->where('expense_requests.project_id', $projectId));
+                        })
+                        ->orWhere(function (Builder $source) use ($projectId) {
+                            $source->where('source_type', SupplierInvoice::class)
+                                ->whereExists(fn ($subQuery) => $subQuery
+                                    ->selectRaw('1')
+                                    ->from('supplier_invoices')
+                                    ->join('purchase_orders', 'purchase_orders.id', '=', 'supplier_invoices.purchase_order_id')
+                                    ->join('purchase_requests', 'purchase_requests.id', '=', 'purchase_orders.purchase_request_id')
+                                    ->whereColumn('supplier_invoices.id', 'tax_transactions.source_id')
+                                    ->where('purchase_requests.project_id', $projectId));
+                        })
+                        ->orWhere(function (Builder $source) use ($projectId) {
+                            $source->where('source_type', CustomerInvoice::class)
+                                ->whereExists(fn ($subQuery) => $subQuery
+                                    ->selectRaw('1')
+                                    ->from('customer_invoices')
+                                    ->whereColumn('customer_invoices.id', 'tax_transactions.source_id')
+                                    ->where('customer_invoices.project_id', $projectId));
+                        });
+                });
+            })
             ->when($request->filled('tax_type'), fn (Builder $query) => $query->whereHas('tax', fn (Builder $taxQuery) => $taxQuery->where('tax_type', $request->string('tax_type'))))
             ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
             ->where('status', '!=', 'cancelled');
@@ -360,6 +397,46 @@ class TaxTransactionController extends Controller
             'month' => $month,
             'deadlines' => $deadlines,
         ]);
+    }
+
+    public function reminders(Request $request): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => TaxCalendarReminder::where('user_id', $request->user()->id)
+                ->pluck('reminded_at', 'event_id'),
+        ]);
+    }
+
+    public function toggleReminder(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'event_id' => ['required', 'string', 'max:150'],
+            'event_title' => ['nullable', 'string', 'max:255'],
+            'reminded' => ['required', 'boolean'],
+        ]);
+
+        $query = TaxCalendarReminder::where('user_id', $request->user()->id)
+            ->where('event_id', $data['event_id']);
+
+        if ($data['reminded']) {
+            $reminder = $query->first();
+            if ($reminder) {
+                $reminder->update(['event_title' => $data['event_title'] ?? null, 'reminded_at' => now()]);
+            } else {
+                $reminder = TaxCalendarReminder::create([
+                    'user_id' => $request->user()->id,
+                    'event_id' => $data['event_id'],
+                    'event_title' => $data['event_title'] ?? null,
+                    'reminded_at' => now(),
+                ]);
+            }
+        } else {
+            $query->delete();
+            $reminder = null;
+        }
+
+        return response()->json(['success' => true, 'reminded' => (bool) $reminder]);
     }
 
     private function calculateTax(Tax $tax, float $amount, bool $isInclusive, string $direction): array

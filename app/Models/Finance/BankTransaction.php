@@ -12,11 +12,12 @@ class BankTransaction extends Model
 {
     use FiscalYearScopedTrait, SoftDeletes;
 
-    protected $fillable = ['fiscal_year_id', 'bank_account_id', 'payment_id', 'cash_advance_return_id', 'created_by', 'transaction_date', 'reference', 'description', 'debit', 'credit', 'status'];
+    protected $fillable = ['fiscal_year_id', 'bank_account_id', 'project_id', 'payment_id', 'cash_advance_return_id', 'created_by', 'transaction_date', 'reference', 'description', 'debit', 'credit', 'status'];
 
     protected $casts = ['transaction_date' => 'date', 'debit' => 'decimal:2', 'credit' => 'decimal:2'];
 
     public function bankAccount(): BelongsTo { return $this->belongsTo(BankAccount::class); }
+    public function project(): BelongsTo { return $this->belongsTo(\App\Models\Master\Project::class); }
     public function payment(): BelongsTo { return $this->belongsTo(Payment::class); }
     public function cashAdvanceReturn(): BelongsTo { return $this->belongsTo(\App\Models\Expense\CashAdvanceReturn::class); }
 }

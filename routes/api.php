@@ -324,6 +324,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('transactions/{taxTransaction}/report', [TaxTransactionController::class, 'markReported'])->middleware('permission:tax.manage');
         Route::get('report', [TaxTransactionController::class, 'report'])->middleware('permission:tax.view');
         Route::get('calendar', [TaxTransactionController::class, 'calendar'])->middleware('permission:tax.view');
+        Route::get('calendar/reminders', [TaxTransactionController::class, 'reminders'])->middleware('permission:tax.view');
+        Route::post('calendar/reminders', [TaxTransactionController::class, 'toggleReminder'])->middleware('permission:tax.view');
     });
 
     Route::prefix('v1/timesheets')->group(function () {

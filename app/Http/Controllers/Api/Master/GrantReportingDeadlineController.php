@@ -54,6 +54,9 @@ class GrantReportingDeadlineController extends Controller
         if ($request->filled('year')) {
             $query->whereYear('due_date', $request->input('year'));
         }
+        if ($request->filled('project_id')) {
+            $query->whereHas('grantAgreement.projects', fn ($projectQuery) => $projectQuery->where('projects.id', $request->integer('project_id')));
+        }
 
         if ($request->filled('search')) {
             $search = '%' . trim($request->input('search')) . '%';
@@ -117,6 +120,9 @@ class GrantReportingDeadlineController extends Controller
         if ($request->filled('year')) {
             $query->whereYear('due_date', $request->input('year'));
         }
+        if ($request->filled('project_id')) {
+            $query->whereHas('grantAgreement.projects', fn ($projectQuery) => $projectQuery->where('projects.id', $request->integer('project_id')));
+        }
 
         $total = (clone $query)->count();
         $submitted = (clone $query)->where('status', 'submitted')->count();
@@ -163,6 +169,7 @@ class GrantReportingDeadlineController extends Controller
             'grantAgreement.donor:id,code,name',
         ])
         ->whereYear('due_date', $year)
+        ->when($request->filled('project_id'), fn ($query) => $query->whereHas('grantAgreement.projects', fn ($projectQuery) => $projectQuery->where('projects.id', $request->integer('project_id'))))
         ->orderBy('due_date', 'asc')
         ->get();
 
