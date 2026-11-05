@@ -55,7 +55,9 @@ class DropdownContractTest extends TestCase
         $role = Role::firstOrCreate(['slug' => 'super-admin'], ['name' => 'Super Admin']);
         $user->update(['role_id' => $role->id]);
         $year = \App\Models\Master\FiscalYear::query()->where('year', 2026)->firstOrFail();
-        $donor = Donor::query()->whereHas('grantAgreements.projects')->where('fiscal_year_id', $year->id)->firstOrFail();
+        $donor = Donor::query()->whereHas('grantAgreements.projects')->where(function ($query) use ($year) {
+            $query->whereNull('fiscal_year_id')->orWhere('fiscal_year_id', $year->id);
+        })->firstOrFail();
         $grant = GrantAgreement::query()->where('donor_id', $donor->id)->where('fiscal_year_id', $year->id)->firstOrFail();
         $project = Project::query()->where('grant_agreement_id', $grant->id)->firstOrFail();
         $activity = Activity::query()->where('project_id', $project->id)->where('fiscal_year_id', $year->id)->firstOrFail();

@@ -204,6 +204,16 @@ class AccountsReceivableController extends Controller
             return $customerInvoice->fresh($this->with);
         });
 
+        // Posting is the terminal state of the AR approval path. Keep the
+        // workflow run synchronized even when a legacy run was left in
+        // progress by an older approval-center implementation.
+        \App\Models\ApprovalWorkflowRun::query()
+            ->where('module', 'ar')
+            ->where('approvable_type', CustomerInvoice::class)
+            ->where('approvable_id', $invoice->id)
+            ->where('status', 'in_progress')
+            ->update(['status' => 'approved', 'completed_at' => now()]);
+
         return response()->json(['success' => true, 'message' => 'Customer invoice berhasil diposting ke AR.', 'data' => $this->formatInvoice($invoice)]);
     }
 
@@ -373,7 +383,7 @@ class AccountsReceivableController extends Controller
             'due_date' => $invoice->due_date?->toDateString(),
             'currency_code' => $invoice->currency_code,
             'status' => $invoice->status,
-            'approval_status' => $approval?->status,
+            'approval_status' => $invoice->status === 'posted' ? 'approved' : $approval?->status,
             'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('ar', $invoice, request()->user()),
             'total_amount' => $invoice->total_amount,
             'received_amount' => $invoice->received_amount,

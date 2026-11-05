@@ -84,6 +84,7 @@ class AccountsReceivableCustomerInvoiceTest extends TestCase
 
     public function test_ar_invoice_list_returns_approval_status(): void
     {
+        \App\Models\Master\ApprovalMatrix::query()->delete();
         [$user, $customer, $revenue] = $this->fixture();
         \App\Models\Master\ApprovalMatrix::create(['module' => 'ar', 'level' => 1, 'min_amount' => 0, 'role_id' => $user->role_id, 'is_active' => true]);
         $response = $this->actingAs($user, 'sanctum')

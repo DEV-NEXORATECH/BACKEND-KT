@@ -425,27 +425,9 @@ class ApprovalWorkflowService
         }
 
         $matrix = $action->approvalMatrix;
-        if ($matrix?->role && in_array($matrix->role->slug, ['budget-holder', 'budget-holder-project-manager'], true)) {
-            // Only the configured budget holders may approve at this stage.
-            // Only the configured Budget Holders may approve this stage. The
-            // requester is rejected above, so a requester who is also a
-            // Budget Holder is automatically skipped to the next level.
-            $allowedBudgetHolders = [
-                'denny bhatara',
-                'abil ahmad akbar',
-                'sarah megumi',
-                'sarah rosemery megumi w',
-                'sarah rosemery megumi wouthuyzen',
-                'sandika ariansyah',
-            ];
-            $names = array_map('strtolower', array_filter([$user->name, $user->employee?->name]));
-            $isAllowed = collect($names)->contains(function ($name) use ($allowedBudgetHolders) {
-                $normalized = preg_replace('/\s+/', ' ', trim((string) $name));
-                return in_array($normalized, $allowedBudgetHolders, true)
-                    || str_contains($normalized, 'sandika ariansyah');
-            });
-            if (! $isAllowed) return false;
-        }
+        // The matrix role is the source of truth for role-based approval.
+        // Do not maintain a hard-coded list of employee names here: it made
+        // valid configured budget holders fail in tests and in real tenants.
         if ($matrix?->is_conditional_project_manager) {
             $project = $entity && method_exists($entity, 'project') ? $entity->project : null;
             $projectManagerName = $project?->manager_name;

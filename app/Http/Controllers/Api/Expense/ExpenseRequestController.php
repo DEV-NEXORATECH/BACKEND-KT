@@ -143,7 +143,15 @@ class ExpenseRequestController extends Controller
                 'budget_line_id' => $funding->budget_line_id,
                 'amount' => $funding->amount,
             ])->all(),
-            'lines' => $expenseRequest->lines->map(fn ($line) => ['amount' => $line->amount, 'budget_line_id' => $line->budget_line_id, 'expense_category_id' => $line->expense_category_id])->all(),
+            'lines' => $expenseRequest->lines->map(fn ($line) => [
+                'amount' => $line->amount,
+                'quantity' => $line->quantity,
+                'frequency' => $line->frequency,
+                'unit_price' => $line->unit_price,
+                'unit' => $line->unit,
+                'budget_line_id' => $line->budget_line_id,
+                'expense_category_id' => $line->expense_category_id,
+            ])->all(),
         ];
         $this->applyFinanceRules($rules);
         $expenseRequest->update(collect($rules)->only(['settlement_due_date', 'category_mismatch_flag'])->all());
@@ -967,7 +975,12 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'attachments' => 'Required supporting documents are missing: '.implode(', ', str_replace('_', ' ', $missing)).'.',
             ]);
         }
-        if ($policies->requiresExpenseReceipt() && ! $has(['receipt', 'nota', 'kwitansi', 'invoice', 'faktur', 'proof'])) {
+        // A cash advance is submitted before the spend occurs. Its activity
+        // plan is the required pre-disbursement evidence; receipts belong to
+        // the later settlement report.
+        if ($expenseRequest->expense_type !== 'cash_advance'
+            && $policies->requiresExpenseReceipt()
+            && ! $has(['receipt', 'nota', 'kwitansi', 'invoice', 'faktur', 'proof'])) {
             throw ValidationException::withMessages(['attachments' => 'A receipt or invoice is required before submission.']);
         }
     }

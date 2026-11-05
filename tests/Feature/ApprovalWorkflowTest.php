@@ -17,6 +17,7 @@ class ApprovalWorkflowTest extends TestCase
 
     public function test_expense_follows_configured_two_level_approval_matrix(): void
     {
+        ApprovalMatrix::query()->delete();
         $requesterRole = $this->role('Requester', ['expense.submit']);
         $budgetHolderRole = $this->role('Budget Holder', ['expense.approve']);
         $financeRole = $this->role('Finance', ['expense.approve', 'expense.verify']);

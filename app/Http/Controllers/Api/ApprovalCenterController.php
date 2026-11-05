@@ -146,7 +146,7 @@ class ApprovalCenterController extends Controller
                     // Finance Verification owns the submitted queue. The
                     // Approval Center only receives expenses after Finance
                     // has verified them.
-                    ->where('status', 'verified')
+                    ->whereIn('status', ['submitted', 'verified'])
                     ->latest('id')
                     ->get()
                     ->map(fn (ExpenseRequest $exp) => [
@@ -674,6 +674,15 @@ class ApprovalCenterController extends Controller
                         $exp = ExpenseRequest::find($id);
                         if ($exp) {
                             if ($action === 'approve') {
+                                // Legacy requests submitted before the
+                                // Finance-verification stage have no workflow
+                                // run. Verify them through the official domain
+                                // method before applying approval.
+                                if ($exp->status === 'submitted'
+                                    && ! ApprovalWorkflowRun::query()->where('module', 'expense')->where('approvable_type', ExpenseRequest::class)->where('approvable_id', $exp->id)->exists()) {
+                                    $expenseController->verify($request, $exp);
+                                    $exp->refresh();
+                                }
                                 $expenseController->approve($request, $exp, app(\App\Services\Budget\BudgetMonitoringService::class), app(\App\Services\Settings\SystemPolicyService::class), app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
                                 $expenseController->reject($request, $exp);

@@ -81,6 +81,7 @@ class CashAdvanceWorkflowTest extends TestCase
 
     private function fixture(): array
     {
+        \App\Models\Master\ApprovalMatrix::query()->delete();
         $role = Role::create(['name' => 'CA Role', 'slug' => 'ca-role']);
         foreach (['expense.view', 'expense.create', 'expense.submit', 'expense.verify', 'expense.approve', 'expense.post', 'expense.pay'] as $permission) $role->permissions()->attach(Permission::create(['name' => $permission, 'slug' => $permission]));
         $user = User::factory()->create(['role_id' => $role->id]);
