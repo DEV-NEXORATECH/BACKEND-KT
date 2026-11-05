@@ -15,6 +15,9 @@ class FullTrialFeatureSeeder extends Seeder
 {
     public function run(): void
     {
+        // Keep the visible two-layer COA demo available when this is the
+        // seeder used for trial environments.
+        $this->call(ChartOfAccountHierarchySeeder::class);
         $now = now();
         $user = DB::table('users')->where('email', 'admin@kaoemtelapak.test')->first()
             ?? DB::table('users')->orderBy('id')->first();

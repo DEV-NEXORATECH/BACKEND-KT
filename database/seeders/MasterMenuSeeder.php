@@ -127,6 +127,19 @@ class MasterMenuSeeder extends Seeder
         Menu::whereIn('slug', ['coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-projects', 'master-activities'])
             ->update(['is_active' => false]);
 
+        // Keep Staff Aging visible in the operational Expenses menu. It is a
+        // shortcut to the same aging report source used by Accounting.
+        $expensesMenu = Menu::where('slug', 'expenses-approvals')->first();
+        if ($expensesMenu) {
+            Menu::updateOrCreate(['slug' => 'expense-staff-aging'], [
+                'parent_id' => $expensesMenu->id,
+                'title' => 'Staff Aging',
+                'path' => '/reports/aging',
+                'sort_order' => 39,
+                'is_active' => true,
+            ]);
+        }
+
         $roles = Role::all();
         $menuIds = Menu::where('is_active', true)->pluck('id')->toArray();
         foreach ($roles as $role) {

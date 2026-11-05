@@ -182,7 +182,7 @@ class RoleSeeder extends Seeder
                     ['title' => 'AP Workflow', 'slug' => 'accounts-payable-workflow', 'path' => '/accounting/ap-workflow', 'sort_order' => 443],
                     ['title' => 'AR Workflow', 'slug' => 'accounts-receivable-workflow', 'path' => '/accounting/ar-workflow', 'sort_order' => 444],
                     ['title' => 'Supplier Invoices (AP)', 'slug' => 'payables-supplier-invoices', 'path' => '/procurement/supplier-invoices', 'sort_order' => 445],
-                    ['title' => 'Customer Invoices (AR)', 'slug' => 'payables-customer-invoices', 'path' => '/accounting/accounts-receivable', 'sort_order' => 446],
+                    ['title' => 'Customer Invoices (AR)', 'slug' => 'payables-customer-invoices', 'path' => '/accounting/customer-invoices', 'sort_order' => 446],
                     ['title' => 'Staff Aging', 'slug' => 'payables-receivables-aging', 'path' => '/reports/ap-ar-aging', 'sort_order' => 447],
                 ]],
                 ['title' => 'Banking', 'slug' => 'banking', 'path' => '/accounting/banking', 'sort_order' => 46],
