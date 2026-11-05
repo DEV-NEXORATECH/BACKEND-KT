@@ -10,7 +10,7 @@ return new class extends Migration {
         if (! $parentId) return;
         $now = now();
         DB::table('menus')->updateOrInsert(['slug' => 'expense-staff-aging'], [
-            'title' => 'Staff Aging', 'path' => '/reports/aging', 'parent_id' => $parentId,
+            'title' => 'Staff Aging', 'path' => '/expenses-approvals/staff-aging', 'parent_id' => $parentId,
             'sort_order' => 39, 'is_active' => true, 'created_at' => $now, 'updated_at' => $now,
         ]);
     }

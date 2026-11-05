@@ -134,7 +134,7 @@ class MasterMenuSeeder extends Seeder
             Menu::updateOrCreate(['slug' => 'expense-staff-aging'], [
                 'parent_id' => $expensesMenu->id,
                 'title' => 'Staff Aging',
-                'path' => '/reports/aging',
+                'path' => '/expenses-approvals/staff-aging',
                 'sort_order' => 39,
                 'is_active' => true,
             ]);

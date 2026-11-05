@@ -170,7 +170,7 @@ class RoleSeeder extends Seeder
                 ['title' => 'Finance Verification', 'slug' => 'finance-verification', 'path' => '/expenses-approvals/finance-verification', 'sort_order' => 36],
                 ['title' => 'Payment Processing', 'slug' => 'payment-processing', 'path' => '/expenses-approvals/payment-processing', 'sort_order' => 37],
                 ['title' => 'Expense Monitoring', 'slug' => 'expense-monitoring', 'path' => '/expenses-approvals/monitoring', 'sort_order' => 38],
-                ['title' => 'Staff Aging', 'slug' => 'expense-staff-aging', 'path' => '/reports/aging', 'sort_order' => 39],
+                ['title' => 'Staff Aging', 'slug' => 'expense-staff-aging', 'path' => '/expenses-approvals/staff-aging', 'sort_order' => 39],
             ]],
             ['title' => 'Accounting', 'slug' => 'accounting', 'path' => '/accounting', 'icon' => 'accounting', 'sort_order' => 40, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'accounting-dashboard', 'path' => '/accounting/dashboard', 'sort_order' => 40],

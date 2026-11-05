@@ -16,7 +16,7 @@ return new class extends Migration {
             ['slug' => 'payables-receivables-aging'],
             [
                 'title' => 'Staff Aging',
-                'path' => '/accounting/payables-receivables',
+                'path' => '/accounting/staff-payables',
                 'parent_id' => $parentId,
                 'sort_order' => 447,
                 'is_active' => true,
@@ -31,7 +31,7 @@ return new class extends Migration {
                 ['slug' => 'expense-staff-aging'],
                 [
                     'title' => 'Staff Aging',
-                    'path' => '/reports/aging',
+                    'path' => '/expenses-approvals/staff-aging',
                     'parent_id' => $expenseParentId,
                     'sort_order' => 39,
                     'is_active' => true,
