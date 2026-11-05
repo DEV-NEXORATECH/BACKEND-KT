@@ -11,23 +11,13 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Keep the default environment intentionally empty outside the
+        // access-control and approval foundations. Feature/demo data must be
+        // requested explicitly through its dedicated seeder.
         $this->call([
             RoleSeeder::class,
-            DepartmentSeeder::class,
-            MasterDataSeeder::class,
-            ExpenseChartOfAccountsSeeder::class,
-            ChartOfAccountHierarchySeeder::class,
-            DonorTypeSeeder::class,
-            MasterMenuSeeder::class,
             UserSeeder::class,
             ApprovalMatrixSeeder::class,
-            ProcessDataSeeder::class,
-            // Process data creates the projects. Seed the expense chain last
-            // so every project receives its own three-level matrix.
-            ExpenseApprovalChainSeeder::class,
-            // Keep budget monitoring free of obsolete synthetic alert rows
-            // after all real budget lines have been created.
-            BudgetAlertThresholdSeeder::class,
         ]);
     }
 }
