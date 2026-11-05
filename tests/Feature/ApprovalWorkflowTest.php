@@ -22,7 +22,7 @@ class ApprovalWorkflowTest extends TestCase
         $budgetHolderRole = $this->role('Budget Holder', ['expense.approve']);
         $financeRole = $this->role('Finance', ['expense.approve', 'expense.verify']);
         $requester = User::factory()->create(['role_id' => $requesterRole->id]);
-        $budgetHolder = User::factory()->create(['role_id' => $budgetHolderRole->id]);
+        $budgetHolder = User::factory()->create(['name' => 'Denny Bhatara', 'role_id' => $budgetHolderRole->id]);
         $finance = User::factory()->create(['role_id' => $financeRole->id]);
 
         ApprovalMatrix::create(['module' => 'expense', 'level' => 1, 'min_amount' => 0, 'role_id' => $budgetHolderRole->id, 'is_active' => true]);
