@@ -86,7 +86,13 @@ class AccountsReceivableCustomerInvoiceTest extends TestCase
     {
         \App\Models\Master\ApprovalMatrix::query()->delete();
         [$user, $customer, $revenue] = $this->fixture();
-        \App\Models\Master\ApprovalMatrix::create(['module' => 'ar', 'level' => 1, 'min_amount' => 0, 'role_id' => $user->role_id, 'is_active' => true]);
+        $approverRole = Role::create(['name' => 'AR Approver', 'slug' => 'ar-approver']);
+        $approverRole->permissions()->attach([
+            Permission::firstOrCreate(['slug' => 'ar.post'], ['name' => 'ar.post'])->id,
+            Permission::firstOrCreate(['slug' => 'ar.view'], ['name' => 'ar.view'])->id,
+        ]);
+        $approver = User::factory()->create(['role_id' => $approverRole->id]);
+        \App\Models\Master\ApprovalMatrix::create(['module' => 'ar', 'level' => 1, 'min_amount' => 0, 'role_id' => $approverRole->id, 'is_active' => true]);
         $response = $this->actingAs($user, 'sanctum')
             ->postJson('/api/v1/finance/ar/invoices', [
                 'invoice_number' => 'AR-APPR',
@@ -103,13 +109,13 @@ class AccountsReceivableCustomerInvoiceTest extends TestCase
             ->postJson("/api/v1/finance/ar/invoices/{$invoiceId}/submit")
             ->assertOk();
 
-        $this->postJson('/api/v1/approval-center/batch-action', [
+        $this->actingAs($approver, 'sanctum')->postJson('/api/v1/approval-center/batch-action', [
             'action' => 'approve',
             'notes' => 'ok',
             'items' => [['module' => 'ar', 'id' => $invoiceId]],
         ])->assertOk();
 
-        $this->getJson('/api/v1/finance/ar/invoices')
+        $this->actingAs($user, 'sanctum')->getJson('/api/v1/finance/ar/invoices')
             ->assertOk()
             ->assertJsonPath('data.0.id', $invoiceId)
             ->assertJsonPath('data.0.approval_status', 'approved')
