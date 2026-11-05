@@ -1473,7 +1473,10 @@ class ReportsDashboardController extends Controller
     {
         return Journal::query()
             ->with('lines.account:id,code,name,account_type')
-            ->where('status', 'posted')
+            // The dashboard's Recent Transactions list is an activity feed,
+            // so it must also show journals waiting for approval/posting.
+            // Exclude only terminal invalidated records.
+            ->whereNotIn('status', ['voided', 'cancelled', 'rejected'])
             ->when($start, fn (Builder $query) => $query->whereDate('journal_date', '>=', $start))
             ->when($end, fn (Builder $query) => $query->whereDate('journal_date', '<=', $end))
             ->latest('journal_date')

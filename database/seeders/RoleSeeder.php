@@ -212,7 +212,6 @@ class RoleSeeder extends Seeder
                 ['title' => 'Supplier Contract Notification', 'slug' => 'procurement-scn', 'path' => '/procurement/scn', 'sort_order' => 495],
                 ['title' => 'Purchase Orders', 'slug' => 'procurement-purchase-orders', 'path' => '/procurement/purchase-orders', 'sort_order' => 496],
                 ['title' => 'Goods Receipts', 'slug' => 'procurement-goods-receipts', 'path' => '/procurement/goods-receipts', 'sort_order' => 497],
-                ['title' => 'Supplier Invoices', 'slug' => 'procurement-supplier-invoices', 'path' => '/procurement/supplier-invoices', 'sort_order' => 498],
             ]],
             ['title' => 'Timesheet', 'slug' => 'timesheet', 'path' => '/timesheet', 'icon' => 'clock', 'sort_order' => 52, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'timesheet-dashboard', 'path' => '/timesheet/dashboard', 'sort_order' => 521],
@@ -311,7 +310,7 @@ class RoleSeeder extends Seeder
                 'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external', 'timesheet-my', 'timesheet-team', 'timesheet-approval', 'timesheet-external-register', 'timesheet-external-verification', 'timesheet-external-reports', 'timesheet-project', 'timesheet-reports',
             ],
             'Procurement' => [
-                'procurement', 'procurement-dashboard', 'procurement-purchase-request', 'procurement-rfq-cba', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-contracts', 'procurement-scn', 'procurement-goods-receipts', 'procurement-supplier-invoices', 'procurement-waivers',
+                'procurement', 'procurement-dashboard', 'procurement-purchase-request', 'procurement-rfq-cba', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-contracts', 'procurement-scn', 'procurement-goods-receipts', 'procurement-waivers',
             ],
             'Taxes' => [
                 'taxes', 'taxes-dashboard', 'taxes-setup', 'taxes-transactions', 'taxes-pph', 'taxes-vat', 'taxes-ebupot', 'taxes-efaktur', 'taxes-calendar', 'taxes-reports', 'tax-calculator',
