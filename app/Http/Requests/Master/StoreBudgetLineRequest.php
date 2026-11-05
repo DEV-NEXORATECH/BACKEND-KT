@@ -56,6 +56,20 @@ class StoreBudgetLineRequest extends FormRequest
                 $this->merge(['gl_account_id' => $coaId, 'cost_type' => $coaCode]);
             }
         }
+
+        $allocations = $this->input('period_allocations');
+        if (is_array($allocations) && ! empty($allocations)) {
+            if (! isset($allocations[0])) {
+                $formatted = [];
+                foreach ($allocations as $period => $amount) {
+                    $formatted[] = [
+                        'period' => (string) $period,
+                        'amount' => (float) $amount,
+                    ];
+                }
+                $this->merge(['period_allocations' => $formatted]);
+            }
+        }
     }
 
     public function withValidator(Validator $validator): void
