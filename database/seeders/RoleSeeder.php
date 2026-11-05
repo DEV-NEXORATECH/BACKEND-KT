@@ -276,6 +276,13 @@ class RoleSeeder extends Seeder
             $persistMenu($def);
         }
 
+        // Expense navigation is intentionally limited to the four operational
+        // entry points shown in the sidebar. Other expense pages remain
+        // reachable by workflow links/routes but are not duplicate menu items.
+        Menu::where('slug', 'expenses-approvals')->first()?->children()
+            ->whereNotIn('slug', ['approval-center', 'cash-advances', 'expense-monitoring', 'expense-staff-aging'])
+            ->update(['is_active' => false]);
+
         // Clean up legacy menu entries so they cannot reappear under Master Data.
         Menu::whereIn('slug', ['master-approval-matrices', 'coa', 'fiscal', 'currency', 'tax', 'master-fund-grant-management', 'master-ca', 'master-depreciation', 'master-cost-centers', 'master-petty-cashes', 'master-beneficiary-partners', 'master-funding-sources', 'master-budget-lines', 'master-budget-templates', 'master-budget-reporting', 'master-budget-categories', 'master-reporting-categories', 'master-reporting-dimensions', 'master-document-types', 'master-projects', 'master-activities', 'donor-grant-programs-projects', 'funding-projects', 'funding-donor-grant', 'funding-program-project', 'funding-budget', 'expenses', 'cash-advance', 'reimbursement', 'approvals', 'accounting-tax', 'recurring-journal', 'hr-administration', 'hr-employees', 'hr-departments', 'hr-office-locations', 'hr-role-access', 'hr-approval-matrix', 'hr-audit-log', 'hr-master-menu', 'reports-summary', 'reports-forecast', 'reports-custom', 'master-vendor-categories', 'master-items-services', 'master-unit-of-measures', 'master-procurement-categories'])
             ->update(['is_active' => false]);
@@ -490,7 +497,12 @@ class RoleSeeder extends Seeder
                         $assignedSlugs = array_merge($assignedSlugs, $menuGroups['Expenses / Approval']);
                     } else {
                         // When Timesheet is not granted, only grant specific children to prevent parent leak
-                        $assignedSlugs = array_merge($assignedSlugs, ['expenses', 'cash-advance', 'reimbursement', 'approvals']);
+                        $assignedSlugs = array_merge($assignedSlugs, [
+                            'expenses-approvals', 'expenses-dashboard', 'expense-requests',
+                            'reimbursements', 'cash-advances', 'settlement', 'approval-center',
+                            'finance-verification', 'payment-processing', 'expense-monitoring',
+                            'expense-staff-aging',
+                        ]);
                     }
                 } elseif ($groupName === 'Timesheet') {
                     $assignedSlugs = array_merge($assignedSlugs, ['timesheet']);
