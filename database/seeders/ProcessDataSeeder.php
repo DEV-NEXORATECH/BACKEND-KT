@@ -22,6 +22,7 @@ class ProcessDataSeeder extends Seeder
             // their explicit COA mappings before fiscal-year clones validate
             // those lines.
             ExpenseChartOfAccountsSeeder::class,
+            ChartOfAccountHierarchySeeder::class,
             // Apply fiscal-year backfill and create the 2025/2027 counterparts
             // after every feature seeder has finished creating its records.
             FiscalYearDemoSeeder::class,

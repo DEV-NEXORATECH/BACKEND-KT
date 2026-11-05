@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
             DepartmentSeeder::class,
             MasterDataSeeder::class,
             ExpenseChartOfAccountsSeeder::class,
+            ChartOfAccountHierarchySeeder::class,
             DonorTypeSeeder::class,
             MasterMenuSeeder::class,
             UserSeeder::class,
