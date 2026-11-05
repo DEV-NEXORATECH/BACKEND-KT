@@ -323,6 +323,9 @@ class JournalController extends Controller
             'lines.*.budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
             'lines.*.department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'lines.*.line_description' => ['nullable', 'string', 'max:255'],
+            'lines.*.class' => ['nullable', 'string', 'max:120'],
+            'lines.*.name' => ['nullable', 'string', 'max:150'],
+            'lines.*.location' => ['nullable', 'string', 'max:150'],
             'lines.*.debit' => ['nullable', 'numeric', 'min:0'],
             'lines.*.credit' => ['nullable', 'numeric', 'min:0'],
         ]);

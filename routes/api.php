@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\Accounting\JournalController;
 use App\Http\Controllers\Api\Accounting\AccountingDashboardController;
 use App\Http\Controllers\Api\Accounting\GeneralLedgerController;
 use App\Http\Controllers\Api\Accounting\RecurringJournalController;
+use App\Http\Controllers\Api\Accounting\PrepaidExpenseController;
 use App\Http\Controllers\Api\Budget\BudgetMonitoringController;
 use App\Http\Controllers\Api\Budget\BudgetReallocationController;
 use App\Http\Controllers\Api\Procurement\PurchaseRequestController;
@@ -194,6 +195,12 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1/accounting')->group(function () {
+        Route::get('prepaid-expenses', [PrepaidExpenseController::class, 'index']);
+        Route::get('prepaid-expenses/options', [PrepaidExpenseController::class, 'options']);
+        Route::post('prepaid-expenses', [PrepaidExpenseController::class, 'store']);
+        Route::put('prepaid-expenses/{prepaidExpense}', [PrepaidExpenseController::class, 'update']);
+        Route::delete('prepaid-expenses/{prepaidExpense}', [PrepaidExpenseController::class, 'destroy']);
+        Route::get('prepaid-expenses/{prepaidExpense}/schedule', [PrepaidExpenseController::class, 'schedule']);
         Route::get('dashboard', [AccountingDashboardController::class, 'index'])->middleware('permission:accounting.view');
         Route::get('general-ledger', [GeneralLedgerController::class, 'index'])->middleware('permission:accounting.view');
         Route::post('recurring-journals/{recurringJournal}/generate', [RecurringJournalController::class, 'generate'])

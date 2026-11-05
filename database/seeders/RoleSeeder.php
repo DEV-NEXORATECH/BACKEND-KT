@@ -170,17 +170,25 @@ class RoleSeeder extends Seeder
                 ['title' => 'Finance Verification', 'slug' => 'finance-verification', 'path' => '/expenses-approvals/finance-verification', 'sort_order' => 36],
                 ['title' => 'Payment Processing', 'slug' => 'payment-processing', 'path' => '/expenses-approvals/payment-processing', 'sort_order' => 37],
                 ['title' => 'Expense Monitoring', 'slug' => 'expense-monitoring', 'path' => '/expenses-approvals/monitoring', 'sort_order' => 38],
+                ['title' => 'Staff Aging', 'slug' => 'expense-staff-aging', 'path' => '/reports/aging', 'sort_order' => 39],
             ]],
             ['title' => 'Accounting', 'slug' => 'accounting', 'path' => '/accounting', 'icon' => 'accounting', 'sort_order' => 40, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'accounting-dashboard', 'path' => '/accounting/dashboard', 'sort_order' => 40],
                 ['title' => 'Chart of Accounts', 'slug' => 'accounting-chart-of-accounts', 'path' => '/accounting/chart-of-accounts', 'sort_order' => 41],
                 ['title' => 'Journal', 'slug' => 'journal', 'path' => '/accounting/journal', 'sort_order' => 42],
-                ['title' => 'General Ledger', 'slug' => 'general-ledger', 'path' => '/accounting/general-ledger', 'sort_order' => 43],
-                ['title' => 'Accounts Payable', 'slug' => 'accounts-payable', 'path' => '/accounting/accounts-payable', 'sort_order' => 44],
-                ['title' => 'Accounts Receivable', 'slug' => 'accounts-receivable', 'path' => '/accounting/accounts-receivable', 'sort_order' => 45],
+                ['title' => 'Payables & Receivables', 'slug' => 'payables-receivables', 'path' => '/accounting/payables-receivables', 'sort_order' => 44, 'children' => [
+                    ['title' => 'Accounts Payable', 'slug' => 'accounts-payable', 'path' => '/accounting/accounts-payable', 'sort_order' => 441],
+                    ['title' => 'Accounts Receivable', 'slug' => 'accounts-receivable', 'path' => '/accounting/accounts-receivable', 'sort_order' => 442],
+                    ['title' => 'AP Workflow', 'slug' => 'accounts-payable-workflow', 'path' => '/accounting/ap-workflow', 'sort_order' => 443],
+                    ['title' => 'AR Workflow', 'slug' => 'accounts-receivable-workflow', 'path' => '/accounting/ar-workflow', 'sort_order' => 444],
+                    ['title' => 'Supplier Invoices (AP)', 'slug' => 'payables-supplier-invoices', 'path' => '/procurement/supplier-invoices', 'sort_order' => 445],
+                    ['title' => 'Customer Invoices (AR)', 'slug' => 'payables-customer-invoices', 'path' => '/accounting/accounts-receivable', 'sort_order' => 446],
+                    ['title' => 'Staff Aging', 'slug' => 'payables-receivables-aging', 'path' => '/reports/ap-ar-aging', 'sort_order' => 447],
+                ]],
                 ['title' => 'Banking', 'slug' => 'banking', 'path' => '/accounting/banking', 'sort_order' => 46],
                 ['title' => 'Bank Reconciliation', 'slug' => 'bank-reconciliation', 'path' => '/accounting/bank-reconciliation', 'sort_order' => 47],
-                ['title' => 'Fixed Assets', 'slug' => 'fixed-assets', 'path' => '/accounting/fixed-assets', 'sort_order' => 48],
+                ['title' => 'Fixed Asset', 'slug' => 'fixed-assets', 'path' => '/accounting/fixed-assets', 'sort_order' => 48],
+                ['title' => 'Prepaid Expense', 'slug' => 'prepaid-expenses', 'path' => '/accounting/prepaid-expenses', 'sort_order' => 48.5],
                 ['title' => 'Period Closing', 'slug' => 'period-closing', 'path' => '/accounting/period-closing', 'sort_order' => 49],
             ]],
             ['title' => 'Taxes', 'slug' => 'taxes', 'path' => '/taxes', 'icon' => 'calculator', 'sort_order' => 50, 'children' => [
@@ -229,6 +237,7 @@ class RoleSeeder extends Seeder
                 ['title' => 'Procurement Reports', 'slug' => 'reports-procurement', 'path' => '/reports/procurement', 'sort_order' => 555],
                 ['title' => 'Tax Reports', 'slug' => 'reports-tax', 'path' => '/reports/tax', 'sort_order' => 556],
                 ['title' => 'Management Reports', 'slug' => 'reports-management', 'path' => '/reports/management', 'sort_order' => 557],
+                ['title' => 'General Ledger', 'slug' => 'reports-general-ledger', 'path' => '/accounting/general-ledger', 'sort_order' => 558],
             ]],
             ['title' => 'Administration', 'slug' => 'administration', 'path' => '/administration', 'icon' => 'admin', 'sort_order' => 60, 'children' => [
                 ['title' => 'Staff', 'slug' => 'admin-staff', 'path' => '/administration/staff', 'sort_order' => 601],
@@ -282,14 +291,14 @@ class RoleSeeder extends Seeder
                 'master-expenses', 'master-expenses-assets', 'master-expense-categories', 'master-expense-types', 'master-assets', 'master-asset-categories',
             ],
             'Accounting' => [
-                'accounting', 'accounting-dashboard', 'accounting-chart-of-accounts', 'journal', 'general-ledger', 'accounts-payable', 'accounts-receivable', 'banking', 'bank-reconciliation', 'fixed-assets', 'period-closing',
+                'accounting', 'accounting-dashboard', 'accounting-chart-of-accounts', 'journal', 'payables-receivables', 'accounts-payable', 'accounts-receivable', 'accounts-payable-workflow', 'accounts-receivable-workflow', 'payables-supplier-invoices', 'payables-customer-invoices', 'payables-receivables-aging', 'banking', 'bank-reconciliation', 'fixed-assets', 'prepaid-expenses', 'period-closing',
             ],
             'Donor / Grant' => [
                 'donor-grant', 'donor-grant-dashboard', 'donor-grant-donors', 'donor-grant-project-frameworks', 'donor-grant-project-workplan', 'donor-grant-grants', 'donor-grant-budget', 'donor-grant-budget-monitoring', 'donor-grant-reporting', 'donor-grant-donor-reporting',
                 'budget-forecast', 'budget-forecast-planning', 'budget-forecast-monitoring', 'budget-forecast-forecast', 'budget-forecast-reallocation',
             ],
             'Expenses / Approval' => [
-                'expenses-approvals', 'expenses-dashboard', 'expense-requests', 'reimbursements', 'cash-advances', 'settlement', 'approval-center', 'finance-verification', 'payment-processing', 'expense-monitoring',
+                'expenses-approvals', 'expenses-dashboard', 'expense-requests', 'reimbursements', 'cash-advances', 'settlement', 'approval-center', 'finance-verification', 'payment-processing', 'expense-monitoring', 'expense-staff-aging',
             ],
             'Timesheet' => [
                 'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external', 'timesheet-my', 'timesheet-team', 'timesheet-approval', 'timesheet-external-register', 'timesheet-external-verification', 'timesheet-external-reports', 'timesheet-project', 'timesheet-reports',
@@ -304,7 +313,7 @@ class RoleSeeder extends Seeder
                 'administration', 'admin-staff', 'admin-organization-structure', 'admin-organization', 'admin-department', 'admin-office-locations', 'admin-positions', 'admin-documents', 'admin-contracts', 'admin-audit-logs',
             ],
             'Reports' => [
-                'reports', 'reports-financial', 'reports-budget', 'reports-donor-grant', 'reports-project', 'reports-procurement', 'reports-tax', 'reports-management',
+                'reports', 'reports-financial', 'reports-budget', 'reports-donor-grant', 'reports-project', 'reports-procurement', 'reports-tax', 'reports-management', 'reports-general-ledger',
             ],
             'Settings' => [
                 'settings', 'settings-users', 'settings-roles-permissions', 'settings-approval-workflow', 'settings-system', 'settings-integrations', 'settings-notifications',

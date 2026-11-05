@@ -1729,6 +1729,7 @@ class ReportsDashboardController extends Controller
         $asOf = $request->input('as_of') ? CarbonImmutable::parse($request->input('as_of')) : CarbonImmutable::now();
         $ap = $this->apAging($asOf);
         $ar = $this->arAging($asOf);
+        $staff = $this->staffAging($asOf);
 
         return response()->json([
             'success' => true,
@@ -1767,7 +1768,30 @@ class ReportsDashboardController extends Controller
                     ];
                 })->values()->sortByDesc('total')->values()->all(),
             ],
+            'staff' => [
+                'total_outstanding' => round((float) collect($staff)->sum('outstanding'), 2),
+                'rows' => $staff,
+            ],
         ]);
+    }
+
+    private function staffAging(CarbonImmutable $asOf): array
+    {
+        return ExpenseRequest::query()
+            ->with(['requester:id,name', 'project:id,name'])
+            ->where('expense_type', 'cash_advance')
+            ->whereNotIn('settlement_status', ['settled', 'closed'])
+            ->whereIn('status', ['posted', 'paid', 'partially_settled', 'approved'])
+            ->get()
+            ->map(function (ExpenseRequest $expense) use ($asOf) {
+                $gross = (float) ($expense->paid_amount ?: $expense->total_amount);
+                $cleared = (float) ($expense->settled_amount ?? 0) + (float) ($expense->return_amount ?? 0);
+                $outstanding = max(0, $gross - $cleared);
+                if ($outstanding <= 0) return null;
+                $due = $expense->settlement_due_date ? CarbonImmutable::parse($expense->settlement_due_date) : null;
+                $days = $due ? max(0, $due->diffInDays($asOf, false)) : 0;
+                return ['id' => $expense->id, 'reference' => $expense->request_number, 'staff' => $expense->requester?->name ?? 'Unassigned', 'project' => $expense->project?->name, 'due_date' => $due?->toDateString(), 'outstanding' => round($outstanding, 2), 'days' => $days, 'bucket' => $days <= 0 ? 'current' : ($days <= 30 ? '1_30' : ($days <= 60 ? '31_60' : ($days <= 90 ? '61_90' : 'over_90'))), 'source' => 'cash_advance_settlement'];
+            })->filter()->values()->all();
     }
 
     public function cashBankReport(Request $request): JsonResponse

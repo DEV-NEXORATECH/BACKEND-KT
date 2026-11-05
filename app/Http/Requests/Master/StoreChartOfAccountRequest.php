@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Master;
 
+use App\Models\Master\ChartOfAccount;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreChartOfAccountRequest extends FormRequest
@@ -23,9 +24,29 @@ class StoreChartOfAccountRequest extends FormRequest
             'normal_balance' => 'required|in:debit,credit',
             'opening_balance' => 'nullable|numeric|min:0',
             'opening_balance_date' => 'nullable|date',
-            'level' => 'integer|min:1',
+            // These are normalized in prepareForValidation from the parent choice.
+            'level' => 'integer|in:1,2',
             'is_header' => 'boolean',
             'is_active' => 'boolean',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'level' => $this->filled('parent_id') ? 2 : 1,
+            'is_header' => ! $this->filled('parent_id'),
+        ]);
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if (! $this->filled('parent_id')) return;
+            $parent = ChartOfAccount::find($this->integer('parent_id'));
+            if (! $parent?->is_header || (int) $parent->level !== 1) {
+                $validator->errors()->add('parent_id', 'Parent Account harus merupakan Header Account level 1.');
+            }
+        });
     }
 }

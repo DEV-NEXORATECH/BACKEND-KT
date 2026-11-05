@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Master;
 
+use App\Models\Master\ChartOfAccount;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateChartOfAccountRequest extends FormRequest
@@ -23,9 +24,33 @@ class UpdateChartOfAccountRequest extends FormRequest
             'normal_balance' => 'required|in:debit,credit',
             'opening_balance' => 'nullable|numeric|min:0',
             'opening_balance_date' => 'nullable|date',
-            'level' => 'integer|min:1',
+            'level' => 'integer|in:1,2',
             'is_header' => 'boolean',
             'is_active' => 'boolean',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'level' => $this->filled('parent_id') ? 2 : 1,
+            'is_header' => ! $this->filled('parent_id'),
+        ]);
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $currentId = (int) $this->route('id');
+            if ($this->filled('parent_id') && $this->integer('parent_id') === $currentId) {
+                $validator->errors()->add('parent_id', 'Akun tidak dapat menjadi parent untuk dirinya sendiri.');
+                return;
+            }
+            if (! $this->filled('parent_id')) return;
+            $parent = ChartOfAccount::find($this->integer('parent_id'));
+            if (! $parent?->is_header || (int) $parent->level !== 1) {
+                $validator->errors()->add('parent_id', 'Parent Account harus merupakan Header Account level 1.');
+            }
+        });
     }
 }
