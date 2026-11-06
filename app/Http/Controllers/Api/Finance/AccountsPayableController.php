@@ -24,7 +24,7 @@ class AccountsPayableController extends Controller
 {
     public function invoices(Request $request): JsonResponse
     {
-        $query = SupplierInvoice::with(['vendor:id,code,name,npwp', 'tax:id,code,name,tax_type,rate_percent', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines.purchaseOrderLine.budgetLine.glAccount', 'payments:id,supplier_invoice_id,payment_number,payment_date,amount,reference']);
+        $query = SupplierInvoice::with(['vendor:id,code,name,npwp', 'coa:id,code,name', 'tax:id,code,name,tax_type,rate_percent', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines.purchaseOrderLine.budgetLine.glAccount', 'payments:id,supplier_invoice_id,payment_number,payment_date,amount,reference']);
         
         app(\App\Services\Rbac\DataScopeService::class)->applyScope(
             $query,
@@ -49,6 +49,7 @@ class AccountsPayableController extends Controller
             'invoice_number' => ['required', 'string', 'max:80', 'unique:supplier_invoices,invoice_number'],
             'reference_number' => ['nullable', 'string', 'max:100'],
             'vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
+            'coa_id' => ['required', 'integer', 'exists:chart_of_accounts,id'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
             'total_amount' => ['required', 'numeric', 'min:0'],
@@ -83,6 +84,7 @@ class AccountsPayableController extends Controller
         }
         $data = $request->validate([
             'invoice_number' => ['required', 'string', 'max:80', 'unique:supplier_invoices,invoice_number,'.$supplierInvoice->id],
+            'coa_id' => ['required', 'integer', 'exists:chart_of_accounts,id'],
             'invoice_date' => ['required', 'date'], 'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
             'total_amount' => ['required', 'numeric', 'min:0'], 'reference_number' => ['nullable', 'string', 'max:100'], 'notes' => ['nullable', 'string'],
             'attachment' => ['nullable', 'file', 'max:5120', 'mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx'],
@@ -159,7 +161,8 @@ class AccountsPayableController extends Controller
             ]);
 
             foreach ($supplierInvoice->lines as $line) {
-                $expenseAccount = $line->purchaseOrderLine?->budgetLine?->glAccount
+                $expenseAccount = ($supplierInvoice->coa_id ? ChartOfAccount::find($supplierInvoice->coa_id) : null)
+                    ?? $line->purchaseOrderLine?->budgetLine?->glAccount
                     ?? ChartOfAccount::query()->where('account_type', 'expense')->where('is_header', false)->first();
                 if (! $expenseAccount) {
                     throw ValidationException::withMessages(['account' => 'COA expense belum tersedia.']);
@@ -793,6 +796,9 @@ class AccountsPayableController extends Controller
             'source_type' => $invoice->source_type ?: 'procurement',
             'invoice_number' => $invoice->invoice_number,
             'reference_number' => $invoice->reference_number,
+            'coa_id' => $invoice->coa_id,
+            'coa_code' => $invoice->coa?->code,
+            'coa_name' => $invoice->coa?->name,
             'vendor_name' => $invoice->vendor?->name,
             'tax' => $invoice->tax ? ['id' => $invoice->tax->id, 'code' => $invoice->tax->code, 'name' => $invoice->tax->name, 'tax_type' => $invoice->tax->tax_type, 'rate_percent' => $invoice->tax->rate_percent] : null,
             'po_number' => $invoice->purchaseOrder?->po_number,
