@@ -12,7 +12,7 @@ return new class extends Migration {
             $table->foreignId('donor_id')->nullable()->constrained('donors')->nullOnDelete();
             $table->string('code', 40);
             $table->string('name', 150);
-            $table->enum('detail_type', ['sub_output', 'workstream', 'cost_category']);
+            $table->string('detail_type', 80);
             $table->text('description')->nullable();
             $table->boolean('is_active')->default(true);
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
