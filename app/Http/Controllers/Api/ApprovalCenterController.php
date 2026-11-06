@@ -26,6 +26,7 @@ use App\Models\Master\AccountingPeriod;
 use App\Models\Budget\BudgetReallocation;
 use App\Models\Finance\TaxTransaction;
 use App\Models\Procurement\ComparativeBidAnalysis;
+use App\Models\Procurement\Contract;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierContractNotification;
@@ -46,6 +47,7 @@ class ApprovalCenterController extends Controller
             'expense' => ExpenseRequest::class,
             'pr' => PurchaseRequest::class,
             'po' => PurchaseOrder::class,
+            'contract' => Contract::class,
             'cba' => ComparativeBidAnalysis::class,
             'scn' => SupplierContractNotification::class,
             'journal' => Journal::class,
@@ -103,7 +105,7 @@ class ApprovalCenterController extends Controller
 
         $types = [
             'expense' => ExpenseRequest::class, 'pr' => PurchaseRequest::class,
-            'procurement' => PurchaseRequest::class, 'po' => PurchaseOrder::class,
+            'procurement' => PurchaseRequest::class, 'po' => PurchaseOrder::class, 'contract' => Contract::class,
             'cba' => ComparativeBidAnalysis::class, 'scn' => SupplierContractNotification::class,
             'journal' => Journal::class, 'ap' => SupplierInvoice::class,
             'ar' => CustomerInvoice::class, 'timesheet' => TimesheetEntry::class,

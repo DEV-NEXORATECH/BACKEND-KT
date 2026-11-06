@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api\Procurement;
 use App\Http\Controllers\Controller;
 use App\Models\Procurement\Contract;
 use App\Services\Rbac\DataScopeService;
+use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
 
 class ContractController extends Controller
@@ -78,6 +80,8 @@ class ContractController extends Controller
 
     public function show(Contract $contract): JsonResponse
     {
+        $contract->setAttribute('signature_url', $contract->signature_path ? Storage::disk('public')->url($contract->signature_path) : null);
+        $contract->setAttribute('approval_progress', app(ApprovalWorkflowService::class)->progressFor('procurement', $contract, request()->user()));
         return response()->json([
             'success' => true,
             'data' => $contract->load($this->with),
@@ -187,19 +191,24 @@ class ContractController extends Controller
         ]);
     }
 
-    public function submit(Contract $contract): JsonResponse
+    public function submit(Request $request, Contract $contract, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($contract->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'Hanya kontrak draft yang dapat diajukan untuk approval.']);
         }
         $contract->update(['status' => 'pending_approval']);
+        $workflow->start('procurement', $contract, (float) $contract->total_value, $request->user()?->id);
         return response()->json(['success' => true, 'message' => 'Kontrak diajukan untuk approval.', 'data' => $contract->fresh($this->with)]);
     }
 
-    public function approve(Contract $contract): JsonResponse
+    public function approve(Request $request, Contract $contract, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($contract->status !== 'pending_approval') {
             throw ValidationException::withMessages(['status' => 'Kontrak belum berstatus pending approval.']);
+        }
+        $result = $workflow->approve('procurement', $contract, $request->user(), $request->input('notes'));
+        if ($result['managed'] && ! $result['completed']) {
+            return response()->json(['success' => true, 'message' => 'Approval tersimpan dan menunggu level berikutnya.', 'data' => $contract->fresh($this->with)]);
         }
         $contract->update(['status' => 'active']);
         return response()->json(['success' => true, 'message' => 'Kontrak disetujui dan menjadi active.', 'data' => $contract->fresh($this->with)]);
