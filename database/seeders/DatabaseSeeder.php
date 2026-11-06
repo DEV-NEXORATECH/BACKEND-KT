@@ -16,8 +16,17 @@ class DatabaseSeeder extends Seeder
         // requested explicitly through its dedicated seeder.
         $this->call([
             RoleSeeder::class,
+            DepartmentSeeder::class,
+            MasterDataSeeder::class,
+            ExpenseChartOfAccountsSeeder::class,
+            ChartOfAccountHierarchySeeder::class,
+            DonorTypeSeeder::class,
+            MasterMenuSeeder::class,
             UserSeeder::class,
             ApprovalMatrixSeeder::class,
+            ProcessDataSeeder::class,
+            ExpenseApprovalChainSeeder::class,
+            BudgetAlertThresholdSeeder::class,
         ]);
     }
 }

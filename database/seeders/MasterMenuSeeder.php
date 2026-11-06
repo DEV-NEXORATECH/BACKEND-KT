@@ -48,6 +48,9 @@ class MasterMenuSeeder extends Seeder
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 18, 'children' => [
                 ['title' => 'Integrated Donor & Grant', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 180],
+                ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 181],
+                ['title' => 'Donor Types', 'slug' => 'master-donor-types', 'path' => '/master-data/donor-types', 'sort_order' => 182],
+                ['title' => 'Grant Agreements', 'slug' => 'master-grant-agreements', 'path' => '/master-data/grant-agreements', 'sort_order' => 183],
             ]],
             ['title' => 'Expenses', 'slug' => 'master-expenses', 'sort_order' => 20, 'children' => [
                 ['title' => 'Expense Categories', 'slug' => 'master-expense-categories', 'path' => '/master-data/expense-categories', 'sort_order' => 201],
@@ -82,18 +85,14 @@ class MasterMenuSeeder extends Seeder
         // Their routes and database relationships remain unchanged.
         Menu::whereIn('slug', [
             'master-programs-projects',
-            'master-donors',
-            'master-grant-agreements',
-            'master-programs',
             'master-funding-sources',
-            'master-donor-types',
             'master-projects',
             'master-activities',
         ])->update(['is_active' => false]);
 
         // Donor and grant records are now created and viewed through the
         // single integrated master page. Disable legacy duplicate entries.
-        Menu::whereIn('slug', ['master-donors', 'master-grant-agreements', 'master-budget-codes', 'master-sof'])
+        Menu::whereIn('slug', ['master-budget-codes', 'master-sof'])
             ->update(['is_active' => false]);
 
         // Budget and Forecast is a functional module, not Master Data.
@@ -115,6 +114,13 @@ class MasterMenuSeeder extends Seeder
                 'title' => 'Project Frameworks',
                 'path' => '/project-frameworks',
                 'sort_order' => 23,
+                'is_active' => true,
+            ]);
+            Menu::updateOrCreate(['slug' => 'donor-grant-grants'], [
+                'parent_id' => $donorGrantMenu->id,
+                'title' => 'Grant Agreements',
+                'path' => '/donor-grant/grants',
+                'sort_order' => 24,
                 'is_active' => true,
             ]);
         }
