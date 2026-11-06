@@ -238,8 +238,8 @@ class ExpenseRequestController extends Controller
 
     public function approve(Request $request, ExpenseRequest $expenseRequest, BudgetMonitoringService $budgetService, SystemPolicyService $policies, ApprovalWorkflowService $workflow): JsonResponse
     {
-        if ($expenseRequest->status !== 'verified') {
-            throw ValidationException::withMessages(['status' => 'The expense must be verified by Finance before approval.']);
+        if ($expenseRequest->status !== 'submitted') {
+            throw ValidationException::withMessages(['status' => 'The expense must be submitted before Budget Holder approval.']);
         }
         $approval = $workflow->approve('expense', $expenseRequest, $request->user(), $request->input('notes'));
         if ($approval['managed'] && ! $approval['completed']) {
@@ -258,7 +258,7 @@ class ExpenseRequestController extends Controller
             }
         }
 
-        $expense = $this->transition($expenseRequest, 'verified', 'approved', [
+        $expense = $this->transition($expenseRequest, 'submitted', 'approved', [
             'approved_by' => request()->user()->id,
             'approved_at' => now(),
             'decision_notes' => request('notes'),
@@ -285,7 +285,7 @@ class ExpenseRequestController extends Controller
 
     public function verify(Request $request, ExpenseRequest $expenseRequest): JsonResponse
     {
-        if ($expenseRequest->status !== 'submitted') throw ValidationException::withMessages(['status' => 'The expense must be submitted before verification.']);
+        if ($expenseRequest->status !== 'approved') throw ValidationException::withMessages(['status' => 'The expense must be approved before Finance verification.']);
         $checklist = $request->input('checklist', []);
         $requiredChecks = ['documents_verified'];
         // The web and PWA clients send the checklist explicitly. Older API
@@ -312,7 +312,7 @@ class ExpenseRequestController extends Controller
         $data = $request->validate([
             'notes' => ['required', 'string', 'min:5', 'max:1000'],
         ]);
-        if ($expenseRequest->status !== 'submitted') {
+        if (! in_array($expenseRequest->status, ['approved', 'submitted'], true)) {
             throw ValidationException::withMessages(['status' => 'The expense can only be returned during Finance Review.']);
         }
 
