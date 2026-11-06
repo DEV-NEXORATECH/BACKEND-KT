@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Procurement\Contract;
 use App\Models\Procurement\SupplierInvoice;
 use App\Models\Master\ChartOfAccount;
-use App\Models\Accounting\Journal;
 use App\Services\Rbac\DataScopeService;
 use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -273,33 +272,7 @@ class ContractController extends Controller
                 'created_by' => request()->user()?->id,
                 'updated_by' => request()->user()?->id,
             ]);
-            $apAccount = ChartOfAccount::query()->where('account_type', 'liability')->where('is_header', false)->first()
-                ?? ChartOfAccount::query()->where('account_type', 'liability')->first();
-            if (! $apAccount) {
-                throw ValidationException::withMessages(['account' => 'COA liability/AP belum tersedia untuk membuat jurnal otomatis.']);
-            }
-            $journal = Journal::create([
-                'fiscal_year_id' => $contract->fiscal_year_id,
-                'journal_number' => 'AP-' . $contract->contract_number,
-                'journal_date' => now()->toDateString(),
-                'journal_type' => 'accrual',
-                'reference' => $contract->contract_number,
-                'description' => 'Automatic AP accrual from completed contract ' . $contract->contract_number,
-                'status' => 'draft',
-                'source_type' => 'ap',
-                'source_id' => $invoice->id,
-                'original_amount' => $contract->total_value,
-                'converted_amount' => $contract->total_value,
-                'exchange_rate' => 1,
-                'created_by' => request()->user()?->id,
-                'updated_by' => request()->user()?->id,
-            ]);
-            $journal->lines()->createMany([
-                ['account_id' => $coa->id, 'line_description' => 'Expense from contract ' . $contract->contract_number, 'debit' => $contract->total_value, 'credit' => 0, 'line_order' => 1],
-                ['account_id' => $apAccount->id, 'line_description' => 'Accounts payable ' . $contract->contract_number, 'debit' => 0, 'credit' => $contract->total_value, 'line_order' => 2],
-            ]);
-            $invoice->update(['journal_id' => $journal->id]);
         }
-        return response()->json(['success' => true, 'message' => 'Kontrak completed, AP draft, dan journal draft otomatis dibuat.', 'data' => $contract->fresh($this->with), 'ap_invoice_id' => $invoice->id, 'journal_id' => $invoice->journal_id]);
+        return response()->json(['success' => true, 'message' => 'Kontrak completed dan AP draft otomatis dibuat.', 'data' => $contract->fresh($this->with), 'ap_invoice_id' => $invoice->id]);
     }
 }
