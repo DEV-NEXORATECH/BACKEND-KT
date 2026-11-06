@@ -285,7 +285,7 @@ class FiscalYearDemoSeeder extends Seeder
         $clone('expense_requests', ['request_number' => 'EXP-2026-001'], ['request_number' => 'EXP-2025-001'], [
             'request_number' => 'EXP-2025-001', 'fiscal_year_id' => $fy2025, 'request_date' => '2025-03-10',
             'project_id' => $project2025,
-            'external_request_id' => 'SEED-EXP-2025-001', 'description' => 'Per diem and local transport for mapping workshop (2025).',
+            'external_request_id' => 'SEED-EXP-2025-001', 'voucher_number' => 'CDV-GRT-2025-FORD-01-2025-11-001', 'cdv_number' => 'CDV-GRT-2025-FORD-01-2025-11-001', 'description' => 'Per diem and local transport for mapping workshop (2025).',
         ]);
         foreach ([
             ['source' => 'EXP-2026-004', 'target' => 'EXP-2025-002', 'date' => '2025-03-11', 'description' => 'Settlement advance awaiting approval (2025).'],
@@ -295,6 +295,8 @@ class FiscalYearDemoSeeder extends Seeder
             $clone('expense_requests', ['request_number' => $expenseFixture['source']], ['request_number' => $expenseFixture['target']], [
                 'request_number' => $expenseFixture['target'], 'fiscal_year_id' => $fy2025, 'project_id' => $project2025,
                 'request_date' => $expenseFixture['date'], 'external_request_id' => 'SEED-'.$expenseFixture['target'],
+                'voucher_number' => 'CDV-GRT-2025-FORD-01-2025-11-'.str_pad(substr($expenseFixture['target'], -3), 3, '0', STR_PAD_LEFT),
+                'cdv_number' => 'CDV-GRT-2025-FORD-01-2025-11-'.str_pad(substr($expenseFixture['target'], -3), 3, '0', STR_PAD_LEFT),
                 'description' => $expenseFixture['description'],
             ]);
         }
