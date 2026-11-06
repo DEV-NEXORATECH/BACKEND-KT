@@ -304,7 +304,7 @@ class JournalController extends Controller
         $payload = $request->validate([
             'journal_number' => ['nullable', 'string', 'max:40', 'unique:journals,journal_number,'.($journal?->id ?? 'NULL').',id'],
             'journal_date' => ['required', 'date'],
-            'journal_type' => ['required', 'in:manual,adjustment,recurring,accrual,reversal,fx_adjustment'],
+            'journal_type' => ['nullable', 'string'],
             'reference' => ['nullable', 'string', 'max:100'],
             'source_type' => ['nullable', 'string', 'max:80'],
             'source_id' => ['nullable', 'integer'],
@@ -329,6 +329,9 @@ class JournalController extends Controller
             'lines.*.debit' => ['nullable', 'numeric', 'min:0'],
             'lines.*.credit' => ['nullable', 'numeric', 'min:0'],
         ]);
+
+        // Manual journal entry is the only type exposed by the journal form.
+        $payload['journal_type'] = 'manual';
 
         $totalDebit = 0;
         $totalCredit = 0;
