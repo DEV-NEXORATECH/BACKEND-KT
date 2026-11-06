@@ -148,6 +148,8 @@ class FeatureDataSeeder extends Seeder
                     'description' => 'Incoming transfer without internal payment reference.',
                     'debit' => 0,
                     'credit' => 1250000,
+                    'difference' => 1250000,
+                    'remarks' => 'Tidak ditemukan payment internal yang cocok untuk transaksi bank ini.',
                 ],
                 [
                     'reference' => 'STMT-MISMATCH-20260402',
@@ -155,6 +157,8 @@ class FeatureDataSeeder extends Seeder
                     'description' => 'Supplier payment amount differs from the recorded payment.',
                     'debit' => 4875000,
                     'credit' => 0,
+                    'difference' => -1125000,
+                    'remarks' => 'Nominal bank lebih kecil Rp 1.125.000 dari nominal payment internal yang diharapkan.',
                 ],
             ];
 
@@ -166,6 +170,8 @@ class FeatureDataSeeder extends Seeder
                     'description' => $row['description'],
                     'debit' => $row['debit'],
                     'credit' => $row['credit'],
+                    'difference' => $row['difference'],
+                    'remarks' => $row['remarks'],
                     'status' => 'unmatched',
                     'created_by' => $user->id,
                 ]);

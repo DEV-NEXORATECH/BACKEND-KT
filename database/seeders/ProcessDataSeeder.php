@@ -41,6 +41,17 @@ class ProcessDataSeeder extends Seeder
                 ->whereIn('reference', ['STMT-UNMATCHED-20260401', 'STMT-MISMATCH-20260402'])
                 ->update(['payment_id' => null, 'status' => 'unmatched', 'updated_at' => now()]);
 
+            DB::table('bank_transactions')->where('reference', 'STMT-UNMATCHED-20260401')->update([
+                'difference' => 1250000,
+                'remarks' => 'Tidak ditemukan payment internal yang cocok untuk transaksi bank ini.',
+                'updated_at' => now(),
+            ]);
+            DB::table('bank_transactions')->where('reference', 'STMT-MISMATCH-20260402')->update([
+                'difference' => -1125000,
+                'remarks' => 'Nominal bank lebih kecil Rp 1.125.000 dari nominal payment internal yang diharapkan.',
+                'updated_at' => now(),
+            ]);
+
             if (DB::getSchemaBuilder()->hasTable('payments')) {
                 foreach (DB::table('bank_transactions')->whereNotNull('payment_id')->get(['id', 'payment_id']) as $bankTransaction) {
                     $journalId = DB::table('payments')->where('id', $bankTransaction->payment_id)->value('journal_id');
