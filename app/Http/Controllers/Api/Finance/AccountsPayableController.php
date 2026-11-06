@@ -72,6 +72,20 @@ class AccountsPayableController extends Controller
         ], Response::HTTP_CREATED);
     }
 
+    public function updateInvoice(Request $request, SupplierInvoice $supplierInvoice): JsonResponse
+    {
+        if ($supplierInvoice->source_type !== 'accounts_payable' || ! in_array($supplierInvoice->status, ['draft', 'matched'], true)) {
+            throw ValidationException::withMessages(['invoice' => 'Invoice ini tidak dapat diedit dari Accounts Payable.']);
+        }
+        $data = $request->validate([
+            'invoice_number' => ['required', 'string', 'max:80', 'unique:supplier_invoices,invoice_number,'.$supplierInvoice->id],
+            'invoice_date' => ['required', 'date'], 'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
+            'total_amount' => ['required', 'numeric', 'min:0'], 'reference_number' => ['nullable', 'string', 'max:100'], 'notes' => ['nullable', 'string'],
+        ]);
+        $supplierInvoice->update([...$data, 'updated_by' => $request->user()->id]);
+        return response()->json(['success' => true, 'message' => 'AP invoice berhasil diperbarui.', 'data' => $this->formatInvoice($supplierInvoice->fresh(['vendor:id,code,name']))]);
+    }
+
     public function submitInvoice(Request $request, SupplierInvoice $supplierInvoice, ApprovalWorkflowService $workflow): JsonResponse
     {
         if (! in_array($supplierInvoice->match_status, ['matched', 'partial_match'], true)) {
