@@ -511,8 +511,8 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
     public function pay(Request $request, ExpenseRequest $expenseRequest, ApprovalWorkflowService $workflow): JsonResponse
     {
-        if (! in_array($expenseRequest->status, ['verified', 'approved', 'posted', 'partially_paid', 'paid'], true)) {
-            throw ValidationException::withMessages(['status' => 'The expense must be verified before payment.']);
+        if (! in_array($expenseRequest->status, ['ready_for_payment', 'partially_paid'], true)) {
+            throw ValidationException::withMessages(['status' => 'The Finance Manager must acknowledge the expense before payment.']);
         }
 
         $data = $request->validate([
@@ -613,6 +613,13 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         });
 
         return response()->json(['success' => true, 'message' => 'Expense payment recorded successfully.', 'data' => $this->format($expense)], Response::HTTP_CREATED);
+    }
+
+    public function acknowledgeFinance(Request $request, ExpenseRequest $expenseRequest): JsonResponse
+    {
+        if ($expenseRequest->status !== 'verified') throw ValidationException::withMessages(['status' => 'Only verified expenses can be acknowledged.']);
+        $expenseRequest->update(['status' => 'ready_for_payment', 'finance_acknowledged_by' => $request->user()->id, 'finance_acknowledged_at' => now()]);
+        return response()->json(['success' => true, 'message' => 'Finance Manager acknowledgement recorded. Expense is ready for payment.', 'data' => $this->format($expenseRequest->fresh($this->with))]);
     }
 
     public function settle(Request $request, ExpenseRequest $expenseRequest, \App\Services\Approval\ApprovalWorkflowService $workflow): JsonResponse
