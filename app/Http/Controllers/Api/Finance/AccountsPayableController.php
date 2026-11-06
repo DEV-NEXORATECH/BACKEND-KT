@@ -47,6 +47,7 @@ class AccountsPayableController extends Controller
     {
         $data = $request->validate([
             'invoice_number' => ['required', 'string', 'max:80', 'unique:supplier_invoices,invoice_number'],
+            'reference_number' => ['nullable', 'string', 'max:100'],
             'vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
@@ -769,6 +770,7 @@ class AccountsPayableController extends Controller
             'id' => $invoice->id,
             'source_type' => $invoice->source_type ?: 'procurement',
             'invoice_number' => $invoice->invoice_number,
+            'reference_number' => $invoice->reference_number,
             'vendor_name' => $invoice->vendor?->name,
             'tax' => $invoice->tax ? ['id' => $invoice->tax->id, 'code' => $invoice->tax->code, 'name' => $invoice->tax->name, 'tax_type' => $invoice->tax->tax_type, 'rate_percent' => $invoice->tax->rate_percent] : null,
             'po_number' => $invoice->purchaseOrder?->po_number,
