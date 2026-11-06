@@ -15,7 +15,7 @@ class ChartOfAccount extends Model
 
     protected $table = 'chart_of_accounts';
 
-    protected $fillable = ['parent_id', 'account_category_id', 'code', 'name', 'account_type', 'normal_balance', 'opening_balance', 'opening_balance_date', 'level', 'is_header', 'is_active', 'fiscal_year_id', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['parent_id', 'account_category_id', 'code', 'name', 'account_type', 'detail_type', 'normal_balance', 'opening_balance', 'opening_balance_date', 'level', 'is_header', 'is_active', 'fiscal_year_id', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
