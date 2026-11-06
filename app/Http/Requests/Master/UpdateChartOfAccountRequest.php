@@ -42,6 +42,11 @@ class UpdateChartOfAccountRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            $prefixes = ['asset' => '1', 'liability' => '2', 'equity' => '3', 'revenue' => '4', 'expense' => '5', 'other_income' => '6', 'other_expense' => '7'];
+            $type = (string) $this->input('account_type');
+            if ($this->filled('code') && isset($prefixes[$type]) && ! str_starts_with((string) $this->input('code'), $prefixes[$type])) {
+                $validator->errors()->add('code', "Nomor akun {$type} harus diawali {$prefixes[$type]}.");
+            }
             $currentId = (int) $this->route('id');
             if ($this->filled('parent_id') && $this->integer('parent_id') === $currentId) {
                 $validator->errors()->add('parent_id', 'Akun tidak dapat menjadi parent untuk dirinya sendiri.');

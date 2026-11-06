@@ -43,6 +43,11 @@ class StoreChartOfAccountRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            $prefixes = ['asset' => '1', 'liability' => '2', 'equity' => '3', 'revenue' => '4', 'expense' => '5', 'other_income' => '6', 'other_expense' => '7'];
+            $type = (string) $this->input('account_type');
+            if ($this->filled('code') && isset($prefixes[$type]) && ! str_starts_with((string) $this->input('code'), $prefixes[$type])) {
+                $validator->errors()->add('code', "Nomor akun {$type} harus diawali {$prefixes[$type]}.");
+            }
             if (! $this->filled('parent_id')) return;
             $parent = ChartOfAccount::find($this->integer('parent_id'));
             if (! $parent?->is_header || (int) $parent->level !== 1) {
