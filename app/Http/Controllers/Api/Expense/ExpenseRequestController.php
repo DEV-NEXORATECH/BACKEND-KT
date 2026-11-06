@@ -287,7 +287,7 @@ class ExpenseRequestController extends Controller
     {
         if ($expenseRequest->status !== 'submitted') throw ValidationException::withMessages(['status' => 'The expense must be submitted before verification.']);
         $checklist = $request->input('checklist', []);
-        $requiredChecks = ['document_complete', 'budget_available', 'coa_valid', 'funding_valid', 'supporting_document_attached'];
+        $requiredChecks = ['documents_verified'];
         // The web and PWA clients send the checklist explicitly. Older API
         // clients did not have this field, so an omitted checklist remains a
         // legacy verification call; an explicitly supplied checklist is
