@@ -442,7 +442,8 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             }
             $linesToPost = $isCashAdvance ? collect() : $expenseRequest->lines;
             foreach ($linesToPost as $line) {
-                $account = $line->budgetLine?->glAccount
+                $account = $line->glAccount
+                    ?? $line->budgetLine?->glAccount
                     ?? $line->expenseCategory?->defaultGlAccount
                     ?? ChartOfAccount::where('account_type', 'expense')->where('is_header', false)->first();
                 if (! $account) {
@@ -788,6 +789,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'funding_allocations.*.amount' => ['required_with:funding_allocations', 'numeric', 'min:0.01'],
             'lines.*.expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
             'lines.*.budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
+            'lines.*.gl_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'lines.*.description' => ['required', 'string', 'max:255'],
             'lines.*.quantity' => ['nullable', 'numeric', 'gt:0'],
             'lines.*.unit' => ['nullable', 'string', 'max:40'],
