@@ -24,7 +24,7 @@ class AccountsPayableController extends Controller
 {
     public function invoices(Request $request): JsonResponse
     {
-        $query = SupplierInvoice::with(['vendor:id,code,name,npwp', 'tax:id,code,name,tax_type,rate_percent', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines.purchaseOrderLine.budgetLine.glAccount']);
+        $query = SupplierInvoice::with(['vendor:id,code,name,npwp', 'tax:id,code,name,tax_type,rate_percent', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'lines.purchaseOrderLine.budgetLine.glAccount', 'payments:id,supplier_invoice_id,payment_number,payment_date,amount,reference']);
         
         app(\App\Services\Rbac\DataScopeService::class)->applyScope(
             $query,
@@ -806,6 +806,7 @@ class AccountsPayableController extends Controller
             'total_amount' => $invoice->total_amount,
             'paid_amount' => $invoice->paid_amount,
             'outstanding_amount' => round((float) $invoice->total_amount - (float) $invoice->paid_amount, 2),
+            'payment_history' => $invoice->relationLoaded('payments') ? $invoice->payments->map(fn ($payment) => ['id' => $payment->id, 'payment_number' => $payment->payment_number, 'payment_date' => $payment->payment_date?->toDateString(), 'amount' => $payment->amount, 'reference' => $payment->reference])->values()->all() : [],
         ];
     }
 }

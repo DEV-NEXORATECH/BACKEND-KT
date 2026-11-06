@@ -42,4 +42,9 @@ class SupplierInvoice extends Model
     {
         return $this->hasMany(SupplierInvoiceLine::class);
     }
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(\App\Models\Finance\Payment::class);
+    }
 }
