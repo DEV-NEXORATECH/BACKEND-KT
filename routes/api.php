@@ -69,6 +69,7 @@ use App\Http\Controllers\Api\Master\ReportingCategoryController;
 use App\Http\Controllers\Api\Master\UnitOfMeasureController;
 use App\Http\Controllers\Api\Master\BudgetCategoryController;
 use App\Http\Controllers\Api\Master\BudgetLineController;
+use App\Http\Controllers\Api\Master\ExpenseClassController;
 use App\Http\Controllers\Api\Master\EmployeeController;
 use App\Http\Controllers\Api\Master\VendorController;
 use App\Http\Controllers\Api\Master\ExpenseCategoryController;
@@ -454,6 +455,7 @@ Route::middleware('auth:sanctum')->group(function () {
             'unit-of-measures' => UnitOfMeasureController::class,
             'budget-categories' => BudgetCategoryController::class,
             'budget-lines' => BudgetLineController::class,
+            'expense-classes' => ExpenseClassController::class,
             'employees' => EmployeeController::class,
             'positions' => PositionController::class,
             'vendors' => VendorController::class,
