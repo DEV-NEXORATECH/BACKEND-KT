@@ -195,4 +195,22 @@ class ContractController extends Controller
             'data' => $contract->fresh($this->with),
         ]);
     }
+
+    public function ongoing(Contract $contract): JsonResponse
+    {
+        if (! in_array($contract->status, ['active', 'ongoing'], true)) {
+            throw ValidationException::withMessages(['status' => 'Kontrak harus aktif sebelum ditandai ongoing.']);
+        }
+        $contract->update(['status' => 'ongoing']);
+        return response()->json(['success' => true, 'message' => 'Kontrak ditandai ongoing.', 'data' => $contract->fresh($this->with)]);
+    }
+
+    public function completed(Contract $contract): JsonResponse
+    {
+        if (! in_array($contract->status, ['active', 'ongoing'], true)) {
+            throw ValidationException::withMessages(['status' => 'Hanya kontrak aktif atau ongoing yang dapat diselesaikan.']);
+        }
+        $contract->update(['status' => 'completed']);
+        return response()->json(['success' => true, 'message' => 'Kontrak ditandai completed.', 'data' => $contract->fresh($this->with)]);
+    }
 }
