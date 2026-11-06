@@ -511,8 +511,8 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
 
     public function pay(Request $request, ExpenseRequest $expenseRequest, ApprovalWorkflowService $workflow): JsonResponse
     {
-        if (! in_array($expenseRequest->status, ['posted', 'paid'], true)) {
-            throw ValidationException::withMessages(['status' => 'The expense must be posted before payment.']);
+        if (! in_array($expenseRequest->status, ['verified', 'approved', 'posted', 'partially_paid', 'paid'], true)) {
+            throw ValidationException::withMessages(['status' => 'The expense must be verified before payment.']);
         }
 
         $data = $request->validate([
@@ -522,6 +522,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'amount' => ['required', 'numeric', 'min:0.01'],
             'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
             'reference' => ['nullable', 'string', 'max:100'],
+            'payment_proof' => ['nullable', 'file', 'max:5120', 'mimes:pdf,jpg,jpeg,png'],
         ]);
         $approval = $workflow->approve('payment', $expenseRequest, $request->user(), $request->input('notes'));
         if (! $approval['managed']) {
@@ -546,7 +547,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             throw ValidationException::withMessages(['account' => 'A liability/payable CoA is not configured.']);
         }
 
-        $expense = DB::transaction(function () use ($expenseRequest, $data, $bank, $payable, $isCashAdvance) {
+        $expense = DB::transaction(function () use ($expenseRequest, $data, $bank, $payable, $isCashAdvance, $request) {
             $requestRate = max((float) ($expenseRequest->exchange_rate ?: 1), 0.000001);
             $paymentRate = max((float) ($data['exchange_rate'] ?? $requestRate), 0.000001);
             $functionalAmount = round((float) $data['amount'] * $paymentRate, 2);
@@ -586,6 +587,9 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
                 'journal_id' => $journal->id,
                 'created_by' => request()->user()->id,
             ]);
+            if ($request->hasFile('payment_proof')) {
+                $payment->update(['attachments' => [['name' => $request->file('payment_proof')->getClientOriginalName(), 'path' => $request->file('payment_proof')->store('expense-payment-proofs', 'public')]]]);
+            }
 
             BankTransaction::create([
                 'fiscal_year_id' => $expenseRequest->fiscal_year_id,
@@ -600,7 +604,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             ]);
 
             $paid = round((float) $expenseRequest->paid_amount + (float) $data['amount'], 2);
-            $updates = ['paid_amount' => $paid, 'status' => $paid >= (float) $expenseRequest->total_amount ? 'paid' : 'posted'];
+            $updates = ['paid_amount' => $paid, 'status' => $paid >= (float) $expenseRequest->total_amount ? 'fully_paid' : 'partially_paid'];
             if ($isCashAdvance && (float) $paid > 0) $updates['settlement_status'] = 'outstanding';
             if ($isCashAdvance && (float) $paid > 0) $updates['settlement_state'] = 'outstanding';
             $expenseRequest->update($updates);
