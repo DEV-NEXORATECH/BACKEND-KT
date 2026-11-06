@@ -137,6 +137,41 @@ class FeatureDataSeeder extends Seeder
             ]);
         }
 
+        // Bank reconciliation exceptions: imported statement lines that do
+        // not have a matching payment. These records intentionally remain
+        // unmatched so the Exception Queue can be tested in the UI.
+        if ($bank) {
+            $unmatchedBankRows = [
+                [
+                    'reference' => 'STMT-UNMATCHED-20260401',
+                    'transaction_date' => '2026-04-01',
+                    'description' => 'Incoming transfer without internal payment reference.',
+                    'debit' => 0,
+                    'credit' => 1250000,
+                ],
+                [
+                    'reference' => 'STMT-MISMATCH-20260402',
+                    'transaction_date' => '2026-04-02',
+                    'description' => 'Supplier payment amount differs from the recorded payment.',
+                    'debit' => 4875000,
+                    'credit' => 0,
+                ],
+            ];
+
+            foreach ($unmatchedBankRows as $row) {
+                $put('bank_transactions', ['bank_account_id' => $bank->id, 'reference' => $row['reference']], [
+                    'payment_id' => null,
+                    'fiscal_year_id' => $fy?->id,
+                    'transaction_date' => $row['transaction_date'],
+                    'description' => $row['description'],
+                    'debit' => $row['debit'],
+                    'credit' => $row['credit'],
+                    'status' => 'unmatched',
+                    'created_by' => $user->id,
+                ]);
+            }
+        }
+
         // Keep approved expenses backed by completed approval workflows so
         // the approval center and PDF can be tested with real approver names,
         // timestamps, and seeded employee signatures.
