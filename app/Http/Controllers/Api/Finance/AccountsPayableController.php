@@ -53,6 +53,7 @@ class AccountsPayableController extends Controller
             'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
             'total_amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
+            'attachment' => ['nullable', 'file', 'max:5120', 'mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx'],
         ]);
 
         $invoice = SupplierInvoice::create([
@@ -64,6 +65,9 @@ class AccountsPayableController extends Controller
             'updated_by' => $request->user()->id,
             'source_type' => 'accounts_payable',
         ]);
+        if ($request->hasFile('attachment')) {
+            $invoice->update(['attachments' => [['name' => $request->file('attachment')->getClientOriginalName(), 'path' => $request->file('attachment')->store('ap-attachments', 'public')]]]);
+        }
 
         return response()->json([
             'success' => true,
@@ -81,8 +85,12 @@ class AccountsPayableController extends Controller
             'invoice_number' => ['required', 'string', 'max:80', 'unique:supplier_invoices,invoice_number,'.$supplierInvoice->id],
             'invoice_date' => ['required', 'date'], 'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
             'total_amount' => ['required', 'numeric', 'min:0'], 'reference_number' => ['nullable', 'string', 'max:100'], 'notes' => ['nullable', 'string'],
+            'attachment' => ['nullable', 'file', 'max:5120', 'mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx'],
         ]);
         $supplierInvoice->update([...$data, 'updated_by' => $request->user()->id]);
+        if ($request->hasFile('attachment')) {
+            $supplierInvoice->update(['attachments' => [['name' => $request->file('attachment')->getClientOriginalName(), 'path' => $request->file('attachment')->store('ap-attachments', 'public')]]]);
+        }
         return response()->json(['success' => true, 'message' => 'AP invoice berhasil diperbarui.', 'data' => $this->formatInvoice($supplierInvoice->fresh(['vendor:id,code,name']))]);
     }
 
