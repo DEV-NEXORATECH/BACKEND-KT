@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\Procurement;
 
 use App\Http\Controllers\Controller;
 use App\Models\Procurement\Contract;
+use App\Models\Procurement\SupplierInvoice;
+use App\Models\Master\ChartOfAccount;
 use App\Services\Rbac\DataScopeService;
 use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -243,6 +245,34 @@ class ContractController extends Controller
             throw ValidationException::withMessages(['status' => 'Hanya kontrak aktif atau ongoing yang dapat diselesaikan.']);
         }
         $contract->update(['status' => 'completed']);
-        return response()->json(['success' => true, 'message' => 'Kontrak ditandai completed.', 'data' => $contract->fresh($this->with)]);
+        $invoice = SupplierInvoice::where('reference_number', $contract->contract_number)
+            ->where('source_type', 'contract_completed')->first();
+        if (! $invoice) {
+            $coa = ChartOfAccount::query()->whereIn('account_type', ['expense', 'EXPENSE'])->orderBy('id')->first();
+            if (! $coa) {
+                throw ValidationException::withMessages(['coa_id' => 'COA Expense belum tersedia untuk membuat AP otomatis.']);
+            }
+            $invoice = SupplierInvoice::create([
+                'vendor_id' => $contract->vendor_id,
+                'coa_id' => $coa->id,
+                'invoice_number' => 'AP-' . $contract->contract_number,
+                'reference_number' => $contract->contract_number,
+                'invoice_date' => now()->toDateString(),
+                'due_date' => $contract->end_date?->toDateString(),
+                'currency_code' => $contract->currency ?: 'IDR',
+                'exchange_rate' => 1,
+                'original_amount' => $contract->total_value,
+                'converted_amount' => $contract->total_value,
+                'total_amount' => $contract->total_value,
+                'paid_amount' => 0,
+                'status' => 'draft',
+                'match_status' => 'unchecked',
+                'notes' => 'Automatically created from completed contract ' . $contract->contract_number,
+                'source_type' => 'contract_completed',
+                'created_by' => request()->user()?->id,
+                'updated_by' => request()->user()?->id,
+            ]);
+        }
+        return response()->json(['success' => true, 'message' => 'Kontrak completed dan AP draft otomatis dibuat.', 'data' => $contract->fresh($this->with), 'ap_invoice_id' => $invoice->id]);
     }
 }
