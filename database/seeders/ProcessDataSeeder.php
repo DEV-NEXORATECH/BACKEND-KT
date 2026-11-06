@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Single entry point for a complete, connected demo process dataset.
@@ -31,5 +32,26 @@ class ProcessDataSeeder extends Seeder
             FullTrialFeatureSeeder::class,
             TrialDataCoverageSeeder::class,
         ]);
+
+        // Keep seeded bank reconciliation statuses consistent with the
+        // internal accounting chain. A bank line without a payment/journal
+        // must not appear as reconciled in the reconciliation screen.
+        if (DB::getSchemaBuilder()->hasTable('bank_transactions')) {
+            DB::table('bank_transactions')
+                ->whereIn('reference', ['STMT-UNMATCHED-20260401', 'STMT-MISMATCH-20260402'])
+                ->update(['payment_id' => null, 'status' => 'unmatched', 'updated_at' => now()]);
+
+            if (DB::getSchemaBuilder()->hasTable('payments')) {
+                foreach (DB::table('bank_transactions')->whereNotNull('payment_id')->get(['id', 'payment_id']) as $bankTransaction) {
+                    $journalId = DB::table('payments')->where('id', $bankTransaction->payment_id)->value('journal_id');
+                    if (! $journalId) {
+                        DB::table('bank_transactions')->where('id', $bankTransaction->id)->update([
+                            'status' => 'matched',
+                            'updated_at' => now(),
+                        ]);
+                    }
+                }
+            }
+        }
     }
 }

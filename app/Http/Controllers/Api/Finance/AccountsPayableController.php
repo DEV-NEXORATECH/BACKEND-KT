@@ -382,6 +382,8 @@ class AccountsPayableController extends Controller
                 'description' => $transaction->description,
                 'debit' => (float) $transaction->debit,
                 'credit' => (float) $transaction->credit,
+                'difference' => $transaction->difference !== null ? (float) $transaction->difference : null,
+                'remarks' => $transaction->remarks,
                 'status' => $transaction->status,
                 'payment' => $payment ? [
                     'id' => $payment->id,
@@ -698,7 +700,11 @@ class AccountsPayableController extends Controller
     {
         $this->ensureBankTransactionScope($request, $bankTransaction, 'merekonsiliasi');
 
-        $data = $request->validate(['status' => ['required', 'in:matched,excluded,reconciled,unmatched']]);
+        $data = $request->validate([
+            'status' => ['required', 'in:matched,excluded,reconciled,unmatched'],
+            'difference' => ['nullable', 'numeric'],
+            'remarks' => ['nullable', 'string', 'max:5000'],
+        ]);
         $approval = $workflow->approve('bank_reconciliation', $bankTransaction, $request->user(), $request->input('notes'));
         if (! $approval['managed']) {
             $workflow->start('bank_reconciliation', $bankTransaction, (float) $bankTransaction->debit + (float) $bankTransaction->credit, $request->user()->id);
@@ -706,7 +712,11 @@ class AccountsPayableController extends Controller
         }
         if ($approval['managed'] && ! $approval['completed']) return response()->json(['success' => true, 'message' => "Rekonsiliasi menunggu approver level {$approval['next_level']}.", 'data' => $bankTransaction]);
         $previous = ['status' => $bankTransaction->status];
-        $bankTransaction->update(['status' => $data['status']]);
+        $bankTransaction->update([
+            'status' => $data['status'],
+            'difference' => array_key_exists('difference', $data) ? $data['difference'] : $bankTransaction->difference,
+            'remarks' => array_key_exists('remarks', $data) ? $data['remarks'] : $bankTransaction->remarks,
+        ]);
         \App\Models\AuditLog::create([
             'user_id' => $request->user()->id,
             'module' => 'banking',
