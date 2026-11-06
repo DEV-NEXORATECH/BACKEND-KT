@@ -26,8 +26,9 @@ class JournalController extends Controller
         if ($total <= 0 || ! $line) throw ValidationException::withMessages(['journal' => 'Journal harus memiliki nilai debit untuk dibuatkan AP.']);
         $invoice = SupplierInvoice::firstOrCreate(
             ['invoice_number' => $journal->journal_number],
-            ['invoice_date' => $journal->journal_date, 'total_amount' => $total, 'paid_amount' => 0, 'status' => 'posted', 'match_status' => 'matched', 'coa_id' => $line->account_id, 'source_type' => 'journal', 'created_by' => $request->user()->id]
+            ['invoice_date' => $journal->journal_date, 'total_amount' => $total, 'paid_amount' => 0, 'status' => 'draft', 'match_status' => 'matched', 'coa_id' => $line->account_id, 'source_type' => 'journal', 'created_by' => $request->user()->id]
         );
+        $journal->update(['source_type' => 'ap', 'source_id' => $invoice->id]);
         return response()->json(['success' => true, 'message' => 'Journal berhasil dimasukkan ke AP.', 'data' => $invoice], Response::HTTP_CREATED);
     }
 
@@ -46,6 +47,7 @@ class JournalController extends Controller
         if ($invoice->lines()->count() === 0) {
             $invoice->lines()->create(['revenue_account_id' => $line->account_id, 'description' => $journal->description ?: 'AR invoice', 'quantity' => 1, 'unit_price' => $total, 'total_amount' => $total, 'line_order' => 1]);
         }
+        $journal->update(['source_type' => 'ar', 'source_id' => $invoice->id]);
         return response()->json(['success' => true, 'message' => 'Journal berhasil dimasukkan ke AR.', 'data' => $invoice->fresh()], Response::HTTP_CREATED);
     }
     private array $with = [
