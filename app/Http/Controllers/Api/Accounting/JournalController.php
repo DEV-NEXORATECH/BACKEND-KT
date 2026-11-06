@@ -480,6 +480,7 @@ class JournalController extends Controller
             'journal_number' => $journal->journal_number,
             'journal_date' => $journal->journal_date?->toDateString(),
             'journal_type' => $journal->journal_type,
+            'source_type' => $journal->source_type,
             'reference' => $journal->reference,
             'description' => $journal->description,
             'currency_id' => $journal->currency_id,
