@@ -40,6 +40,7 @@ class Contract extends Model
         'scope_of_work',
         'notes',
         'attachments',
+        'signature_path',
         'created_by',
         'updated_by',
         'deleted_by',

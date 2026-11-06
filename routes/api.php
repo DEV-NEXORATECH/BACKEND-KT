@@ -289,6 +289,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('contracts/{contract}', [ContractController::class, 'update'])->middleware('permission:procurement.po.create');
         Route::delete('contracts/{contract}', [ContractController::class, 'destroy'])->middleware('permission:procurement.po.create');
         Route::post('contracts/{contract}/activate', [ContractController::class, 'activate'])->middleware('permission:procurement.po.approve');
+        Route::post('contracts/{contract}/submit', [ContractController::class, 'submit'])->middleware('permission:procurement.po.create');
+        Route::post('contracts/{contract}/approve', [ContractController::class, 'approve'])->middleware('permission:procurement.po.approve');
         Route::post('contracts/{contract}/ongoing', [ContractController::class, 'ongoing'])->middleware('permission:procurement.po.approve');
         Route::post('contracts/{contract}/completed', [ContractController::class, 'completed'])->middleware('permission:procurement.po.approve');
         Route::post('contracts/{contract}/terminate', [ContractController::class, 'terminate'])->middleware('permission:procurement.po.approve');

@@ -101,7 +101,8 @@ class ContractController extends Controller
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'total_value' => ['required', 'numeric', 'min:0'],
             'currency' => ['nullable', 'string', 'max:10'],
-            'status' => ['nullable', 'string', 'in:draft,ongoing,completed,active,expiring_soon,expired,terminated'],
+            'status' => ['nullable', 'string', 'in:draft,pending_approval,ongoing,completed,active,expiring_soon,expired,terminated'],
+            'signature_file' => ['nullable', 'file', 'mimes:pdf,png,jpg,jpeg', 'max:5120'],
             'payment_terms' => ['nullable', 'string'],
             'scope_of_work' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
@@ -116,6 +117,10 @@ class ContractController extends Controller
         }
 
         $data['created_by'] = $request->user()?->id;
+
+        if ($request->hasFile('signature_file')) {
+            $data['signature_path'] = $request->file('signature_file')->store('procurement-contract-signatures', 'public');
+        }
 
         $contract = Contract::create($data);
 
@@ -143,7 +148,7 @@ class ContractController extends Controller
             'end_date' => ['sometimes', 'date', 'after_or_equal:start_date'],
             'total_value' => ['sometimes', 'numeric', 'min:0'],
             'currency' => ['nullable', 'string', 'max:10'],
-            'status' => ['nullable', 'string', 'in:draft,ongoing,completed,active,expiring_soon,expired,terminated'],
+            'status' => ['nullable', 'string', 'in:draft,pending_approval,ongoing,completed,active,expiring_soon,expired,terminated'],
             'payment_terms' => ['nullable', 'string'],
             'scope_of_work' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
@@ -180,6 +185,24 @@ class ContractController extends Controller
             'message' => 'Kontrak berhasil diaktifkan.',
             'data' => $contract->fresh($this->with),
         ]);
+    }
+
+    public function submit(Contract $contract): JsonResponse
+    {
+        if ($contract->status !== 'draft') {
+            throw ValidationException::withMessages(['status' => 'Hanya kontrak draft yang dapat diajukan untuk approval.']);
+        }
+        $contract->update(['status' => 'pending_approval']);
+        return response()->json(['success' => true, 'message' => 'Kontrak diajukan untuk approval.', 'data' => $contract->fresh($this->with)]);
+    }
+
+    public function approve(Contract $contract): JsonResponse
+    {
+        if ($contract->status !== 'pending_approval') {
+            throw ValidationException::withMessages(['status' => 'Kontrak belum berstatus pending approval.']);
+        }
+        $contract->update(['status' => 'active']);
+        return response()->json(['success' => true, 'message' => 'Kontrak disetujui dan menjadi active.', 'data' => $contract->fresh($this->with)]);
     }
 
     public function terminate(Contract $contract): JsonResponse
