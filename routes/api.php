@@ -217,6 +217,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('journals/{journal}/submit', [JournalController::class, 'submit'])->middleware('permission:accounting.journal.submit');
         Route::post('journals/{journal}/review', [JournalController::class, 'review'])->middleware('permission:accounting.journal.review');
         Route::post('journals/{journal}/post', [JournalController::class, 'post'])->middleware('permission:accounting.journal.post');
+        Route::post('journals/{journal}/post-to-ap', [JournalController::class, 'postToAp'])->middleware('permission:accounting.journal.post');
         Route::post('journals/{journal}/reverse', [JournalController::class, 'reverse'])->middleware('permission:accounting.journal.reverse');
     });
 

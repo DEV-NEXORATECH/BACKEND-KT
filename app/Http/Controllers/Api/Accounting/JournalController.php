@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Accounting;
 
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
+use App\Models\Procurement\SupplierInvoice;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -14,6 +15,20 @@ use Symfony\Component\HttpFoundation\Response;
 
 class JournalController extends Controller
 {
+    public function postToAp(Request $request, Journal $journal): JsonResponse
+    {
+        if ($journal->status === 'posted') {
+            throw ValidationException::withMessages(['journal' => 'Journal yang sudah posted tidak dapat dimasukkan ulang ke AP.']);
+        }
+        $total = (float) $journal->lines()->sum('debit');
+        $line = $journal->lines()->where('debit', '>', 0)->first();
+        if ($total <= 0 || ! $line) throw ValidationException::withMessages(['journal' => 'Journal harus memiliki nilai debit untuk dibuatkan AP.']);
+        $invoice = SupplierInvoice::firstOrCreate(
+            ['invoice_number' => $journal->journal_number],
+            ['invoice_date' => $journal->journal_date, 'total_amount' => $total, 'paid_amount' => 0, 'status' => 'draft', 'match_status' => 'unchecked', 'coa_id' => $line->account_id, 'source_type' => 'journal', 'created_by' => $request->user()->id]
+        );
+        return response()->json(['success' => true, 'message' => 'Journal berhasil dimasukkan ke AP.', 'data' => $invoice], Response::HTTP_CREATED);
+    }
     private array $with = [
         'currency:id,code,name',
         'lines.account:id,code,name',
