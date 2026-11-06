@@ -522,6 +522,23 @@ class FiscalYearDemoSeeder extends Seeder
                 'scope_of_work' => 'Supply and delivery of field mapping equipment.', 'created_by' => $userId ?? null,
                 'updated_at' => now(), 'created_at' => now(),
             ]);
+
+            foreach ([
+                ['number' => 'CTR-2027-DRAFT-01', 'title' => 'Community Training Services', 'status' => 'draft'],
+                ['number' => 'CTR-2027-PENDING-01', 'title' => 'Monitoring and Evaluation Consultant', 'status' => 'pending_approval'],
+                ['number' => 'CTR-2027-ONGOING-01', 'title' => 'Field Office Support Contract', 'status' => 'ongoing'],
+                ['number' => 'CTR-2027-COMPLETED-01', 'title' => 'Baseline Survey Contract', 'status' => 'completed'],
+            ] as $index => $fixture) {
+                DB::table('procurement_contracts')->updateOrInsert(['contract_number' => $fixture['number']], [
+                    'fiscal_year_id' => $fy2027, 'contract_type' => 'professional_services', 'title' => $fixture['title'],
+                    'vendor_id' => $vendorId, 'project_id' => $projectId, 'donor_id' => $donorId,
+                    'start_date' => '2027-02-' . str_pad((string) (10 + $index), 2, '0', STR_PAD_LEFT),
+                    'end_date' => '2027-12-31', 'total_value' => 15000000 + ($index * 2500000),
+                    'currency' => 'IDR', 'status' => $fixture['status'], 'payment_terms' => 'Payment within 30 days.',
+                    'scope_of_work' => 'Seeded contract fixture for status and approval testing.', 'created_by' => $userId ?? null,
+                    'updated_at' => now(), 'created_at' => now(),
+                ]);
+            }
         }
         if ($projectId && Schema::hasTable('procurement_waivers')) {
             DB::table('procurement_waivers')->updateOrInsert(['waiver_number' => 'WVR-2027-001'], [
