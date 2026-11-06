@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Accounting;
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
 use App\Models\Procurement\SupplierInvoice;
+use App\Models\Finance\CustomerInvoice;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -28,6 +29,24 @@ class JournalController extends Controller
             ['invoice_date' => $journal->journal_date, 'total_amount' => $total, 'paid_amount' => 0, 'status' => 'posted', 'match_status' => 'matched', 'coa_id' => $line->account_id, 'source_type' => 'journal', 'created_by' => $request->user()->id]
         );
         return response()->json(['success' => true, 'message' => 'Journal berhasil dimasukkan ke AP.', 'data' => $invoice], Response::HTTP_CREATED);
+    }
+
+    public function postToAr(Request $request, Journal $journal): JsonResponse
+    {
+        if ($journal->status === 'posted') {
+            throw ValidationException::withMessages(['journal' => 'Journal yang sudah posted tidak dapat dimasukkan ulang ke AR.']);
+        }
+        $total = (float) $journal->lines()->sum('credit');
+        $line = $journal->lines()->where('credit', '>', 0)->first();
+        if ($total <= 0 || ! $line) throw ValidationException::withMessages(['journal' => 'Journal harus memiliki nilai credit untuk dibuatkan AR.']);
+        $invoice = CustomerInvoice::firstOrCreate(
+            ['invoice_number' => $journal->journal_number],
+            ['invoice_date' => $journal->journal_date, 'description' => $journal->description, 'total_amount' => $total, 'received_amount' => 0, 'status' => 'draft', 'created_by' => $request->user()->id]
+        );
+        if ($invoice->lines()->count() === 0) {
+            $invoice->lines()->create(['revenue_account_id' => $line->account_id, 'description' => $journal->description ?: 'AR invoice', 'quantity' => 1, 'unit_price' => $total, 'total_amount' => $total, 'line_order' => 1]);
+        }
+        return response()->json(['success' => true, 'message' => 'Journal berhasil dimasukkan ke AR.', 'data' => $invoice->fresh()], Response::HTTP_CREATED);
     }
     private array $with = [
         'currency:id,code,name',
