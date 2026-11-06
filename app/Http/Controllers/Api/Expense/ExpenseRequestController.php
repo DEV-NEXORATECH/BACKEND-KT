@@ -33,7 +33,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ExpenseRequestController extends Controller
 {
-    private array $with = ['requester.employee', 'verifiedBy.employee', 'approvedBy.employee', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'parentExpenseRequest:id,request_number,total_amount,paid_amount,settlement_due_date', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description,gl_account_id,activity_id,sub_output_code,budget_category_id,project_id,grant_agreement_id', 'fundings.budgetLine.grantAgreement:id,donor_id', 'fundings.budgetLine.activity:id,project_id,code,name,target_output', 'fundings.budgetLine.budgetCategory:id,code,name', 'fundings.budgetLine.glAccount:id,code,name', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id,activity_id,sub_output_code,budget_category_id,project_id,grant_agreement_id', 'lines.budgetLine.grantAgreement:id,donor_id', 'lines.budgetLine.activity:id,project_id,code,name,target_output', 'lines.budgetLine.budgetCategory:id,code,name', 'lines.budgetLine.glAccount:id,code,name'];
+    private array $with = ['requester.employee', 'verifiedBy.employee', 'approvedBy.employee', 'payments', 'fiscalYear:id,year,name', 'donor:id,code,name', 'secondDonor:id,code,name', 'grantAgreement', 'program:id,code,name', 'secondProgram:id,code,name', 'project:id,code,name', 'department:id,code,name', 'fundingSource:id,code,name', 'documentType:id,code,name', 'tax:id,code,name', 'parentExpenseRequest:id,request_number,total_amount,paid_amount,settlement_due_date', 'fundings.donor:id,code,name', 'fundings.program:id,code,name', 'fundings.budgetLine:id,line_code,description,gl_account_id,activity_id,sub_output_code,budget_category_id,project_id,grant_agreement_id', 'fundings.budgetLine.grantAgreement:id,donor_id', 'fundings.budgetLine.activity:id,project_id,code,name,target_output', 'fundings.budgetLine.budgetCategory:id,code,name', 'fundings.budgetLine.glAccount:id,code,name', 'lines.expenseCategory:id,code,name,default_gl_account_id', 'lines.budgetLine:id,line_code,description,gl_account_id,activity_id,sub_output_code,budget_category_id,project_id,grant_agreement_id', 'lines.budgetLine.grantAgreement:id,donor_id', 'lines.budgetLine.activity:id,project_id,code,name,target_output', 'lines.budgetLine.budgetCategory:id,code,name', 'lines.budgetLine.glAccount:id,code,name'];
 
     public function index(Request $request): JsonResponse
     {
@@ -1135,6 +1135,17 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             'voucher_number' => $expense->voucher_number,
             'cdv_number' => $expense->cdv_number,
             'verification_checklist' => is_array($expense->verification_checklist) ? $expense->verification_checklist : (json_decode((string) $expense->verification_checklist, true) ?: []),
+            'payment_history' => $expense->payments->map(fn ($payment) => [
+                'id' => $payment->id,
+                'payment_number' => $payment->payment_number,
+                'payment_date' => $payment->payment_date?->toDateString(),
+                'amount' => (float) $payment->amount,
+                'reference' => $payment->reference,
+                'proof' => collect((array) $payment->attachments)->map(fn ($file) => [
+                    'name' => $file['name'] ?? basename((string) ($file['path'] ?? 'Payment Proof')),
+                    'url' => ! empty($file['path']) ? url('/storage/' . ltrim($file['path'], '/')) : null,
+                ])->values()->all(),
+            ])->values()->all(),
             'activity_start_date' => $expense->activity_start_date?->toDateString(),
             'activity_end_date' => $expense->activity_end_date?->toDateString(),
             'category_mismatch_flag' => (bool) $expense->category_mismatch_flag,
