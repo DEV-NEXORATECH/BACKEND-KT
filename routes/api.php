@@ -301,6 +301,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('v1/finance')->group(function () {
         Route::get('ap/invoices', [AccountsPayableController::class, 'invoices'])->middleware('permission:ap.view');
+        Route::post('ap/invoices', [AccountsPayableController::class, 'createInvoice'])->middleware('permission:ap.post');
         Route::post('ap/invoices/{supplierInvoice}/submit', [AccountsPayableController::class, 'submitInvoice'])->middleware('permission:ap.post');
         Route::post('ap/invoices/{supplierInvoice}/reject', [AccountsPayableController::class, 'rejectInvoice'])->middleware('permission:ap.post');
         Route::post('ap/invoices/{supplierInvoice}/post', [AccountsPayableController::class, 'postInvoice'])->middleware('permission:ap.post');

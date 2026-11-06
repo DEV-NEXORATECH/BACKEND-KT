@@ -43,6 +43,33 @@ class AccountsPayableController extends Controller
         ]);
     }
 
+    public function createInvoice(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'invoice_number' => ['required', 'string', 'max:80', 'unique:supplier_invoices,invoice_number'],
+            'vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
+            'invoice_date' => ['required', 'date'],
+            'due_date' => ['nullable', 'date', 'after_or_equal:invoice_date'],
+            'total_amount' => ['required', 'numeric', 'min:0'],
+            'notes' => ['nullable', 'string'],
+        ]);
+
+        $invoice = SupplierInvoice::create([
+            ...$data,
+            'status' => 'draft',
+            'match_status' => 'unchecked',
+            'paid_amount' => 0,
+            'created_by' => $request->user()->id,
+            'updated_by' => $request->user()->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'AP invoice berhasil dibuat.',
+            'data' => $this->formatInvoice($invoice->fresh(['vendor:id,code,name'])),
+        ], Response::HTTP_CREATED);
+    }
+
     public function submitInvoice(Request $request, SupplierInvoice $supplierInvoice, ApprovalWorkflowService $workflow): JsonResponse
     {
         if (! in_array($supplierInvoice->match_status, ['matched', 'partial_match'], true)) {
