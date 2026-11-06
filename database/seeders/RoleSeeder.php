@@ -179,8 +179,6 @@ class RoleSeeder extends Seeder
                 ['title' => 'Payables & Receivables', 'slug' => 'payables-receivables', 'path' => '/accounting/payables-receivables', 'sort_order' => 44, 'children' => [
                     ['title' => 'Accounts Payable', 'slug' => 'accounts-payable', 'path' => '/accounting/accounts-payable', 'sort_order' => 441],
                     ['title' => 'Accounts Receivable', 'slug' => 'accounts-receivable', 'path' => '/accounting/accounts-receivable', 'sort_order' => 442],
-                    ['title' => 'AP Workflow', 'slug' => 'accounts-payable-workflow', 'path' => '/accounting/ap-workflow', 'sort_order' => 443],
-                    ['title' => 'AR Workflow', 'slug' => 'accounts-receivable-workflow', 'path' => '/accounting/ar-workflow', 'sort_order' => 444],
                     ['title' => 'Supplier Invoices (AP)', 'slug' => 'payables-supplier-invoices', 'path' => '/procurement/supplier-invoices', 'sort_order' => 445],
                     ['title' => 'Customer Invoices (AR)', 'slug' => 'payables-customer-invoices', 'path' => '/accounting/customer-invoices', 'sort_order' => 446],
                     ['title' => 'Staff Aging', 'slug' => 'payables-receivables-aging', 'path' => '/reports/ap-ar-aging', 'sort_order' => 447],
@@ -297,7 +295,7 @@ class RoleSeeder extends Seeder
                 'master-expenses', 'master-expenses-assets', 'master-expense-categories', 'master-expense-types', 'master-assets', 'master-asset-categories',
             ],
             'Accounting' => [
-                'accounting', 'accounting-dashboard', 'accounting-chart-of-accounts', 'journal', 'payables-receivables', 'accounts-payable', 'accounts-receivable', 'accounts-payable-workflow', 'accounts-receivable-workflow', 'payables-supplier-invoices', 'payables-customer-invoices', 'payables-receivables-aging', 'banking', 'bank-reconciliation', 'fixed-assets', 'prepaid-expenses', 'period-closing',
+                'accounting', 'accounting-dashboard', 'accounting-chart-of-accounts', 'journal', 'payables-receivables', 'accounts-payable', 'accounts-receivable', 'payables-supplier-invoices', 'payables-customer-invoices', 'payables-receivables-aging', 'banking', 'bank-reconciliation', 'fixed-assets', 'prepaid-expenses', 'period-closing',
             ],
             'Donor / Grant' => [
                 'donor-grant', 'donor-grant-dashboard', 'donor-grant-donors', 'donor-grant-project-frameworks', 'donor-grant-project-workplan', 'donor-grant-grants', 'donor-grant-budget', 'donor-grant-budget-monitoring', 'donor-grant-reporting', 'donor-grant-donor-reporting',
