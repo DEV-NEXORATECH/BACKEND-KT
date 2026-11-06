@@ -20,7 +20,7 @@ class UpdateChartOfAccountRequest extends FormRequest
             'code' => 'required|string|max:50|unique:chart_of_accounts,code,' . $this->route('id') . ',id',
             'name' => 'required|string|max:150',
             'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
-            'account_type' => 'required|in:asset,liability,equity,revenue,expense',
+            'account_type' => 'required|in:asset,liability,equity,revenue,expense,other_income,other_expense',
             'normal_balance' => 'required|in:debit,credit',
             'opening_balance' => 'nullable|numeric|min:0',
             'opening_balance_date' => 'nullable|date',
@@ -35,6 +35,7 @@ class UpdateChartOfAccountRequest extends FormRequest
         $this->merge([
             'level' => $this->filled('parent_id') ? 2 : 1,
             'is_header' => ! $this->filled('parent_id'),
+            'normal_balance' => in_array($this->input('account_type'), ['asset', 'expense', 'other_expense'], true) ? 'debit' : 'credit',
         ]);
     }
 
