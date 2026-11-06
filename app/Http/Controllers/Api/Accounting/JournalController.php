@@ -25,7 +25,7 @@ class JournalController extends Controller
         if ($total <= 0 || ! $line) throw ValidationException::withMessages(['journal' => 'Journal harus memiliki nilai debit untuk dibuatkan AP.']);
         $invoice = SupplierInvoice::firstOrCreate(
             ['invoice_number' => $journal->journal_number],
-            ['invoice_date' => $journal->journal_date, 'total_amount' => $total, 'paid_amount' => 0, 'status' => 'draft', 'match_status' => 'unchecked', 'coa_id' => $line->account_id, 'source_type' => 'journal', 'created_by' => $request->user()->id]
+            ['invoice_date' => $journal->journal_date, 'total_amount' => $total, 'paid_amount' => 0, 'status' => 'posted', 'match_status' => 'matched', 'coa_id' => $line->account_id, 'source_type' => 'journal', 'created_by' => $request->user()->id]
         );
         return response()->json(['success' => true, 'message' => 'Journal berhasil dimasukkan ke AP.', 'data' => $invoice], Response::HTTP_CREATED);
     }
