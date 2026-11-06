@@ -230,6 +230,7 @@ class AccountsReceivableController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
             'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
             'reference' => ['nullable', 'string', 'max:100'],
+            'attachment' => ['nullable', 'file', 'max:5120', 'mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx'],
         ]);
         app(AccountingPeriodService::class)->ensureOpen($data['payment_date'], 'payment_date');
 
@@ -311,6 +312,10 @@ class AccountsReceivableController extends Controller
 
             return $payment->load(['customerInvoice:id,invoice_number', 'bankAccount:id,bank_name,account_number']);
         });
+
+        if ($request->hasFile('attachment')) {
+            $payment->update(['attachments' => [['name' => $request->file('attachment')->getClientOriginalName(), 'path' => $request->file('attachment')->store('ar-receipts', 'public')]]]);
+        }
 
         return response()->json(['success' => true, 'message' => 'Receipt berhasil dicatat dan bank transaction dibuat.', 'data' => $payment], Response::HTTP_CREATED);
     }
