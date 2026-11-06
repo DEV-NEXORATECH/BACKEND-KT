@@ -103,6 +103,7 @@ class JournalController extends Controller
 
             return $journal->load($this->with);
         });
+        $this->storeAttachment($request, $journal);
 
         return response()->json([
             'success' => true,
@@ -169,6 +170,7 @@ class JournalController extends Controller
 
             return $journal->fresh()->load($this->with);
         });
+        $this->storeAttachment($request, $journal);
 
         return response()->json([
             'success' => true,
@@ -316,6 +318,9 @@ class JournalController extends Controller
 
     private function validatePayload(Request $request, ?Journal $journal = null): array
     {
+        if (is_string($request->input('lines'))) {
+            $request->merge(['lines' => json_decode($request->input('lines'), true) ?: []]);
+        }
         $payload = $request->validate([
             'journal_number' => ['nullable', 'string', 'max:40', 'unique:journals,journal_number,'.($journal?->id ?? 'NULL').',id'],
             'journal_date' => ['required', 'date'],
@@ -343,7 +348,9 @@ class JournalController extends Controller
             'lines.*.location' => ['nullable', 'string', 'max:150'],
             'lines.*.debit' => ['nullable', 'numeric', 'min:0'],
             'lines.*.credit' => ['nullable', 'numeric', 'min:0'],
+            'attachment' => ['nullable', 'file', 'max:5120', 'mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx'],
         ]);
+        unset($payload['attachment']);
 
         // Manual journal entry is the only type exposed by the journal form.
         $payload['journal_type'] = 'manual';
@@ -382,6 +389,14 @@ class JournalController extends Controller
         }
 
         return $payload;
+    }
+
+    private function storeAttachment(Request $request, Journal $journal): void
+    {
+        if (! $request->hasFile('attachment')) return;
+        $attachments = $journal->attachments ?: [];
+        $attachments[] = ['name' => $request->file('attachment')->getClientOriginalName(), 'path' => $request->file('attachment')->store('journal-attachments', 'public')];
+        $journal->update(['attachments' => $attachments]);
     }
 
     private function syncLines(Journal $journal, array $lines): void
