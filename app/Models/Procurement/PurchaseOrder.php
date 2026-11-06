@@ -2,6 +2,7 @@
 
 namespace App\Models\Procurement;
 
+use App\Models\Master\Project;
 use App\Models\Master\Vendor;
 use App\Traits\AuditTrailTrait;
 use App\Traits\FiscalYearScopedTrait;
@@ -33,6 +34,21 @@ class PurchaseOrder extends Model
     public function purchaseRequest(): BelongsTo
     {
         return $this->belongsTo(PurchaseRequest::class);
+    }
+
+    /**
+     * A purchase order inherits its project from the related purchase request.
+     */
+    public function project()
+    {
+        return $this->hasOneThrough(
+            Project::class,
+            PurchaseRequest::class,
+            'id',
+            'id',
+            'purchase_request_id',
+            'project_id',
+        );
     }
 
     public function vendor(): BelongsTo
