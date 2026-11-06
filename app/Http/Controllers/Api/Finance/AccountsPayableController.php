@@ -61,6 +61,7 @@ class AccountsPayableController extends Controller
             'paid_amount' => 0,
             'created_by' => $request->user()->id,
             'updated_by' => $request->user()->id,
+            'source_type' => 'accounts_payable',
         ]);
 
         return response()->json([
@@ -766,6 +767,7 @@ class AccountsPayableController extends Controller
 
         return [
             'id' => $invoice->id,
+            'source_type' => $invoice->source_type ?: 'procurement',
             'invoice_number' => $invoice->invoice_number,
             'vendor_name' => $invoice->vendor?->name,
             'tax' => $invoice->tax ? ['id' => $invoice->tax->id, 'code' => $invoice->tax->code, 'name' => $invoice->tax->name, 'tax_type' => $invoice->tax->tax_type, 'rate_percent' => $invoice->tax->rate_percent] : null,
