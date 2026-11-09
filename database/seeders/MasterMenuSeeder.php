@@ -36,6 +36,9 @@ class MasterMenuSeeder extends Seeder
         $groups = [
             ['title' => 'Finance & Accounting', 'slug' => 'master-finance-accounting', 'sort_order' => 17, 'children' => [
                 ['title' => 'Bank Accounts', 'slug' => 'master-bank-accounts', 'path' => '/master-data/bank-accounts', 'sort_order' => 177],
+                ['title' => 'Chart of Accounts', 'slug' => 'master-chart-of-accounts', 'path' => '/master-data/chart-of-accounts', 'sort_order' => 170],
+                ['title' => 'Cost Centers', 'slug' => 'master-cost-centers', 'path' => '/master-data/cost-centers', 'sort_order' => 180],
+                ['title' => 'Petty Cash', 'slug' => 'master-petty-cashes', 'path' => '/master-data/petty-cashes', 'sort_order' => 182],
                 ['title' => 'Payment Methods', 'slug' => 'master-payment-methods', 'path' => '/master-data/payment-methods', 'sort_order' => 179],
                 ['title' => 'Fx Rates', 'slug' => 'master-fx-rates', 'path' => '/master-data/exchange-rates', 'sort_order' => 172],
                 ['title' => 'Currencies', 'slug' => 'master-currencies', 'path' => '/master-data/currencies', 'sort_order' => 171],
@@ -51,9 +54,18 @@ class MasterMenuSeeder extends Seeder
                 ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 181],
                 ['title' => 'Donor Types', 'slug' => 'master-donor-types', 'path' => '/master-data/donor-types', 'sort_order' => 182],
                 ['title' => 'Grant Agreements', 'slug' => 'master-grant-agreements', 'path' => '/master-data/grant-agreements', 'sort_order' => 183],
+                ['title' => 'Funding Sources', 'slug' => 'master-funding-sources', 'path' => '/master-data/funding-sources', 'sort_order' => 184],
+                ['title' => 'Donors', 'slug' => 'master-donors', 'path' => '/master-data/donors', 'sort_order' => 185],
+            ]],
+            ['title' => 'Budget & Reporting', 'slug' => 'master-budget-reporting', 'sort_order' => 19, 'children' => [
+                ['title' => 'Budget Categories', 'slug' => 'master-budget-categories', 'path' => '/master-data/budget-categories', 'sort_order' => 193],
+                ['title' => 'Budget Lines', 'slug' => 'master-budget-lines', 'path' => '/master-data/budget-lines', 'sort_order' => 194],
+                ['title' => 'Reporting Categories', 'slug' => 'master-reporting-categories', 'path' => '/master-data/reporting-categories', 'sort_order' => 195],
+                ['title' => 'Reporting Dimensions', 'slug' => 'master-reporting-dimensions', 'path' => '/master-data/reporting-dimensions', 'sort_order' => 196],
             ]],
             ['title' => 'Expenses', 'slug' => 'master-expenses', 'sort_order' => 20, 'children' => [
                 ['title' => 'Expense Categories', 'slug' => 'master-expense-categories', 'path' => '/master-data/expense-categories', 'sort_order' => 201],
+                ['title' => 'Expense Classes', 'slug' => 'master-expense-classes', 'path' => '/master-data/expense-classes', 'sort_order' => 200],
                 ['title' => 'Document Types', 'slug' => 'master-expense-types', 'path' => '/master-data/document-types', 'sort_order' => 202],
             ]],
             ['title' => 'Assets', 'slug' => 'master-assets', 'sort_order' => 21, 'children' => [
@@ -94,15 +106,6 @@ class MasterMenuSeeder extends Seeder
         // single integrated master page. Disable legacy duplicate entries.
         Menu::whereIn('slug', ['master-budget-codes', 'master-sof'])
             ->update(['is_active' => false]);
-
-        // Budget and Forecast is a functional module, not Master Data.
-        // Keep the configuration tables available to the budget module, but
-        // remove their duplicate navigation from the Master Data sidebar.
-        Menu::whereIn('slug', [
-            'master-budget-reporting', 'master-budget-categories',
-            'master-reporting-categories', 'master-reporting-dimensions',
-            'master-budget-lines',
-        ])->update(['is_active' => false]);
 
         // Keep the functional Donor & Grant navigation in sync when this
         // standalone menu seeder is run without RoleSeeder first.
