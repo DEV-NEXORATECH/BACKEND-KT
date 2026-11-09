@@ -11,22 +11,13 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Keep the default environment intentionally empty outside the
-        // access-control and approval foundations. Feature/demo data must be
-        // requested explicitly through its dedicated seeder.
+        // Keep the default environment limited to login, roles/permissions,
+        // menus, and approval workflow foundations. All feature/demo/master
+        // data must be requested explicitly through its dedicated seeder.
         $this->call([
             RoleSeeder::class,
-            DepartmentSeeder::class,
-            MasterDataSeeder::class,
-            ExpenseChartOfAccountsSeeder::class,
-            ChartOfAccountHierarchySeeder::class,
-            DonorTypeSeeder::class,
-            MasterMenuSeeder::class,
             UserSeeder::class,
             ApprovalMatrixSeeder::class,
-            ProcessDataSeeder::class,
-            ExpenseApprovalChainSeeder::class,
-            BudgetAlertThresholdSeeder::class,
         ]);
     }
 }
