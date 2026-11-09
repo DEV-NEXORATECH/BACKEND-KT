@@ -20,6 +20,69 @@ use Throwable;
 
 class IntegratedDonorGrantController extends Controller
 {
+    public function export(Request $request)
+    {
+        $records = Donor::with([
+            'grantAgreements.currency',
+            'grantAgreements.fundingSource',
+            'grantAgreements.bankAccount',
+            'grantAgreements.reportingDeadlines',
+            'grantAgreements.projects.logframes',
+            'grantAgreements.projects.workplans',
+            'grantAgreements.projects.budgetLines',
+        ])->get();
+        if ($request->query('format') === 'json') {
+            $payload = $records->map(function ($donor) {
+                $grant = $donor->grantAgreements->first();
+                $project = $grant?->projects?->first();
+                return [
+                    'donor' => $donor->only(['code', 'name', 'type', 'country', 'contact_person', 'email', 'phone']),
+                    'grant' => $grant ? array_merge($grant->only(['grant_no', 'agreement_no', 'agreement_date', 'agreement_name', 'terms_conditions', 'reporting_period', 'donor_fiscal_calendar', 'grant_value', 'start_date', 'end_date', 'status']), [
+                        'currency_id' => $grant->currency_id,
+                        'funding_source_id' => $grant->funding_source_id,
+                        'bank_account_id' => $grant->bank_account_id,
+                    ]) : [],
+                    'project' => $project ? $project->only(['code', 'name', 'program_id', 'theme', 'manager_name', 'start_date', 'end_date', 'total_budget']) : [],
+                    'frameworks' => $project?->logframes?->map->only(['level', 'code', 'description', 'indicator', 'baseline', 'target'])->values() ?? [],
+                    'workplans' => $project?->workplans?->map->only(['output_code', 'activity', 'start_date', 'end_date', 'status', 'baseline'])->values() ?? [],
+                    'budgets' => $project?->budgetLines?->map->only(['line_code', 'description', 'budget_category_id', 'total_amount'])->values() ?? [],
+                    'deadlines' => $grant?->reportingDeadlines?->map->only(['report_type', 'period_label', 'due_date', 'status', 'notes', 'reminder_days'])->values() ?? [],
+                ];
+            })->values();
+            return response()->json(['template_version' => 'donor-grant-integrated-v1', 'records' => $payload]);
+        }
+        $rows = [['Donor Code', 'Donor Name', 'Donor Type', 'Grant No', 'Agreement Name', 'Project Code', 'Project Name', 'Grant Value', 'Status']];
+        foreach ($records as $donor) {
+            foreach ($donor->grantAgreements as $grant) {
+                $projects = $grant->projects->isEmpty() ? [null] : $grant->projects;
+                foreach ($projects as $project) {
+                    $rows[] = [$donor->code, $donor->name, $donor->type, $grant->grant_no, $grant->agreement_name, $project?->code, $project?->name, $grant->grant_value, $grant->status];
+                }
+            }
+        }
+        return response()->streamDownload(function () use ($rows) {
+            $handle = fopen('php://output', 'w');
+            foreach ($rows as $row) fputcsv($handle, $row);
+            fclose($handle);
+        }, 'donor-grant-integrated-'.now()->format('Y-m-d').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    public function import(Request $request)
+    {
+        $request->validate(['file' => 'required|file|mimes:json,txt|max:20480']);
+        $payload = json_decode($request->file('file')->get(), true);
+        if (!is_array($payload) || ($payload['template_version'] ?? null) !== 'donor-grant-integrated-v1' || empty($payload['records'])) {
+            return response()->json(['message' => 'Template Donor & Grant Terintegrasi tidak valid.'], 422);
+        }
+        $created = 0;
+        foreach ($payload['records'] as $record) {
+            $response = $this->store(Request::create('/v1/master/donor-grant-integrated', 'POST', $record));
+            if ($response->getStatusCode() >= 300) return $response;
+            $created++;
+        }
+        return response()->json(['success' => true, 'message' => 'Import Donor & Grant Terintegrasi berhasil.', 'created' => $created]);
+    }
+
     private function budgetLineDefaults(array $budget, GrantAgreement $grant): array
     {
         // Integrated Donor & Grant writes BudgetLine directly, so keep the same
