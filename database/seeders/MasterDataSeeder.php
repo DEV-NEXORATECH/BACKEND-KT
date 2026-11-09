@@ -617,7 +617,7 @@ class MasterDataSeeder extends Seeder
             $coaCode = $bankAccountCoaMap[$ba['account_number']] ?? '10200';
             // Include soft-deleted records so rerunning the seeder cannot hit
             // the unique account_number index with an existing deleted row.
-            $createdBankAccounts[$ba['account_number']] = BankAccount::withTrashed()->updateOrCreate(
+            $createdBankAccounts[$ba['account_number']] = BankAccount::withoutGlobalScopes()->withTrashed()->updateOrCreate(
                 ['account_number' => $ba['account_number']],
                 [
                     'organization_id' => $org->id,
