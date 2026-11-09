@@ -196,12 +196,12 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1/accounting')->group(function () {
-        Route::get('prepaid-expenses', [PrepaidExpenseController::class, 'index']);
-        Route::get('prepaid-expenses/options', [PrepaidExpenseController::class, 'options']);
-        Route::post('prepaid-expenses', [PrepaidExpenseController::class, 'store']);
-        Route::put('prepaid-expenses/{prepaidExpense}', [PrepaidExpenseController::class, 'update']);
-        Route::delete('prepaid-expenses/{prepaidExpense}', [PrepaidExpenseController::class, 'destroy']);
-        Route::get('prepaid-expenses/{prepaidExpense}/schedule', [PrepaidExpenseController::class, 'schedule']);
+        Route::get('prepaid-expenses', [PrepaidExpenseController::class, 'index'])->middleware('permission:accounting.prepaid.view');
+        Route::get('prepaid-expenses/options', [PrepaidExpenseController::class, 'options'])->middleware('permission:accounting.prepaid.view');
+        Route::post('prepaid-expenses', [PrepaidExpenseController::class, 'store'])->middleware('permission:accounting.prepaid.create');
+        Route::put('prepaid-expenses/{prepaidExpense}', [PrepaidExpenseController::class, 'update'])->middleware('permission:accounting.prepaid.update');
+        Route::delete('prepaid-expenses/{prepaidExpense}', [PrepaidExpenseController::class, 'destroy'])->middleware('permission:accounting.prepaid.delete');
+        Route::get('prepaid-expenses/{prepaidExpense}/schedule', [PrepaidExpenseController::class, 'schedule'])->middleware('permission:accounting.prepaid.view');
         Route::get('dashboard', [AccountingDashboardController::class, 'index'])->middleware('permission:accounting.view');
         Route::get('general-ledger', [GeneralLedgerController::class, 'index'])->middleware('permission:accounting.view');
         Route::post('recurring-journals/{recurringJournal}/generate', [RecurringJournalController::class, 'generate'])
@@ -309,6 +309,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1/finance')->group(function () {
         Route::get('ap/invoices', [AccountsPayableController::class, 'invoices'])->middleware('permission:ap.view');
         Route::post('ap/invoices', [AccountsPayableController::class, 'createInvoice'])->middleware('permission:ap.post');
+        Route::post('ap/invoices/import', [AccountsPayableController::class, 'importInvoices'])->middleware('permission:ap.post');
         Route::put('ap/invoices/{supplierInvoice}', [AccountsPayableController::class, 'updateInvoice'])->middleware('permission:ap.post');
         Route::post('ap/invoices/{supplierInvoice}/submit', [AccountsPayableController::class, 'submitInvoice'])->middleware('permission:ap.post');
         Route::post('ap/invoices/{supplierInvoice}/reject', [AccountsPayableController::class, 'rejectInvoice'])->middleware('permission:ap.post');
@@ -318,6 +319,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('ar/customers', [AccountsReceivableController::class, 'storeCustomer'])->middleware('permission:ar.create');
         Route::get('ar/invoices', [AccountsReceivableController::class, 'invoices'])->middleware('permission:ar.view');
         Route::post('ar/invoices', [AccountsReceivableController::class, 'storeInvoice'])->middleware('permission:ar.create');
+        Route::post('ar/invoices/import', [AccountsReceivableController::class, 'importInvoices'])->middleware('permission:ar.create');
         Route::post('ar/invoices/{customerInvoice}/submit', [AccountsReceivableController::class, 'submitInvoice'])->middleware('permission:ar.post');
         Route::post('ar/invoices/{customerInvoice}/reject', [AccountsReceivableController::class, 'rejectInvoice'])->middleware('permission:ar.post');
         Route::post('ar/invoices/{customerInvoice}/post', [AccountsReceivableController::class, 'postInvoice'])->middleware('permission:ar.post');
@@ -359,7 +361,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('v1/assets')->group(function () {
         Route::get('fixed-assets', [FixedAssetController::class, 'index'])->middleware('permission:asset.view');
+        Route::get('fixed-assets/export', [FixedAssetController::class, 'export'])->middleware('permission:asset.view');
         Route::post('fixed-assets', [FixedAssetController::class, 'store'])->middleware('permission:asset.create');
+        Route::post('fixed-assets/import', [FixedAssetController::class, 'import'])->middleware('permission:asset.create');
         Route::put('fixed-assets/{fixedAsset}', [FixedAssetController::class, 'update'])->middleware('permission:asset.create');
         Route::post('fixed-assets/bulk-depreciate', [FixedAssetController::class, 'bulkDepreciate'])->middleware('permission:asset.depreciate');
         Route::post('fixed-assets/stock-opname', [FixedAssetController::class, 'stockOpname'])->middleware('permission:asset.view');

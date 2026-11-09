@@ -9,6 +9,7 @@ use App\Http\Resources\Master\ChartOfAccountResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use App\Services\Rbac\DataScopeService;
 
 class ChartOfAccountController extends BaseMasterController
 {
@@ -69,6 +70,14 @@ class ChartOfAccountController extends BaseMasterController
                 $query->where('status', 'posted')
                     ->when($filters['start_date'] ?? null, fn ($q, $date) => $q->whereDate('journal_date', '>=', $date))
                     ->when($filters['end_date'] ?? null, fn ($q, $date) => $q->whereDate('journal_date', '<=', $date));
+            })
+            ->when(! app(DataScopeService::class)->canAccessAll($request->user()), function ($query) use ($request) {
+                $scope = app(DataScopeService::class);
+                $projectIds = $scope->accessibleProjectIds($request->user());
+                $query->where(function ($inner) use ($request, $projectIds) {
+                    $inner->whereHas('journal', fn ($journal) => $journal->where('created_by', $request->user()->id));
+                    if ($projectIds !== []) $inner->orWhereIn('project_id', $projectIds);
+                });
             })
             ->orderBy('journal_id')->orderBy('line_order')->get();
 

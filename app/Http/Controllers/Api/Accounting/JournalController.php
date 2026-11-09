@@ -156,15 +156,15 @@ class JournalController extends Controller
             $grouped[$number]['reference'] ??= $value($row, $index, ['reference', 'ref']);
             $grouped[$number]['description'] ??= $value($row, $index, ['description', 'journal_description']) ?: 'Imported journal';
             $grouped[$number]['lines'][] = [
-                'account_id' => (int) ($value($row, $index, ['account_id', 'coa_id', 'gl_account_id']) ?: 0),
-                'donor_id' => (int) ($value($row, $index, ['donor_id']) ?: 0),
+                'account_id' => (int) ($value($row, $index, ['account_id', 'coa_id', 'coa', 'gl_account_id']) ?: 0),
+                'donor_id' => (int) ($value($row, $index, ['donor_id', 'sof']) ?: 0),
                 'program_id' => $value($row, $index, ['program_id']) ?: null,
                 'project_id' => $value($row, $index, ['project_id']) ?: null,
-                'budget_line_id' => (int) ($value($row, $index, ['budget_line_id']) ?: 0),
+                'budget_line_id' => (int) ($value($row, $index, ['budget_line_id', 'budget_code']) ?: 0),
                 'department_id' => $value($row, $index, ['department_id']) ?: null,
                 'line_description' => $value($row, $index, ['line_description', 'line_note']) ?: 'Imported journal line',
-                'debit' => (float) ($value($row, $index, ['debit']) ?: 0),
-                'credit' => (float) ($value($row, $index, ['credit']) ?: 0),
+                'debit' => (float) ($value($row, $index, ['debit', 'debits']) ?: 0),
+                'credit' => (float) ($value($row, $index, ['credit', 'credits']) ?: 0),
             ];
         }
         $created = 0; $errors = [];

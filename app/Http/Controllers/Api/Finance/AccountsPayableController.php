@@ -77,6 +77,18 @@ class AccountsPayableController extends Controller
         ], Response::HTTP_CREATED);
     }
 
+    public function importInvoices(Request $request): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:10240']]);
+        $sheet = IOFactory::load($request->file('file')->getRealPath())->getActiveSheet();
+        $rows = $sheet->toArray(null, true, true, true); $headers = array_map(fn ($v) => strtolower(trim((string) $v)), array_shift($rows) ?: []); $map = [];
+        foreach ($headers as $col => $header) $map[preg_replace('/[^a-z0-9]+/', '_', $header)] = $col;
+        $get = fn ($row, $keys) => collect($keys)->first(fn ($key) => isset($map[$key])) !== null ? ($row[$map[collect($keys)->first(fn ($key) => isset($map[$key]))]] ?? null) : null;
+        $created = 0; $errors = [];
+        foreach ($rows as $number => $row) { if (! array_filter($row, fn ($v) => trim((string) $v) !== '')) continue; try { $this->createInvoice(Request::create('/', 'POST', ['invoice_number' => $get($row, ['invoice_number']), 'reference_number' => $get($row, ['reference_number']), 'vendor_id' => (int) $get($row, ['vendor_id']), 'coa_id' => (int) $get($row, ['coa_id']), 'invoice_date' => $get($row, ['invoice_date']), 'due_date' => $get($row, ['due_date']) ?: null, 'total_amount' => (float) $get($row, ['total_amount']), 'notes' => $get($row, ['notes'])])); $created++; } catch (\Throwable $e) { $errors[] = 'Baris '.($number + 2).': '.$e->getMessage(); } }
+        return response()->json(['success' => $created > 0, 'message' => "{$created} AP invoice berhasil diimport, ".count($errors).' gagal.', 'created' => $created, 'errors' => $errors]);
+    }
+
     public function updateInvoice(Request $request, SupplierInvoice $supplierInvoice): JsonResponse
     {
         if ($supplierInvoice->source_type !== 'accounts_payable' || ! in_array($supplierInvoice->status, ['draft', 'matched'], true)) {

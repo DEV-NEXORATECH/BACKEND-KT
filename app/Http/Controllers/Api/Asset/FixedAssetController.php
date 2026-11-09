@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class FixedAssetController extends Controller
 {
@@ -56,6 +57,20 @@ class FixedAssetController extends Controller
         ];
 
         return response()->json(['success' => true, 'totals' => $totals, 'data' => $assets->map(fn (FixedAsset $asset) => $this->format($asset))]);
+    }
+
+    public function export(Request $request)
+    {
+        $query = FixedAsset::query();
+        app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'project_id', 'organization_id', []);
+        $assets = $query->latest('id')->get();
+        $filename = 'fixed-assets-'.now()->format('Ymd_His').'.csv';
+        return response()->streamDownload(function () use ($assets) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, ['Asset Code', 'Asset Name', 'Category ID', 'Acquisition Date', 'Purchase Cost', 'Useful Life (Months)', 'Depreciation Method', 'Status', 'Description']);
+            foreach ($assets as $asset) fputcsv($handle, [$asset->asset_code, $asset->asset_name, $asset->asset_category_id, $asset->acquisition_date?->toDateString(), $asset->acquisition_cost, $asset->useful_life_months, $asset->depreciation_method, $asset->status, $asset->description]);
+            fclose($handle);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     public function reconciliation(Request $request): JsonResponse
@@ -101,6 +116,17 @@ class FixedAssetController extends Controller
         ])->load($this->with);
 
         return response()->json(['success' => true, 'message' => 'Fixed asset berhasil dibuat.', 'data' => $this->format($asset)], Response::HTTP_CREATED);
+    }
+
+    public function import(Request $request): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:10240']]);
+        $sheet = IOFactory::load($request->file('file')->getRealPath())->getActiveSheet(); $rows = $sheet->toArray(null, true, true, true); $headers = array_map(fn ($v) => strtolower(trim((string) $v)), array_shift($rows) ?: []); $map = [];
+        foreach ($headers as $col => $header) $map[preg_replace('/[^a-z0-9]+/', '_', $header)] = $col;
+        $get = fn ($row, $keys) => collect($keys)->first(fn ($key) => isset($map[$key])) !== null ? ($row[$map[collect($keys)->first(fn ($key) => isset($map[$key]))]] ?? null) : null;
+        $created = 0; $errors = [];
+        foreach ($rows as $number => $row) { if (! array_filter($row, fn ($v) => trim((string) $v) !== '')) continue; try { $this->store(Request::create('/', 'POST', ['asset_code' => $get($row, ['asset_code']), 'asset_name' => $get($row, ['asset_name']), 'description' => $get($row, ['description']), 'asset_category_id' => $get($row, ['asset_category_id', 'category_id']) ?: null, 'acquisition_date' => $get($row, ['acquisition_date']), 'in_service_date' => $get($row, ['in_service_date']) ?: null, 'acquisition_cost' => (float) $get($row, ['acquisition_cost', 'purchase_cost']), 'residual_value' => (float) ($get($row, ['residual_value']) ?: 0), 'useful_life_months' => (int) ($get($row, ['useful_life_months']) ?: 60), 'depreciation_method' => $get($row, ['depreciation_method']) ?: 'straight_line', 'is_non_depreciable' => filter_var($get($row, ['is_non_depreciable']), FILTER_VALIDATE_BOOLEAN), 'asset_gl_account_id' => $get($row, ['asset_gl_account_id']) ?: null, 'depreciation_gl_account_id' => $get($row, ['depreciation_gl_account_id']) ?: null, 'accumulated_gl_account_id' => $get($row, ['accumulated_gl_account_id']) ?: null, 'donor_id' => $get($row, ['donor_id']) ?: null, 'program_id' => $get($row, ['program_id']) ?: null, 'project_id' => $get($row, ['project_id']) ?: null, 'vendor_id' => $get($row, ['vendor_id']) ?: null, 'location' => $get($row, ['location']), 'notes' => $get($row, ['notes'])])); $created++; } catch (\Throwable $e) { $errors[] = 'Baris '.($number + 2).': '.$e->getMessage(); } }
+        return response()->json(['success' => $created > 0, 'message' => "{$created} fixed asset berhasil diimport, ".count($errors).' gagal.', 'created' => $created, 'errors' => $errors]);
     }
 
     public function update(Request $request, FixedAsset $fixedAsset): JsonResponse
