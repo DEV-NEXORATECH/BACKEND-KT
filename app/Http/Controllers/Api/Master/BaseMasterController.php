@@ -401,6 +401,19 @@ abstract class BaseMasterController extends Controller
                 $payload['level'] = ! empty($payload['parent_id']) ? 2 : 1;
                 $payload['is_header'] = empty($payload['parent_id']);
                 $payload['normal_balance'] = in_array($payload['account_type'] ?? null, ['asset', 'expense', 'other_expense'], true) ? 'debit' : 'credit';
+
+                foreach (['is_active', 'is_header'] as $booleanField) {
+                    if (array_key_exists($booleanField, $payload)) {
+                        $value = strtolower(trim((string) $payload[$booleanField]));
+                        $payload[$booleanField] = in_array($value, ['1', 'true', 'yes', 'y', 'aktif', 'active'], true) ? 1 : 0;
+                    }
+                }
+                if (isset($payload['parent_id']) && ! is_numeric($payload['parent_id'])) {
+                    $parentId = $importedCoaIds[(string) $payload['parent_id']]
+                        ?? \App\Models\Master\ChartOfAccount::query()->where('name', (string) $payload['parent_id'])->value('id');
+                    if ($parentId) $payload['parent_id'] = $parentId;
+                    else unset($payload['parent_id']);
+                }
             }
 
             if ($this->modelClass === \App\Models\Master\BudgetLine::class) {
