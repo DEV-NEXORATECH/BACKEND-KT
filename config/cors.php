@@ -5,10 +5,15 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => array_filter(array_map('trim', explode(',', env(
-        'CORS_ALLOWED_ORIGINS',
-        'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,https://kaoemtelapak.nexora-technology.id,https://red-lyrebird-398503.hostingersite.com,https://lawngreen-mosquito-967832.hostingersite.com'
-    )))),
+    'allowed_origins' => array_values(array_unique(array_merge(
+        array_filter(array_map('trim', explode(',', env(
+            'CORS_ALLOWED_ORIGINS',
+            'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080'
+        )))),
+        // Keep the deployed web application allowed even when an old
+        // production .env value overrides the default list.
+        ['https://kaoemtelapak.nexora-technology.id']
+    ))),
 
     'allowed_origins_patterns' => [
         '#^http://localhost(:\d+)?$#',
