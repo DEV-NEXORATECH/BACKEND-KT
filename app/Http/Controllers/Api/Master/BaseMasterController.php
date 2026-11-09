@@ -43,6 +43,14 @@ abstract class BaseMasterController extends Controller
                 $table = (new $this->modelClass)->getTable();
                 if (\Illuminate\Support\Facades\Schema::hasColumn($table, 'fiscal_year_id')) {
                     $query->where('fiscal_year_id', $request->integer('fiscal_year_id'));
+                } elseif (in_array($this->modelClass, [
+                    \App\Models\Master\HolidayCalendar::class,
+                    \App\Models\Master\ExchangeRate::class,
+                ], true) && \Illuminate\Support\Facades\Schema::hasColumn($table, 'date')) {
+                    // These date-based masters do not store a fiscal_year_id;
+                    // their fiscal year is derived from the effective date.
+                    $year = \App\Models\Master\FiscalYear::query()->whereKey($request->integer('fiscal_year_id'))->first();
+                    if ($year) $query->whereBetween('date', [$year->start_date, $year->end_date]);
                 }
             }
 
