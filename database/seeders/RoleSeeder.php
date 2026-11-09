@@ -531,6 +531,7 @@ class RoleSeeder extends Seeder
                         'name' => $def['user_name'],
                         'role_id' => $role->id,
                         'password' => Hash::make('password123'),
+                        'must_change_password' => true,
                     ],
                 );
             }

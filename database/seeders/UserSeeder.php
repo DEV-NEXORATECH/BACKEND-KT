@@ -14,6 +14,10 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
+        // All seeded/demo accounts use one temporary password so each user
+        // can sign in and change it through the profile/security flow.
+        $defaultPassword = 'password123';
+
         // Fetch existing roles
         $roles = Role::all()->keyBy('slug');
         $users = [
@@ -197,7 +201,7 @@ class UserSeeder extends Seeder
                 [
                     'name' => $userData['name'],
                     'role_id' => $role?->id,
-                    'password' => Hash::make($userData['password']),
+                    'password' => Hash::make($defaultPassword),
                     'must_change_password' => true,
                 ]
             );
