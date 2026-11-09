@@ -335,9 +335,18 @@ abstract class BaseMasterController extends Controller
         $created = 0;
         $skipped = 0;
         $errors = [];
+        $importedCoaIds = [];
+        $activeFiscalYearId = null;
+        if ($this->modelClass === \App\Models\Master\ChartOfAccount::class) {
+            $activeFiscalYearId = \App\Models\Master\FiscalYear::query()
+                ->where('is_active', true)
+                ->orderByDesc('year')
+                ->value('id');
+        }
         while (true) {
             $row = $rows ? array_shift($rows) : ($handle ? fgetcsv($handle) : false);
             if ($row === false || $row === null) break;
+            $rowNumber = $created + $skipped + 2;
             $payload = [];
             foreach ($headerMap as $index => $header) {
                 if ($header !== null) {
@@ -346,7 +355,53 @@ abstract class BaseMasterController extends Controller
                 }
             }
             $payload = array_filter($payload, static fn ($value) => $value !== null && $value !== '');
-            if (! $payload) continue;
+            if (! $payload) {
+                $skipped++;
+                $errors[] = ['row' => $rowNumber, 'message' => 'Baris kosong atau tidak memiliki kolom yang dikenali.'];
+                continue;
+            }
+
+            if ($this->modelClass === \App\Models\Master\ChartOfAccount::class) {
+                $required = ['code', 'name', 'account_type', 'detail_type'];
+                $missing = array_values(array_filter($required, fn ($field) => ! isset($payload[$field]) || trim((string) $payload[$field]) === ''));
+                if ($missing) {
+                    $skipped++;
+                    $errors[] = ['row' => $rowNumber, 'message' => 'Kolom wajib kosong: '.implode(', ', $missing).'.'];
+                    continue;
+                }
+            }
+
+            if ($this->modelClass === \App\Models\Master\ChartOfAccount::class) {
+                // Fiscal year is required for usable scoped CoA imports. If the
+                // template leaves it blank, use the current active fiscal year.
+                if (empty($payload['fiscal_year_id']) && $activeFiscalYearId) {
+                    $payload['fiscal_year_id'] = $activeFiscalYearId;
+                } elseif (! empty($payload['fiscal_year_id'])) {
+                    // Accept either the database ID or the human fiscal year
+                    // (for example 2026) in spreadsheet imports.
+                    $fiscalYearValue = (int) $payload['fiscal_year_id'];
+                    $fiscalYearId = \App\Models\Master\FiscalYear::query()->whereKey($fiscalYearValue)->value('id')
+                        ?? \App\Models\Master\FiscalYear::query()->where('year', $fiscalYearValue)->value('id');
+                    if ($fiscalYearId) $payload['fiscal_year_id'] = $fiscalYearId;
+                }
+
+                // Parent IDs in a spreadsheet are often not database IDs. Resolve
+                // them from the imported hierarchy (A:B:C -> A:B) instead of
+                // rejecting every child row because of a foreign-key error.
+                $name = trim((string) ($payload['name'] ?? ''));
+                $parts = $name === '' ? [] : explode(':', $name);
+                $parentName = count($parts) > 1 ? implode(':', array_slice($parts, 0, -1)) : null;
+                if ($parentName) {
+                    $parentId = $importedCoaIds[$parentName]
+                        ?? \App\Models\Master\ChartOfAccount::query()->where('name', $parentName)->value('id');
+                    if ($parentId) $payload['parent_id'] = $parentId;
+                } elseif (! empty($payload['parent_id']) && ! \App\Models\Master\ChartOfAccount::query()->whereKey($payload['parent_id'])->exists()) {
+                    unset($payload['parent_id']);
+                }
+                $payload['level'] = ! empty($payload['parent_id']) ? 2 : 1;
+                $payload['is_header'] = empty($payload['parent_id']);
+                $payload['normal_balance'] = in_array($payload['account_type'] ?? null, ['asset', 'expense', 'other_expense'], true) ? 'debit' : 'credit';
+            }
 
             if ($this->modelClass === \App\Models\Master\BudgetLine::class) {
                 $coaCode = trim((string) ($payload['coa_code'] ?? $payload['co_a_code'] ?? ''));
@@ -385,16 +440,20 @@ abstract class BaseMasterController extends Controller
             if (isset($seen[$fingerprint]) || ($identityColumn && ($this->modelClass)::query()->where($identityColumn, $identityValue)->exists())) {
                 $skipped++;
                 $seen[$fingerprint] = true;
+                $errors[] = ['row' => $rowNumber, 'message' => $identityColumn ? "Duplikat {$identityColumn}: {$identityValue}." : 'Data duplikat.'];
                 continue;
             }
 
             try {
                 ($this->modelClass)::create($payload);
+                if ($this->modelClass === \App\Models\Master\ChartOfAccount::class && ! empty($payload['name'])) {
+                    $importedCoaIds[trim((string) $payload['name'])] = (int) ($this->modelClass)::query()->where('code', $payload['code'])->value('id');
+                }
                 $seen[$fingerprint] = true;
                 $created++;
             } catch (Throwable $exception) {
                 $skipped++;
-                if (count($errors) < 5) $errors[] = $exception->getMessage();
+                $errors[] = ['row' => $rowNumber, 'message' => $exception->getMessage()];
             }
         }
         if ($handle) fclose($handle);

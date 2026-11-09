@@ -395,6 +395,7 @@ class MasterDataSeeder extends Seeder
             $coa = ChartOfAccount::updateOrCreate(['code' => $c['code']], [
                 'name' => $c['name'],
                 'account_type' => $c['account_type'],
+                'detail_type' => $c['detail_type'] ?? ($c['is_header'] ? 'Header Account' : ucfirst($c['account_type'])),
                 'normal_balance' => $c['normal_balance'],
                 'level' => $c['level'],
                 'is_header' => $c['is_header'],
