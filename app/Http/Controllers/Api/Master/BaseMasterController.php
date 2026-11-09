@@ -382,6 +382,30 @@ abstract class BaseMasterController extends Controller
                 }
             }
 
+            if ($this->modelClass === \App\Models\Master\BankAccount::class) {
+                // Bank accounts require a currency at database level. If the
+                // import file omits Currency (ID), use the configured base
+                // currency (normally IDR), never a fabricated currency row.
+                if (empty($payload['currency_id']) && ! empty($payload['currency'])) {
+                    $currencyValue = trim((string) $payload['currency']);
+                    $payload['currency_id'] = \App\Models\Master\Currency::query()
+                        ->where('code', strtoupper($currencyValue))
+                        ->value('id');
+                }
+                if (empty($payload['currency_id'])) {
+                    $payload['currency_id'] = \App\Models\Master\Currency::query()
+                        ->where('is_base_currency', true)
+                        ->value('id')
+                        ?? \App\Models\Master\Currency::query()->where('code', 'IDR')->value('id');
+                }
+                unset($payload['currency']);
+                if (empty($payload['currency_id'])) {
+                    $skipped++;
+                    $errors[] = ['row' => $rowNumber, 'message' => 'Currency ID tidak ditemukan. Buat mata uang dasar terlebih dahulu.'];
+                    continue;
+                }
+            }
+
             if ($this->modelClass === \App\Models\Master\ChartOfAccount::class) {
                 // Fiscal year is required for usable scoped CoA imports. If the
                 // template leaves it blank, use the current active fiscal year.

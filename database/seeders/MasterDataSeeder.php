@@ -124,7 +124,8 @@ class MasterDataSeeder extends Seeder
             'is_active' => false,
         ]);
 
-        // Exchange Rates to Base Currency (IDR)
+        // Demo-only rates. Production rates must come from the BI/ECB sync.
+        if (app()->environment(['local', 'testing'])) {
         $rates = [
             ['from' => $usd, 'rate' => 16250.000000],
             ['from' => $eur, 'rate' => 17800.000000],
@@ -162,6 +163,7 @@ class MasterDataSeeder extends Seeder
                 'source' => 'Bank Indonesia JISDOR',
                 'is_active' => true,
             ]);
+        }
         }
 
         // 2. Organization & Structure
@@ -668,6 +670,9 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
+        // Demo-only holidays. Production holidays must be imported by an admin
+        // from the official calendar for the selected fiscal year.
+        if (app()->environment(['local', 'testing'])) {
         // 18. Finance Holiday Calendar used by Cash Advance settlement due dates.
         foreach ([2025, 2026, 2027] as $holidayYear) {
             foreach ([
@@ -685,6 +690,7 @@ class MasterDataSeeder extends Seeder
                     'is_active' => true,
                 ]);
             }
+        }
         }
 
         // 8. Funding Sources & Donors
