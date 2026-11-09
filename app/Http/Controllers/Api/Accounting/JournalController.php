@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class JournalController extends Controller
 {
@@ -131,6 +132,57 @@ class JournalController extends Controller
             'message' => 'Journal berhasil dibuat.',
             'data' => $this->formatJournal($journal),
         ], Response::HTTP_CREATED);
+    }
+
+    public function import(Request $request): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:10240']]);
+        $sheet = IOFactory::load($request->file('file')->getRealPath())->getActiveSheet();
+        $rows = $sheet->toArray(null, true, true, true);
+        $headers = array_map(fn ($value) => strtolower(trim((string) $value)), array_shift($rows) ?: []);
+        $index = [];
+        foreach ($headers as $column => $header) $index[preg_replace('/[^a-z0-9]+/', '_', $header)] = $column;
+        $value = static function (array $row, array $index, array $keys): mixed {
+            foreach ($keys as $key) if (isset($index[$key])) return $row[$index[$key]] ?? null;
+            return null;
+        };
+        $grouped = [];
+        foreach ($rows as $rowNumber => $row) {
+            if (! array_filter($row, fn ($v) => trim((string) $v) !== '')) continue;
+            $number = trim((string) ($value($row, $index, ['journal_number', 'journal_no', 'number']) ?: ''));
+            if ($number === '') $number = 'IMPORT-'.now()->format('YmdHis').'-'.($rowNumber + 2);
+            $grouped[$number]['journal_number'] = $number;
+            $grouped[$number]['journal_date'] ??= $value($row, $index, ['journal_date', 'date']) ?: now()->toDateString();
+            $grouped[$number]['reference'] ??= $value($row, $index, ['reference', 'ref']);
+            $grouped[$number]['description'] ??= $value($row, $index, ['description', 'journal_description']) ?: 'Imported journal';
+            $grouped[$number]['lines'][] = [
+                'account_id' => (int) ($value($row, $index, ['account_id', 'coa_id', 'gl_account_id']) ?: 0),
+                'donor_id' => (int) ($value($row, $index, ['donor_id']) ?: 0),
+                'program_id' => $value($row, $index, ['program_id']) ?: null,
+                'project_id' => $value($row, $index, ['project_id']) ?: null,
+                'budget_line_id' => (int) ($value($row, $index, ['budget_line_id']) ?: 0),
+                'department_id' => $value($row, $index, ['department_id']) ?: null,
+                'line_description' => $value($row, $index, ['line_description', 'line_note']) ?: 'Imported journal line',
+                'debit' => (float) ($value($row, $index, ['debit']) ?: 0),
+                'credit' => (float) ($value($row, $index, ['credit']) ?: 0),
+            ];
+        }
+        $created = 0; $errors = [];
+        foreach ($grouped as $number => $data) {
+            try {
+                $payload = new Request($data);
+                $validated = $this->validatePayload($payload);
+                $this->guardOpenPeriod($validated['journal_date']);
+                DB::transaction(function () use ($validated, &$created) {
+                    $lines = $validated['lines']; unset($validated['lines']);
+                    $journal = Journal::create([...$validated, 'status' => 'draft']);
+                    $this->syncLines($journal, $lines); $created++;
+                });
+            } catch (\Throwable $error) {
+                $errors[] = "{$number}: ".($error->getMessage() ?: 'Invalid journal data');
+            }
+        }
+        return response()->json(['success' => $created > 0, 'message' => "{$created} journal berhasil diimport, ".count($errors).' gagal.', 'created' => $created, 'skipped' => count($errors), 'errors' => $errors]);
     }
 
     public function show(Request $request, Journal $journal): JsonResponse

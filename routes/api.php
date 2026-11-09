@@ -211,6 +211,7 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('permission:accounting.journal.create');
         Route::get('journals', [JournalController::class, 'index'])->middleware('permission:accounting.journal.view');
         Route::post('journals', [JournalController::class, 'store'])->middleware('permission:accounting.journal.create');
+        Route::post('journals/import', [JournalController::class, 'import'])->middleware('permission:accounting.journal.create');
         Route::get('journals/{journal}', [JournalController::class, 'show'])->middleware('permission:accounting.journal.view');
         Route::put('journals/{journal}', [JournalController::class, 'update'])->middleware('permission:accounting.journal.update');
         Route::delete('journals/{journal}', [JournalController::class, 'destroy'])->middleware('permission:accounting.journal.delete');
