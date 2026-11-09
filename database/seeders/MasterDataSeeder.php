@@ -615,7 +615,9 @@ class MasterDataSeeder extends Seeder
         $createdBankAccounts = [];
         foreach ($bankAccountsData as $ba) {
             $coaCode = $bankAccountCoaMap[$ba['account_number']] ?? '10200';
-            $createdBankAccounts[$ba['account_number']] = BankAccount::updateOrCreate(
+            // Include soft-deleted records so rerunning the seeder cannot hit
+            // the unique account_number index with an existing deleted row.
+            $createdBankAccounts[$ba['account_number']] = BankAccount::withTrashed()->updateOrCreate(
                 ['account_number' => $ba['account_number']],
                 [
                     'organization_id' => $org->id,
@@ -628,6 +630,9 @@ class MasterDataSeeder extends Seeder
                     'is_active' => true,
                 ]
             );
+            if ($createdBankAccounts[$ba['account_number']]->trashed()) {
+                $createdBankAccounts[$ba['account_number']]->restore();
+            }
         }
 
         PettyCash::updateOrCreate(['code' => 'PC-BGR'], [
