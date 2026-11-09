@@ -217,7 +217,10 @@ abstract class BaseMasterController extends Controller
     public function export(Request $request, MasterExportService $exportService)
     {
         $format = strtolower($request->query('format', 'csv'));
-        $query = $this->modelClass::query()->with($this->defaultWith)->applyFilters($request, $this->searchableColumns);
+        // Export should use the same explicit filters as the screen. Do not
+        // let the implicit fiscal-year global scope hide global bank/master
+        // rows when the export request has no selected year.
+        $query = $this->modelClass::query()->withoutGlobalScope('fiscal_year_context')->with($this->defaultWith)->applyFilters($request, $this->searchableColumns);
         $data = $query->get();
 
         return $exportService->export(class_basename($this->modelClass), $data, $format);
@@ -244,7 +247,7 @@ abstract class BaseMasterController extends Controller
         };
         $to = $parseRecipients($validated['email']);
         $cc = $parseRecipients($validated['cc'] ?? '');
-        $query = $this->modelClass::query()->with($this->defaultWith)->applyFilters($request, $this->searchableColumns);
+        $query = $this->modelClass::query()->withoutGlobalScope('fiscal_year_context')->with($this->defaultWith)->applyFilters($request, $this->searchableColumns);
         $data = $query->get();
         [$path, $filename, $mime] = $exportService->attachment(class_basename($this->modelClass), $data, $validated['format']);
         if (! empty($validated['filename'])) {
