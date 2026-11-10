@@ -271,7 +271,7 @@ class RoleSeeder extends Seeder
         // entry points shown in the sidebar. Other expense pages remain
         // reachable by workflow links/routes but are not duplicate menu items.
         Menu::where('slug', 'expenses-approvals')->first()?->children()
-            ->whereNotIn('slug', ['approval-center', 'cash-advances', 'expense-monitoring', 'expense-staff-aging'])
+            ->whereIn('slug', ['expenses-dashboard', 'expense-requests', 'reimbursements', 'settlement', 'approval-center', 'finance-verification', 'expense-monitoring', 'expense-staff-aging'])
             ->update(['is_active' => false]);
 
         // Clean up legacy menu entries so they cannot reappear under Master Data.
@@ -284,7 +284,7 @@ class RoleSeeder extends Seeder
             'Master Data' => [
                 'master-data', 'master-organization-structure', 'master-organization-chart', 'master-organizations', 'master-office-locations', 'master-departments', 'master-positions', 'master-employees',
                 'master-finance-accounting', 'master-chart-of-accounts', 'master-account-categories', 'master-bank-accounts', 'master-payment-methods', 'master-fx-rates', 'master-currencies', 'master-fiscal-years', 'master-accounting-periods', 'master-taxes', 'master-customers',
-                'master-funding-projects', 'master-donors', 'master-grant-agreements', 'master-programs-projects', 'master-programs', 'master-projects', 'master-activities', 'master-budget-codes', 'master-funding-sources',
+                'master-funding-projects', 'master-donor-grant-integrated', 'master-donor-types', 'master-programs', 'master-funding-sources', 'master-membership-dues', 'master-donors', 'master-grant-agreements', 'master-programs-projects', 'master-projects', 'master-activities', 'master-budget-codes',
                 'master-budget-reporting', 'master-budget-categories', 'master-reporting-categories', 'master-reporting-dimensions',
                 'master-expenses', 'master-expenses-assets', 'master-expense-categories', 'master-expense-types', 'master-assets', 'master-asset-categories',
             ],
@@ -292,11 +292,11 @@ class RoleSeeder extends Seeder
                 'accounting', 'accounting-dashboard', 'accounting-chart-of-accounts', 'journal', 'payables-receivables', 'accounts-payable', 'accounts-receivable', 'payables-receivables-aging', 'banking', 'bank-reconciliation', 'fixed-assets', 'prepaid-expenses', 'period-closing',
             ],
             'Donor / Grant' => [
-                'donor-grant', 'donor-grant-dashboard', 'donor-grant-donors', 'donor-grant-project-frameworks', 'donor-grant-project-workplan', 'donor-grant-grants', 'donor-grant-budget', 'donor-grant-budget-monitoring', 'donor-grant-donor-reporting',
+                'donor-grant', 'donor-grant-dashboard', 'donor-grant-project-frameworks-canonical', 'donor-grant-workplan-activities', 'donor-grant-project-budget', 'donor-grant-forecast-canonical', 'donor-grant-budget-monitoring-canonical', 'donor-grant-donor-reporting-canonical',
                 'budget-forecast', 'budget-forecast-planning', 'budget-forecast-monitoring', 'budget-forecast-forecast', 'budget-forecast-reallocation',
             ],
             'Expenses / Approval' => [
-                'expenses-approvals', 'expenses-dashboard', 'expense-requests', 'reimbursements', 'cash-advances', 'settlement', 'approval-center', 'finance-verification', 'payment-processing', 'expense-monitoring', 'expense-staff-aging',
+                'expenses-approvals', 'expenses-requests-verification', 'expenses-payment-processing', 'expenses-advances-settlements',
             ],
             'Timesheet' => [
                 'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external', 'timesheet-my', 'timesheet-team', 'timesheet-approval', 'timesheet-external-register', 'timesheet-external-verification', 'timesheet-external-reports', 'timesheet-project', 'timesheet-reports',
