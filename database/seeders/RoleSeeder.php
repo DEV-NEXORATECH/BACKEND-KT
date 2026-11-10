@@ -213,7 +213,6 @@ class RoleSeeder extends Seeder
                     ['title' => 'Approval', 'slug' => 'timesheet-approval', 'path' => '/timesheet/approval', 'sort_order' => 5223],
                 ]],
                 ['title' => 'External Timesheet', 'slug' => 'timesheet-external', 'path' => '/timesheet/external', 'sort_order' => 523, 'children' => [
-                    ['title' => 'External Timesheet', 'slug' => 'timesheet-external-register', 'path' => '/timesheet/external/register', 'sort_order' => 5231],
                     ['title' => 'Verification', 'slug' => 'timesheet-external-verification', 'path' => '/timesheet/external/verification', 'sort_order' => 5232],
                     ['title' => 'Reports', 'slug' => 'timesheet-external-reports', 'path' => '/timesheet/external/reports', 'sort_order' => 5233],
                 ]],
