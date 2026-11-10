@@ -15,7 +15,7 @@ class Donor extends Model
 
     protected $table = 'donors';
 
-    protected $fillable = ['code', 'name', 'type', 'donor_type_id', 'country', 'contact_person', 'email', 'phone', 'default_currency_id', 'fiscal_year_id', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'name', 'type', 'donor_type_id', 'lead_applicant', 'country', 'contact_person', 'email', 'phone', 'default_currency_id', 'fiscal_year_id', 'status', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',

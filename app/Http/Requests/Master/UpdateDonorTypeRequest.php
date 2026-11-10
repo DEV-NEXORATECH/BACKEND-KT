@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Master;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateDonorTypeRequest extends FormRequest
 {
@@ -14,7 +15,12 @@ class UpdateDonorTypeRequest extends FormRequest
         return [
             'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
             'code' => ['required', 'string', 'max:30', 'unique:donor_types,code,'.$id],
-            'name' => ['required', 'string', 'max:100', 'unique:donor_types,name,'.$id],
+            'name' => [
+                'required', 'string', 'max:100',
+                Rule::unique('donor_types', 'name')
+                    ->ignore($id)
+                    ->where(fn ($query) => $query->whereRaw('BINARY name = ?', [$this->input('name')])),
+            ],
             'description' => ['nullable', 'string'],
             'is_active' => ['boolean'],
         ];

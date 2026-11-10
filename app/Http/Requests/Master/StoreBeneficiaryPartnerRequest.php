@@ -6,6 +6,13 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class StoreBeneficiaryPartnerRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        if ($this->filled('contact_person') && ! $this->filled('pic_name')) {
+            $this->merge(['pic_name' => $this->input('contact_person')]);
+        }
+    }
+
     public function authorize(): bool
     {
         return true;
@@ -19,6 +26,7 @@ class StoreBeneficiaryPartnerRequest extends FormRequest
             'type' => 'required|string|max:50',
             'address' => 'nullable|string',
             'pic_name' => 'nullable|string|max:100',
+            'contact_person' => 'nullable|string|max:100',
             'contact_info' => 'nullable|string|max:150',
             'bank_info' => 'nullable|string|max:200',
             'is_active' => 'boolean',

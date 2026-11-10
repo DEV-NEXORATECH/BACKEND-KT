@@ -42,7 +42,7 @@ class IntegratedDonorGrantController extends Controller
                     $projects = $grant->projects->isEmpty() ? [null] : $grant->projects;
                     return collect($projects)->map(function ($project) use ($donor, $grant) {
                         return [
-                            'donor' => $donor->only(['code', 'name', 'type', 'country', 'contact_person', 'email', 'phone']),
+                            'donor' => $donor->only(['code', 'name', 'type', 'lead_applicant', 'country', 'contact_person', 'email', 'phone']),
                             'grant' => array_merge($grant->only(['grant_no', 'agreement_no', 'agreement_date', 'agreement_name', 'terms_conditions', 'reporting_period', 'donor_fiscal_calendar', 'grant_value', 'start_date', 'end_date', 'status']), ['currency_id' => $grant->currency_id, 'funding_source_id' => $grant->funding_source_id, 'bank_account_id' => $grant->bank_account_id]),
                             'programme' => $project?->program?->only(['id', 'code', 'name', 'objective']) ?? [],
                             'project' => $project ? array_merge($project->only(['code', 'name', 'program_id', 'theme', 'manager_name', 'start_date', 'end_date', 'total_budget']), ['partner_ids' => $project->partners->pluck('id')->values()->all(), 'funding_source_ids' => $project->fundingSources->pluck('id')->values()->all()]) : [],
@@ -58,12 +58,12 @@ class IntegratedDonorGrantController extends Controller
             })->values();
             return response()->json(['template_version' => 'donor-grant-integrated-v1', 'records' => $payload]);
         }
-        $rows = [['Donor Code', 'Donor Name', 'Donor Type', 'Grant No', 'Agreement Name', 'Project Code', 'Project Name', 'Grant Value', 'Status']];
+        $rows = [['Donor Code', 'Donor Name', 'Donor Type', 'Lead Applicant / Intermediary', 'Grant No', 'Agreement Name', 'Project Code', 'Project Name', 'Grant Value', 'Status']];
         foreach ($records as $donor) {
             foreach ($donor->grantAgreements as $grant) {
                 $projects = $grant->projects->isEmpty() ? [null] : $grant->projects;
                 foreach ($projects as $project) {
-                    $rows[] = [$donor->code, $donor->name, $donor->type, $grant->grant_no, $grant->agreement_name, $project?->code, $project?->name, $grant->grant_value, $grant->status];
+                    $rows[] = [$donor->code, $donor->name, $donor->type, $donor->lead_applicant, $grant->grant_no, $grant->agreement_name, $project?->code, $project?->name, $grant->grant_value, $grant->status];
                 }
             }
         }
@@ -83,7 +83,7 @@ class IntegratedDonorGrantController extends Controller
         foreach ($sheet as $row) {
             $values = array_combine($headers, array_values($row));
             if (!$values || empty($values['donor_code']) || empty($values['grant_no']) || empty($values['project_code'])) continue;
-            $records[] = ['donor' => ['code' => $values['donor_code'], 'name' => $values['donor_name'] ?? $values['donor_code'], 'type' => $values['donor_type'] ?? 'Other'], 'grant' => ['grant_no' => $values['grant_no'], 'agreement_name' => $values['grant_name'] ?? $values['grant_no'], 'grant_value' => $values['grant_value'] ?? 0, 'currency_id' => $values['currency_id'] ?: DB::table('currencies')->value('id'), 'status' => $values['grant_status'] ?? 'draft', 'start_date' => $values['grant_start_date'] ?? now()->toDateString(), 'end_date' => $values['grant_end_date'] ?? now()->addYear()->toDateString()], 'programme' => ['code' => $values['programme_code'] ?? null, 'name' => $values['programme_name'] ?? null], 'project' => ['code' => $values['project_code'], 'name' => $values['project_name'] ?? $values['project_code'], 'total_budget' => $values['project_budget'] ?? 0], 'frameworks' => [], 'workplans' => [], 'deadlines' => []];
+            $records[] = ['donor' => ['code' => $values['donor_code'], 'name' => $values['donor_name'] ?? $values['donor_code'], 'type' => $values['donor_type'] ?? 'Other', 'lead_applicant' => $values['lead_applicant'] ?? $values['lead_applicant_intermediary'] ?? null], 'grant' => ['grant_no' => $values['grant_no'], 'agreement_name' => $values['grant_name'] ?? $values['grant_no'], 'grant_value' => $values['grant_value'] ?? 0, 'currency_id' => $values['currency_id'] ?: DB::table('currencies')->value('id'), 'status' => $values['grant_status'] ?? 'draft', 'start_date' => $values['grant_start_date'] ?? now()->toDateString(), 'end_date' => $values['grant_end_date'] ?? now()->addYear()->toDateString()], 'programme' => ['code' => $values['programme_code'] ?? null, 'name' => $values['programme_name'] ?? null], 'project' => ['code' => $values['project_code'], 'name' => $values['project_name'] ?? $values['project_code'], 'total_budget' => $values['project_budget'] ?? 0], 'frameworks' => [], 'workplans' => [], 'deadlines' => []];
         }
         if (!$records) return response()->json(['message' => 'Template CSV/Excel Donor & Grant Terintegrasi tidak valid atau kosong.'], 422);
         $created = 0;
@@ -126,7 +126,7 @@ class IntegratedDonorGrantController extends Controller
     public function update(Request $request, Donor $donor)
     {
         $data = $request->validate([
-            'donor' => 'required|array', 'donor.code' => 'required|string|max:30', 'donor.name' => 'required|string|max:150', 'donor.type' => 'required|string|max:50', 'donor.country' => 'nullable|string|max:100', 'donor.contact_person' => 'nullable|string|max:100', 'donor.email' => 'nullable|email|max:150', 'donor.phone' => 'nullable|string|max:50',
+            'donor' => 'required|array', 'donor.code' => 'required|string|max:30', 'donor.name' => 'required|string|max:150', 'donor.type' => 'required|string|max:50', 'donor.lead_applicant' => 'nullable|string|max:150', 'donor.country' => 'nullable|string|max:100', 'donor.contact_person' => 'nullable|string|max:100', 'donor.email' => 'nullable|email|max:150', 'donor.phone' => 'nullable|string|max:50',
             'grant' => 'required|array', 'grant.grant_no' => 'required|string|max:50', 'grant.agreement_no' => 'nullable|string|max:50', 'grant.agreement_date' => 'nullable|date', 'grant.agreement_name' => 'required|string|max:200', 'grant.terms_conditions' => 'nullable|string', 'grant.reporting_period' => 'nullable|string|max:30', 'grant.donor_fiscal_calendar' => 'nullable|in:JAN_DEC,APR_MAR', 'grant.currency_id' => 'required|exists:currencies,id', 'grant.funding_source_id' => 'nullable|exists:funding_sources,id', 'grant.bank_account_id' => 'nullable|exists:bank_accounts,id', 'grant.grant_value' => 'required|numeric|min:0', 'grant.start_date' => 'required|date', 'grant.end_date' => 'required|date|after_or_equal:grant.start_date', 'grant.status' => 'nullable|in:draft,active,closed,suspended',
             'project' => 'required|array', 'project.code' => 'required|string|max:30', 'project.name' => 'required|string|max:150', 'project.program_id' => 'nullable|exists:programs,id', 'project.theme' => 'nullable|string|max:200', 'project.manager_name' => 'nullable|string|max:100', 'project.start_date' => 'nullable|date', 'project.end_date' => 'nullable|date|after_or_equal:project.start_date', 'project.total_budget' => 'nullable|numeric|min:0', 'project.partner_ids' => 'nullable|array', 'project.partner_ids.*' => 'integer|exists:beneficiary_partners,id', 'project.funding_source_ids' => 'nullable|array', 'project.funding_source_ids.*' => 'integer|exists:funding_sources,id',
             'programme' => 'nullable|array', 'programme.id' => 'nullable|integer|exists:programs,id', 'programme.code' => 'nullable|string|max:50', 'programme.name' => 'nullable|string|max:150', 'programme.objective' => 'nullable|string',
@@ -235,6 +235,7 @@ class IntegratedDonorGrantController extends Controller
             'donor.code' => 'required|string|max:30|unique:donors,code,' . ((int) $request->input('donor.id')),
             'donor.name' => 'required|string|max:150',
             'donor.type' => 'required|string|max:50',
+            'donor.lead_applicant' => 'nullable|string|max:150',
             'donor.country' => 'nullable|string|max:100',
             'donor.contact_person' => 'nullable|string|max:100',
             'donor.email' => 'nullable|email|max:150',
