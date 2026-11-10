@@ -160,7 +160,6 @@ class RoleSeeder extends Seeder
                 ['title' => 'Dashboard', 'slug' => 'donor-grant-dashboard', 'path' => '/donor-grant/dashboard', 'sort_order' => 21],
                 ['title' => 'Project Frameworks', 'slug' => 'donor-grant-programs-projects', 'path' => '/project-frameworks', 'sort_order' => 23],
                 ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/project-timeline-workplan', 'sort_order' => 23.2],
-                ['title' => 'Grant Agreements', 'slug' => 'donor-grant-grants', 'path' => '/donor-grant/grants', 'sort_order' => 24],
                 ['title' => 'Grant Reporting', 'slug' => 'donor-grant-reporting', 'path' => '/donor-grant/reporting', 'sort_order' => 27],
                 ['title' => 'Donor Reporting', 'slug' => 'donor-grant-donor-reporting', 'path' => '/donor-grant/donor-reporting', 'sort_order' => 28],
             ]],
@@ -179,7 +178,6 @@ class RoleSeeder extends Seeder
                 ['title' => 'Approval Center', 'slug' => 'approval-center', 'path' => '/expenses-approvals/approvals', 'sort_order' => 35],
                 ['title' => 'Finance Verification', 'slug' => 'finance-verification', 'path' => '/expenses-approvals/finance-verification', 'sort_order' => 36],
                 ['title' => 'Payment Processing', 'slug' => 'payment-processing', 'path' => '/expenses-approvals/payment-processing', 'sort_order' => 37],
-                ['title' => 'Expense Monitoring', 'slug' => 'expense-monitoring', 'path' => '/expenses-approvals/monitoring', 'sort_order' => 38],
                 ['title' => 'Staff Aging', 'slug' => 'expense-staff-aging', 'path' => '/expenses-approvals/staff-aging', 'sort_order' => 39],
             ]],
             ['title' => 'Accounting', 'slug' => 'accounting', 'path' => '/accounting', 'icon' => 'accounting', 'sort_order' => 40, 'children' => [
