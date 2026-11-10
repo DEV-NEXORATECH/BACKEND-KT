@@ -20,6 +20,13 @@ class Project extends Model
         'is_active' => 'boolean',
     ];
 
+    protected $appends = ['relation_number'];
+
+    public function getRelationNumberAttribute(): string
+    {
+        return $this->id ? 'KT-PRJ-'.str_pad((string) $this->id, 4, '0', STR_PAD_LEFT) : 'KT-PRJ-0000';
+    }
+
     protected static function booted(): void
     {
         static::addGlobalScope('fiscal_year_context', function ($query) {

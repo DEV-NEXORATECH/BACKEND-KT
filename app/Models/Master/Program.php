@@ -21,6 +21,13 @@ class Program extends Model
         'is_active' => 'boolean',
     ];
 
+    protected $appends = ['relation_number'];
+
+    public function getRelationNumberAttribute(): string
+    {
+        return $this->id ? 'KT-PRG-'.str_pad((string) $this->id, 4, '0', STR_PAD_LEFT) : 'KT-PRG-0000';
+    }
+
     public function projects()
     {
         return $this->hasMany(\App\Models\Master\Project::class);

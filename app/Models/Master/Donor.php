@@ -22,6 +22,13 @@ class Donor extends Model
         'draft_payload' => 'array',
     ];
 
+    protected $appends = ['relation_number'];
+
+    public function getRelationNumberAttribute(): string
+    {
+        return $this->id ? 'KT-DNR-'.str_pad((string) $this->id, 4, '0', STR_PAD_LEFT) : 'KT-DNR-0000';
+    }
+
     protected static function booted(): void
     {
         static::saving(function (Donor $donor) {

@@ -27,6 +27,13 @@ class GrantAgreement extends Model
         'supporting_documents' => 'array',
     ];
 
+    protected $appends = ['relation_number'];
+
+    public function getRelationNumberAttribute(): string
+    {
+        return $this->id ? 'KT-GRT-'.str_pad((string) $this->id, 4, '0', STR_PAD_LEFT) : 'KT-GRT-0000';
+    }
+
     public function donor()
     {
         return $this->belongsTo(\App\Models\Master\Donor::class, 'donor_id');
