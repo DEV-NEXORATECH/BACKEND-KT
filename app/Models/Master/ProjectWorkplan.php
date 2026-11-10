@@ -22,7 +22,6 @@ class ProjectWorkplan extends Model
         'baseline_start_date' => 'date',
         'baseline_end_date' => 'date',
         'progress' => 'decimal:2',
-        'baseline' => 'decimal:2',
         'periods' => 'array',
         'is_active' => 'boolean',
     ];

@@ -22,6 +22,25 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class IntegratedDonorGrantController extends Controller
 {
+    public function show(Donor $donor)
+    {
+        return response()->json([
+            'success' => true,
+            'data' => $donor->load([
+                'grantAgreements.currency',
+                'grantAgreements.fundingSource',
+                'grantAgreements.bankAccount',
+                'grantAgreements.reportingDeadlines',
+                'grantAgreements.projects.program',
+                'grantAgreements.projects.partners',
+                'grantAgreements.projects.fundingSources',
+                'grantAgreements.projects.logframes',
+                'grantAgreements.projects.workplans',
+                'grantAgreements.projects.budgetLines',
+            ]),
+        ]);
+    }
+
     public function destroyProject(Donor $donor, Project $project)
     {
         $belongsToDonor = $donor->grantAgreements()
@@ -169,20 +188,36 @@ class IntegratedDonorGrantController extends Controller
             'grant' => 'required|array', 'grant.grant_no' => 'required|string|max:50', 'grant.agreement_no' => 'nullable|string|max:50', 'grant.agreement_date' => 'nullable|date', 'grant.agreement_name' => 'required|string|max:200', 'grant.terms_conditions' => 'nullable|string', 'grant.reporting_period' => 'nullable|string|max:30', 'grant.donor_fiscal_calendar' => 'nullable|in:JAN_DEC,APR_MAR', 'grant.currency_id' => 'required|exists:currencies,id', 'grant.funding_source_id' => 'nullable|exists:funding_sources,id', 'grant.bank_account_id' => 'nullable|exists:bank_accounts,id', 'grant.grant_value' => 'required|numeric|min:0', 'grant.start_date' => 'required|date', 'grant.end_date' => 'required|date|after_or_equal:grant.start_date', 'grant.status' => 'nullable|in:draft,active,closed,suspended',
             'project' => 'required|array', 'project.code' => 'required|string|max:30', 'project.name' => 'required|string|max:150', 'project.program_id' => 'nullable|exists:programs,id', 'project.theme' => 'nullable|string|max:200', 'project.manager_name' => 'nullable|string|max:100', 'project.start_date' => 'nullable|date', 'project.end_date' => 'nullable|date|after_or_equal:project.start_date', 'project.total_budget' => 'nullable|numeric|min:0', 'project.partner_ids' => 'nullable|array', 'project.partner_ids.*' => 'integer|exists:beneficiary_partners,id', 'project.funding_source_ids' => 'nullable|array', 'project.funding_source_ids.*' => 'integer|exists:funding_sources,id',
             'programme' => 'nullable|array', 'programme.id' => 'nullable|integer|exists:programs,id', 'programme.code' => 'nullable|string|max:50', 'programme.name' => 'nullable|string|max:150', 'programme.objective' => 'nullable|string',
-            'frameworks' => 'array', 'frameworks.*.level' => 'required|in:impact,outcome,output,activity', 'frameworks.*.code' => 'required|string|max:50', 'frameworks.*.description' => 'required|string', 'frameworks.*.indicator' => 'nullable|string|max:255', 'frameworks.*.baseline' => 'nullable|numeric', 'frameworks.*.target' => 'nullable|numeric',
-            'workplans' => 'array', 'workplans.*.activity' => 'required|string|max:255', 'workplans.*.output_code' => 'nullable|string|max:100', 'workplans.*.start_date' => 'nullable|date', 'workplans.*.end_date' => 'nullable|date', 'workplans.*.status' => 'nullable|string|max:50', 'workplans.*.baseline' => 'nullable|numeric',
+            'frameworks' => 'array', 'frameworks.*.level' => 'required|in:impact,outcome,output,activity', 'frameworks.*.code' => 'required|string|max:50', 'frameworks.*.description' => 'required|string', 'frameworks.*.indicator' => 'nullable|string|max:255', 'frameworks.*.baseline' => 'nullable|string', 'frameworks.*.target' => 'nullable|string',
+            'workplans' => 'array', 'workplans.*.activity' => 'required|string|max:255', 'workplans.*.output_code' => 'nullable|string|max:100', 'workplans.*.start_date' => 'nullable|date', 'workplans.*.end_date' => 'nullable|date', 'workplans.*.status' => 'nullable|string|max:50', 'workplans.*.baseline' => 'nullable|string',
             'budgets' => 'array', 'budgets.*.line_code' => 'required|string|max:50', 'budgets.*.description' => 'required|string|max:255', 'budgets.*.budget_category_id' => 'required|exists:budget_categories,id', 'budgets.*.total_amount' => 'required|numeric|min:0',
             'deadlines' => 'array', 'deadlines.*.report_type' => 'required|string|max:100', 'deadlines.*.period_label' => 'nullable|string|max:100', 'deadlines.*.due_date' => 'required|date', 'deadlines.*.status' => 'nullable|string|max:50', 'deadlines.*.notes' => 'nullable|string', 'deadlines.*.reminder_days' => 'nullable|integer',
         ]);
 
         $result = DB::transaction(function () use ($data, $donor) {
             $donor->update(array_merge($data['donor'], ['draft_payload' => null, 'status' => $data['grant']['status'] ?? 'draft']));
-            $grant = $donor->grantAgreements()->firstOrFail();
-            $grant->update(array_merge($data['grant'], ['donor_id' => $donor->id]));
-            $project = $grant->projects()->firstOrFail();
+            $grant = $donor->grantAgreements()->first();
+            if ($grant) {
+                $grant->update(array_merge($data['grant'], ['donor_id' => $donor->id]));
+            } else {
+                $grant = GrantAgreement::create(array_merge($data['grant'], [
+                    'donor_id' => $donor->id,
+                    'status' => $data['grant']['status'] ?? 'draft',
+                    'is_active' => true,
+                ]));
+            }
+            $project = $grant->projects()->first();
             if (!empty($data['programme']['id'])) $data['project']['program_id'] = $data['programme']['id'];
             elseif (!empty($data['programme']['code']) && !empty($data['programme']['name'])) $data['project']['program_id'] = Program::firstOrCreate(['code' => $data['programme']['code']], ['name' => $data['programme']['name'], 'objective' => $data['programme']['objective'] ?? null, 'is_active' => true])->id;
-            $project->update($data['project']);
+            if ($project) {
+                $project->update($data['project']);
+            } else {
+                $project = Project::create(array_merge($data['project'], [
+                    'grant_agreement_id' => $grant->id,
+                    'budget_currency_id' => $data['project']['budget_currency_id'] ?? $grant->currency_id,
+                    'is_active' => true,
+                ]));
+            }
             $project->partners()->sync(collect($data['project']['partner_ids'] ?? [])->mapWithKeys(fn ($id) => [$id => ['role' => 'implementing_partner']])->all());
             $project->fundingSources()->sync($data['project']['funding_source_ids'] ?? []);
 
@@ -318,15 +353,15 @@ class IntegratedDonorGrantController extends Controller
             'frameworks.*.code' => 'required|string|max:50',
             'frameworks.*.description' => 'required|string',
             'frameworks.*.indicator' => 'nullable|string|max:255',
-            'frameworks.*.baseline' => 'nullable|numeric',
-            'frameworks.*.target' => 'nullable|numeric',
+            'frameworks.*.baseline' => 'nullable|string',
+            'frameworks.*.target' => 'nullable|string',
             'workplans' => 'array',
             'workplans.*.activity' => 'required|string|max:255',
             'workplans.*.output_code' => 'nullable|string|max:100',
             'workplans.*.start_date' => 'nullable|date',
             'workplans.*.end_date' => 'nullable|date',
             'workplans.*.status' => 'nullable|string|max:50',
-            'workplans.*.baseline' => 'nullable|numeric',
+            'workplans.*.baseline' => 'nullable|string',
             'budgets' => 'array',
             'budgets.*.line_code' => 'required|string|max:50',
             'budgets.*.description' => 'required|string|max:255',
