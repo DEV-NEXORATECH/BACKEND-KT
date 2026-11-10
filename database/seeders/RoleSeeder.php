@@ -132,9 +132,7 @@ class RoleSeeder extends Seeder
                     ['title' => 'Donor & Grant Terintegrasi', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 180],
                     ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 181],
                     ['title' => 'Donor Types', 'slug' => 'master-donor-types', 'path' => '/master-data/donor-types', 'sort_order' => 182],
-                    ['title' => 'Grant Agreements', 'slug' => 'master-grant-agreements', 'path' => '/master-data/grant-agreements', 'sort_order' => 183],
                     ['title' => 'Funding Sources', 'slug' => 'master-funding-sources', 'path' => '/master-data/funding-sources', 'sort_order' => 184],
-                    ['title' => 'Donors', 'slug' => 'master-donors', 'path' => '/master-data/donors', 'sort_order' => 185],
                 ]],
                 ['title' => 'Budget & Forecast', 'slug' => 'master-budget-reporting', 'path' => '/master-data', 'sort_order' => 19, 'children' => [
                     ['title' => 'Budget Categories', 'slug' => 'master-budget-categories', 'path' => '/master-data/budget-categories', 'sort_order' => 193],
@@ -158,9 +156,7 @@ class RoleSeeder extends Seeder
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/donor-grant', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'donor-grant-dashboard', 'path' => '/donor-grant/dashboard', 'sort_order' => 21],
-                ['title' => 'Project Frameworks', 'slug' => 'donor-grant-programs-projects', 'path' => '/project-frameworks', 'sort_order' => 23],
                 ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/project-timeline-workplan', 'sort_order' => 23.2],
-                ['title' => 'Grant Reporting', 'slug' => 'donor-grant-reporting', 'path' => '/donor-grant/reporting', 'sort_order' => 27],
                 ['title' => 'Donor Reporting', 'slug' => 'donor-grant-donor-reporting', 'path' => '/donor-grant/donor-reporting', 'sort_order' => 28],
             ]],
             ['title' => 'Budget & Forecast', 'slug' => 'budget-forecast', 'path' => '/donor-grant/budget', 'icon' => 'chart', 'sort_order' => 28, 'children' => [
@@ -304,7 +300,7 @@ class RoleSeeder extends Seeder
                 'accounting', 'accounting-dashboard', 'accounting-chart-of-accounts', 'journal', 'payables-receivables', 'accounts-payable', 'accounts-receivable', 'payables-receivables-aging', 'banking', 'bank-reconciliation', 'fixed-assets', 'prepaid-expenses', 'period-closing',
             ],
             'Donor / Grant' => [
-                'donor-grant', 'donor-grant-dashboard', 'donor-grant-donors', 'donor-grant-project-frameworks', 'donor-grant-project-workplan', 'donor-grant-grants', 'donor-grant-budget', 'donor-grant-budget-monitoring', 'donor-grant-reporting', 'donor-grant-donor-reporting',
+                'donor-grant', 'donor-grant-dashboard', 'donor-grant-donors', 'donor-grant-project-frameworks', 'donor-grant-project-workplan', 'donor-grant-grants', 'donor-grant-budget', 'donor-grant-budget-monitoring', 'donor-grant-donor-reporting',
                 'budget-forecast', 'budget-forecast-planning', 'budget-forecast-monitoring', 'budget-forecast-forecast', 'budget-forecast-reallocation',
             ],
             'Expenses / Approval' => [

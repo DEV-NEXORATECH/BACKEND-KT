@@ -104,6 +104,8 @@ class MasterMenuSeeder extends Seeder
         // single integrated master page. Disable legacy duplicate entries.
         Menu::whereIn('slug', ['master-budget-codes', 'master-sof'])
             ->update(['is_active' => false]);
+        Menu::whereIn('slug', ['donor-grant-programs-projects', 'donor-grant-reporting'])
+            ->update(['is_active' => false]);
         Menu::whereIn('slug', ['master-grant-agreements', 'master-donors'])
             ->update(['is_active' => false]);
 
