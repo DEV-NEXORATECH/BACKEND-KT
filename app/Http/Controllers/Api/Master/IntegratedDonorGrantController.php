@@ -223,7 +223,9 @@ class IntegratedDonorGrantController extends Controller
 
             ProjectLogframe::where('project_id', $project->id)->get()->each->delete();
             ProjectWorkplan::where('project_id', $project->id)->get()->each->delete();
-            foreach ($data['frameworks'] ?? [] as $framework) ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id]));
+            foreach (collect($data['frameworks'] ?? [])->unique('code')->values() as $framework) {
+                ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id]));
+            }
             foreach ($data['workplans'] ?? [] as $workplan) ProjectWorkplan::create(array_merge($workplan, ['project_id' => $project->id, 'grant_agreement_id' => $grant->id, 'donor_id' => $donor->id]));
             // Budget is maintained in the dedicated Project Budget editor.
             // Only legacy callers that explicitly send budgets may replace

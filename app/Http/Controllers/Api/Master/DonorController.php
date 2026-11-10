@@ -22,6 +22,7 @@ class DonorController extends BaseMasterController
         'grantAgreements.fundingSource',
         'grantAgreements.reportingDeadlines',
         'grantAgreements.projects.grantAgreement',
+        'grantAgreements.projects.program',
         'grantAgreements.projects.logframes',
         'grantAgreements.projects.workplans',
         'grantAgreements.projects.budgetLines.budgetCategory',
