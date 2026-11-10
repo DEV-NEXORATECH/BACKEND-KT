@@ -16,7 +16,7 @@ class MasterMenuSeeder extends Seeder
         // The Programs & Projects group is intentionally nested under Donor & Grant.
         // Deactivate the legacy parent so old seeded menus do not remain visible.
         Menu::whereIn('slug', [
-            'master-programs-projects', 'master-programs', 'master-funding-sources',
+            'master-programs-projects', 'master-programs',
             'master-donor-types', 'master-projects-activities', 'master-project-workplan',
             'master-grant-agreements', 'master-project-frameworks', 'master-project-timeline-workplan',
             'master-expenses-assets',
@@ -95,7 +95,6 @@ class MasterMenuSeeder extends Seeder
         // Their routes and database relationships remain unchanged.
         Menu::whereIn('slug', [
             'master-programs-projects',
-            'master-funding-sources',
             'master-projects',
             'master-activities',
         ])->update(['is_active' => false]);
