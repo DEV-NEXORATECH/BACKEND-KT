@@ -25,7 +25,9 @@ class StoreDonorRequest extends FormRequest
             'code' => 'required|string|max:30|unique:donors,code',
             'name' => 'required|string|max:150',
             'type' => 'required|string|max:50',
-            'donor_type_id' => 'required|integer|exists:donor_types,id',
+            // Donor Type is selected in the integrated Donor & Grant form
+            // after a new funder is created from the quick-add popup.
+            'donor_type_id' => 'nullable|integer|exists:donor_types,id',
             'country' => 'nullable|string|max:100',
             'contact_person' => 'nullable|string|max:100',
             'email' => 'nullable|email|max:100',

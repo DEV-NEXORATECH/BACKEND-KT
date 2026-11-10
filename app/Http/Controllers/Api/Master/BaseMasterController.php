@@ -62,6 +62,11 @@ abstract class BaseMasterController extends Controller
                     if (! $isFiscalYearOptions && ! $request->has('is_active') && \Illuminate\Support\Facades\Schema::hasColumn($table, 'is_active')) {
                         $query->where('is_active', true);
                     }
+                    // Soft-deleted masters must never be offered in relation
+                    // dropdowns, even when a custom/global scope is removed.
+                    if (\Illuminate\Support\Facades\Schema::hasColumn($table, 'deleted_at')) {
+                        $query->whereNull($table.'.deleted_at');
+                    }
                     // Without an explicit year, options include all active
                     // master records so dropdowns do not become empty merely
                     // because the seed data belongs to another fiscal year.
