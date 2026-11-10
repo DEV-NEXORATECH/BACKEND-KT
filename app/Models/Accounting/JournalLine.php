@@ -19,8 +19,10 @@ class JournalLine extends Model
         'journal_id',
         'account_id',
         'donor_id',
+        'grant_agreement_id',
         'program_id',
         'project_id',
+        'partner_id',
         'budget_line_id',
         'department_id',
         'line_description',
@@ -56,6 +58,9 @@ class JournalLine extends Model
     {
         return $this->belongsTo(Program::class);
     }
+
+    public function grantAgreement(): BelongsTo { return $this->belongsTo(\App\Models\Master\GrantAgreement::class); }
+    public function partner(): BelongsTo { return $this->belongsTo(\App\Models\Master\BeneficiaryPartner::class, 'partner_id'); }
 
     public function project(): BelongsTo
     {

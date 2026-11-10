@@ -25,5 +25,7 @@ class DonorController extends BaseMasterController
         'grantAgreements.projects.logframes',
         'grantAgreements.projects.workplans',
         'grantAgreements.projects.budgetLines.budgetCategory',
+        'grantAgreements.projects.partners',
+        'grantAgreements.projects.fundingSources',
     ];
 }

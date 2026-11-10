@@ -746,15 +746,6 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        Donor::updateOrCreate(['code' => 'DONOR-EIA'], [
-            'name' => 'Environmental Investigation Agency',
-            'type' => 'NGO',
-            'country' => 'United Kingdom',
-            'default_currency_id' => $gbp->id,
-            'status' => 'active',
-            'is_active' => true,
-        ]);
-
         // 9. Grant Agreements
         $grantBankAccountId = $createdBankAccounts['800193159700']->id ?? (reset($createdBankAccounts)->id ?? null);
 
@@ -788,6 +779,7 @@ class MasterDataSeeder extends Seeder
             'is_active' => true,
         ]);
 
+
         // 10. Programs, Projects & Activities
         $progForest = Program::updateOrCreate(['code' => 'PROG-FOREST'], [
             'name' => 'Forest Governance & Law Enforcement',
@@ -797,6 +789,7 @@ class MasterDataSeeder extends Seeder
             'end_date' => '2028-12-31',
             'is_active' => true,
         ]);
+
 
         $prjFordBorneo = Project::updateOrCreate(['code' => 'PRJ-2026-FORD-01'], [
             'program_id' => $progForest->id,

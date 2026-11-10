@@ -7,6 +7,7 @@ use App\Models\Master\BudgetLine;
 use App\Models\Master\Donor;
 use App\Models\Master\GrantAgreement;
 use App\Models\Master\Project;
+use App\Models\Master\Program;
 use App\Models\Master\ProjectLogframe;
 use App\Models\Master\ProjectWorkplan;
 use App\Models\Master\BudgetCategory;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class IntegratedDonorGrantController extends Controller
 {
@@ -30,24 +32,29 @@ class IntegratedDonorGrantController extends Controller
             'grantAgreements.projects.logframes',
             'grantAgreements.projects.workplans',
             'grantAgreements.projects.budgetLines',
+            'grantAgreements.projects.program',
+            'grantAgreements.projects.partners',
+            'grantAgreements.projects.fundingSources',
         ])->get();
         if ($request->query('format') === 'json') {
-            $payload = $records->map(function ($donor) {
-                $grant = $donor->grantAgreements->first();
-                $project = $grant?->projects?->first();
-                return [
-                    'donor' => $donor->only(['code', 'name', 'type', 'country', 'contact_person', 'email', 'phone']),
-                    'grant' => $grant ? array_merge($grant->only(['grant_no', 'agreement_no', 'agreement_date', 'agreement_name', 'terms_conditions', 'reporting_period', 'donor_fiscal_calendar', 'grant_value', 'start_date', 'end_date', 'status']), [
-                        'currency_id' => $grant->currency_id,
-                        'funding_source_id' => $grant->funding_source_id,
-                        'bank_account_id' => $grant->bank_account_id,
-                    ]) : [],
-                    'project' => $project ? $project->only(['code', 'name', 'program_id', 'theme', 'manager_name', 'start_date', 'end_date', 'total_budget']) : [],
-                    'frameworks' => $project?->logframes?->map->only(['level', 'code', 'description', 'indicator', 'baseline', 'target'])->values() ?? [],
-                    'workplans' => $project?->workplans?->map->only(['output_code', 'activity', 'start_date', 'end_date', 'status', 'baseline'])->values() ?? [],
-                    'budgets' => $project?->budgetLines?->map->only(['line_code', 'description', 'budget_category_id', 'total_amount'])->values() ?? [],
-                    'deadlines' => $grant?->reportingDeadlines?->map->only(['report_type', 'period_label', 'due_date', 'status', 'notes', 'reminder_days'])->values() ?? [],
-                ];
+            $payload = $records->flatMap(function ($donor) {
+                return $donor->grantAgreements->flatMap(function ($grant) use ($donor) {
+                    $projects = $grant->projects->isEmpty() ? [null] : $grant->projects;
+                    return collect($projects)->map(function ($project) use ($donor, $grant) {
+                        return [
+                            'donor' => $donor->only(['code', 'name', 'type', 'country', 'contact_person', 'email', 'phone']),
+                            'grant' => array_merge($grant->only(['grant_no', 'agreement_no', 'agreement_date', 'agreement_name', 'terms_conditions', 'reporting_period', 'donor_fiscal_calendar', 'grant_value', 'start_date', 'end_date', 'status']), ['currency_id' => $grant->currency_id, 'funding_source_id' => $grant->funding_source_id, 'bank_account_id' => $grant->bank_account_id]),
+                            'programme' => $project?->program?->only(['id', 'code', 'name', 'objective']) ?? [],
+                            'project' => $project ? array_merge($project->only(['code', 'name', 'program_id', 'theme', 'manager_name', 'start_date', 'end_date', 'total_budget']), ['partner_ids' => $project->partners->pluck('id')->values()->all(), 'funding_source_ids' => $project->fundingSources->pluck('id')->values()->all()]) : [],
+                            'partners' => $project?->partners?->map->only(['id', 'code', 'name'])->values() ?? [],
+                            'funding_sources' => $project?->fundingSources?->map->only(['id', 'code', 'name'])->values() ?? [],
+                            'frameworks' => $project?->logframes?->map->only(['level', 'code', 'description', 'indicator', 'baseline', 'target'])->values() ?? [],
+                            'workplans' => $project?->workplans?->map->only(['output_code', 'activity', 'start_date', 'end_date', 'status', 'baseline'])->values() ?? [],
+                            'budgets' => $project?->budgetLines?->map->only(['line_code', 'description', 'budget_category_id', 'total_amount'])->values() ?? [],
+                            'deadlines' => $grant->reportingDeadlines->map->only(['report_type', 'period_label', 'due_date', 'status', 'notes', 'reminder_days'])->values(),
+                        ];
+                    });
+                });
             })->values();
             return response()->json(['template_version' => 'donor-grant-integrated-v1', 'records' => $payload]);
         }
@@ -69,15 +76,24 @@ class IntegratedDonorGrantController extends Controller
 
     public function import(Request $request)
     {
-        $request->validate(['file' => 'required|file|mimes:json,txt|max:20480']);
-        $payload = json_decode($request->file('file')->get(), true);
-        if (!is_array($payload) || ($payload['template_version'] ?? null) !== 'donor-grant-integrated-v1' || empty($payload['records'])) {
-            return response()->json(['message' => 'Template Donor & Grant Terintegrasi tidak valid.'], 422);
+        $request->validate(['file' => 'required|file|mimes:csv,txt,xlsx,xls|max:20480']);
+        $sheet = IOFactory::load($request->file('file')->getRealPath())->getActiveSheet()->toArray(null, true, true, true);
+        $headers = array_map(fn ($value) => strtolower(trim((string) $value)), array_shift($sheet) ?: []);
+        $records = [];
+        foreach ($sheet as $row) {
+            $values = array_combine($headers, array_values($row));
+            if (!$values || empty($values['donor_code']) || empty($values['grant_no']) || empty($values['project_code'])) continue;
+            $records[] = ['donor' => ['code' => $values['donor_code'], 'name' => $values['donor_name'] ?? $values['donor_code'], 'type' => $values['donor_type'] ?? 'Other'], 'grant' => ['grant_no' => $values['grant_no'], 'agreement_name' => $values['grant_name'] ?? $values['grant_no'], 'grant_value' => $values['grant_value'] ?? 0, 'currency_id' => $values['currency_id'] ?: DB::table('currencies')->value('id'), 'status' => $values['grant_status'] ?? 'draft', 'start_date' => $values['grant_start_date'] ?? now()->toDateString(), 'end_date' => $values['grant_end_date'] ?? now()->addYear()->toDateString()], 'programme' => ['code' => $values['programme_code'] ?? null, 'name' => $values['programme_name'] ?? null], 'project' => ['code' => $values['project_code'], 'name' => $values['project_name'] ?? $values['project_code'], 'total_budget' => $values['project_budget'] ?? 0], 'frameworks' => [], 'workplans' => [], 'deadlines' => []];
         }
+        if (!$records) return response()->json(['message' => 'Template CSV/Excel Donor & Grant Terintegrasi tidak valid atau kosong.'], 422);
         $created = 0;
-        foreach ($payload['records'] as $record) {
+        $donorId = null;
+        foreach ($records as $record) {
+            if ($donorId) $record['donor']['id'] = $donorId;
             $response = $this->store(Request::create('/v1/master/donor-grant-integrated', 'POST', $record));
             if ($response->getStatusCode() >= 300) return $response;
+            $body = json_decode($response->getContent(), true);
+            $donorId = $donorId ?: ($body['data']['id'] ?? $body['data']['data']['id'] ?? null);
             $created++;
         }
         return response()->json(['success' => true, 'message' => 'Import Donor & Grant Terintegrasi berhasil.', 'created' => $created]);
@@ -112,7 +128,8 @@ class IntegratedDonorGrantController extends Controller
         $data = $request->validate([
             'donor' => 'required|array', 'donor.code' => 'required|string|max:30', 'donor.name' => 'required|string|max:150', 'donor.type' => 'required|string|max:50', 'donor.country' => 'nullable|string|max:100', 'donor.contact_person' => 'nullable|string|max:100', 'donor.email' => 'nullable|email|max:150', 'donor.phone' => 'nullable|string|max:50',
             'grant' => 'required|array', 'grant.grant_no' => 'required|string|max:50', 'grant.agreement_no' => 'nullable|string|max:50', 'grant.agreement_date' => 'nullable|date', 'grant.agreement_name' => 'required|string|max:200', 'grant.terms_conditions' => 'nullable|string', 'grant.reporting_period' => 'nullable|string|max:30', 'grant.donor_fiscal_calendar' => 'nullable|in:JAN_DEC,APR_MAR', 'grant.currency_id' => 'required|exists:currencies,id', 'grant.funding_source_id' => 'nullable|exists:funding_sources,id', 'grant.bank_account_id' => 'nullable|exists:bank_accounts,id', 'grant.grant_value' => 'required|numeric|min:0', 'grant.start_date' => 'required|date', 'grant.end_date' => 'required|date|after_or_equal:grant.start_date', 'grant.status' => 'nullable|in:draft,active,closed,suspended',
-            'project' => 'required|array', 'project.code' => 'required|string|max:30', 'project.name' => 'required|string|max:150', 'project.program_id' => 'nullable|exists:programs,id', 'project.theme' => 'nullable|string|max:200', 'project.manager_name' => 'nullable|string|max:100', 'project.start_date' => 'nullable|date', 'project.end_date' => 'nullable|date|after_or_equal:project.start_date', 'project.total_budget' => 'nullable|numeric|min:0',
+            'project' => 'required|array', 'project.code' => 'required|string|max:30', 'project.name' => 'required|string|max:150', 'project.program_id' => 'nullable|exists:programs,id', 'project.theme' => 'nullable|string|max:200', 'project.manager_name' => 'nullable|string|max:100', 'project.start_date' => 'nullable|date', 'project.end_date' => 'nullable|date|after_or_equal:project.start_date', 'project.total_budget' => 'nullable|numeric|min:0', 'project.partner_ids' => 'nullable|array', 'project.partner_ids.*' => 'integer|exists:beneficiary_partners,id', 'project.funding_source_ids' => 'nullable|array', 'project.funding_source_ids.*' => 'integer|exists:funding_sources,id',
+            'programme' => 'nullable|array', 'programme.id' => 'nullable|integer|exists:programs,id', 'programme.code' => 'nullable|string|max:50', 'programme.name' => 'nullable|string|max:150', 'programme.objective' => 'nullable|string',
             'frameworks' => 'array', 'frameworks.*.level' => 'required|in:impact,outcome,output,activity', 'frameworks.*.code' => 'required|string|max:50', 'frameworks.*.description' => 'required|string', 'frameworks.*.indicator' => 'nullable|string|max:255', 'frameworks.*.baseline' => 'nullable|numeric', 'frameworks.*.target' => 'nullable|numeric',
             'workplans' => 'array', 'workplans.*.activity' => 'required|string|max:255', 'workplans.*.output_code' => 'nullable|string|max:100', 'workplans.*.start_date' => 'nullable|date', 'workplans.*.end_date' => 'nullable|date', 'workplans.*.status' => 'nullable|string|max:50', 'workplans.*.baseline' => 'nullable|numeric',
             'budgets' => 'array', 'budgets.*.line_code' => 'required|string|max:50', 'budgets.*.description' => 'required|string|max:255', 'budgets.*.budget_category_id' => 'required|exists:budget_categories,id', 'budgets.*.total_amount' => 'required|numeric|min:0',
@@ -124,7 +141,11 @@ class IntegratedDonorGrantController extends Controller
             $grant = $donor->grantAgreements()->firstOrFail();
             $grant->update(array_merge($data['grant'], ['donor_id' => $donor->id]));
             $project = $grant->projects()->firstOrFail();
+            if (!empty($data['programme']['id'])) $data['project']['program_id'] = $data['programme']['id'];
+            elseif (!empty($data['programme']['code']) && !empty($data['programme']['name'])) $data['project']['program_id'] = Program::firstOrCreate(['code' => $data['programme']['code']], ['name' => $data['programme']['name'], 'objective' => $data['programme']['objective'] ?? null, 'is_active' => true])->id;
             $project->update($data['project']);
+            $project->partners()->sync(collect($data['project']['partner_ids'] ?? [])->mapWithKeys(fn ($id) => [$id => ['role' => 'implementing_partner']])->all());
+            $project->fundingSources()->sync($data['project']['funding_source_ids'] ?? []);
 
             ProjectLogframe::where('project_id', $project->id)->get()->each->delete();
             ProjectWorkplan::where('project_id', $project->id)->get()->each->delete();
@@ -210,7 +231,8 @@ class IntegratedDonorGrantController extends Controller
 
         $data = $request->validate([
             'donor' => 'required|array',
-            'donor.code' => 'required|string|max:30|unique:donors,code',
+            'donor.id' => 'nullable|integer|exists:donors,id',
+            'donor.code' => 'required|string|max:30|unique:donors,code,' . ((int) $request->input('donor.id')),
             'donor.name' => 'required|string|max:150',
             'donor.type' => 'required|string|max:50',
             'donor.country' => 'nullable|string|max:100',
@@ -242,6 +264,15 @@ class IntegratedDonorGrantController extends Controller
             'project.start_date' => 'nullable|date',
             'project.end_date' => 'nullable|date|after_or_equal:project.start_date',
             'project.total_budget' => 'nullable|numeric|min:0',
+            'project.partner_ids' => 'nullable|array',
+            'project.partner_ids.*' => 'integer|exists:beneficiary_partners,id',
+            'project.funding_source_ids' => 'nullable|array',
+            'project.funding_source_ids.*' => 'integer|exists:funding_sources,id',
+            'programme' => 'nullable|array',
+            'programme.id' => 'nullable|integer|exists:programs,id',
+            'programme.code' => 'nullable|string|max:50',
+            'programme.name' => 'nullable|string|max:150',
+            'programme.objective' => 'nullable|string',
             'frameworks' => 'array',
             'frameworks.*.level' => 'required|in:impact,outcome,output,activity',
             'frameworks.*.code' => 'required|string|max:50',
@@ -326,10 +357,12 @@ class IntegratedDonorGrantController extends Controller
             if ($agreementFile && ! $agreementFile->isValid()) {
                 throw new \RuntimeException('Upload Dokumen Agreement gagal: '.$agreementFile->getErrorMessage());
             }
-            $donor = Donor::create(array_merge($data['donor'], [
+            $donor = !empty($data['donor']['id']) ? Donor::findOrFail($data['donor']['id']) : Donor::create(array_merge($data['donor'], [
                 'status' => $data['donor']['status'] ?? 'active',
                 'is_active' => $data['donor']['is_active'] ?? true,
             ]));
+            unset($data['donor']['id']);
+            if ($donor->wasRecentlyCreated === false) $donor->update($data['donor']);
             $grant = GrantAgreement::create(array_merge($data['grant'], [
                 'donor_id' => $donor->id,
                 'agreement_document_path' => $agreementFile?->store('donor-grant-documents', 'public'),
@@ -337,11 +370,15 @@ class IntegratedDonorGrantController extends Controller
                 'status' => $data['grant']['status'] ?? 'draft',
                 'is_active' => true,
             ]));
+            if (!empty($data['programme']['id'])) $data['project']['program_id'] = $data['programme']['id'];
+            elseif (!empty($data['programme']['code']) && !empty($data['programme']['name'])) $data['project']['program_id'] = Program::firstOrCreate(['code' => $data['programme']['code']], ['name' => $data['programme']['name'], 'objective' => $data['programme']['objective'] ?? null, 'is_active' => true])->id;
             $project = Project::create(array_merge($data['project'], [
                 'grant_agreement_id' => $grant->id,
                 'budget_currency_id' => $data['project']['budget_currency_id'] ?? $grant->currency_id,
                 'is_active' => true,
             ]));
+            $project->partners()->sync(collect($data['project']['partner_ids'] ?? [])->mapWithKeys(fn ($id) => [$id => ['role' => 'implementing_partner']])->all());
+            $project->fundingSources()->sync($data['project']['funding_source_ids'] ?? []);
 
             foreach ($data['frameworks'] ?? [] as $framework) {
                 ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id]));

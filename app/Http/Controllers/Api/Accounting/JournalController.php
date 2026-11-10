@@ -55,8 +55,12 @@ class JournalController extends Controller
         'currency:id,code,name',
         'lines.account:id,code,name',
         'lines.donor:id,code,name',
+        'lines.grantAgreement:id,donor_id,grant_no,agreement_name',
+        'lines.partner:id,code,name',
         'lines.program:id,code,name',
-        'lines.project:id,code,name',
+        'lines.project:id,code,name,grant_agreement_id',
+        'lines.project.grantAgreement:id,donor_id,grant_no,agreement_name',
+        'lines.project.grantAgreement.donor:id,code,name',
         'lines.budgetLine:id,line_code,description',
         'lines.department:id,code,name',
     ];
@@ -69,6 +73,8 @@ class JournalController extends Controller
         $query = Journal::query()
             ->with(['currency:id,code,name', 'lines'])
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->query('status')))
+            ->when($request->filled('project_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('project_id', $request->integer('project_id'))))
+            ->when($request->filled('donor_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('donor_id', $request->integer('donor_id'))))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->query('search');
                 $query->where(function ($inner) use ($search) {
@@ -411,8 +417,12 @@ class JournalController extends Controller
             'lines' => ['required', 'array', 'min:2'],
             'lines.*.account_id' => ['required', 'integer', 'exists:chart_of_accounts,id'],
             'lines.*.donor_id' => ['required', 'integer', 'exists:donors,id'],
+            'lines.*.grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
             'lines.*.program_id' => ['nullable', 'integer', 'exists:programs,id'],
-            'lines.*.project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            // Every journal line is booked to a project so donor reporting can
+            // aggregate all projects under one donor without losing the detail.
+            'lines.*.project_id' => ['required', 'integer', 'exists:projects,id'],
+            'lines.*.partner_id' => ['nullable', 'integer', 'exists:beneficiary_partners,id'],
             'lines.*.budget_line_id' => ['required', 'integer', 'exists:budget_lines,id'],
             'lines.*.department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'lines.*.line_description' => ['required', 'string', 'max:255'],
@@ -432,6 +442,10 @@ class JournalController extends Controller
         $totalCredit = 0;
 
         foreach ($payload['lines'] as $index => $line) {
+            $project = \App\Models\Master\Project::with('grantAgreement')->find($line['project_id']);
+            $payload['lines'][$index]['program_id'] = $project?->program_id;
+            $payload['lines'][$index]['grant_agreement_id'] = $project?->grant_agreement_id;
+            $payload['lines'][$index]['donor_id'] = $project?->grantAgreement?->donor_id;
             $debit = round((float) ($line['debit'] ?? 0), 2);
             $credit = round((float) ($line['credit'] ?? 0), 2);
 
@@ -550,8 +564,22 @@ class JournalController extends Controller
                 'account_code' => $line->account?->code,
                 'account_name' => $line->account?->name,
                 'donor_id' => $line->donor_id,
+                'donor_code' => $line->donor?->code,
+                'donor_name' => $line->donor?->name,
                 'program_id' => $line->program_id,
+                'program_code' => $line->program?->code,
+                'program_name' => $line->program?->name,
+                'grant_agreement_id' => $line->grant_agreement_id ?: $line->project?->grant_agreement_id,
+                'partner_id' => $line->partner_id,
+                'partner_name' => $line->partner?->name,
                 'project_id' => $line->project_id,
+                'project_code' => $line->project?->code,
+                'project_name' => $line->project?->name,
+                'grant_id' => $line->project?->grantAgreement?->id,
+                'grant_no' => $line->project?->grantAgreement?->grant_no,
+                'grant_name' => $line->project?->grantAgreement?->agreement_name,
+                'grant_donor_code' => $line->project?->grantAgreement?->donor?->code,
+                'grant_donor_name' => $line->project?->grantAgreement?->donor?->name,
                 'budget_line_id' => $line->budget_line_id,
                 'budget_code' => $line->budgetLine?->line_code,
                 'department_id' => $line->department_id,

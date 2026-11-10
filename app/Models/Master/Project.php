@@ -84,4 +84,14 @@ class Project extends Model
             ->orderBy('year');
     }
 
+    public function partners()
+    {
+        return $this->belongsToMany(BeneficiaryPartner::class, 'project_partner', 'project_id', 'partner_id')->withPivot('role')->withTimestamps();
+    }
+
+    public function fundingSources()
+    {
+        return $this->belongsToMany(FundingSource::class, 'project_funding_source')->withPivot('amount')->withTimestamps();
+    }
+
 }
