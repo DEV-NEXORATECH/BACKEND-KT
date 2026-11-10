@@ -173,7 +173,12 @@ abstract class BaseMasterController extends Controller
 
     public function destroy($id): JsonResponse
     {
-        $record = $this->modelClass::findOrFail($id);
+        // The list endpoint intentionally shows master records across fiscal
+        // years. Deleting by an ID from that list must not be blocked by the
+        // request's active fiscal-year global scope.
+        $record = $this->modelClass::query()
+            ->withoutGlobalScope('fiscal_year_context')
+            ->findOrFail($id);
 
         // Check if model defines related records check or has common relations
         $relatedCount = 0;
