@@ -52,7 +52,7 @@ class MasterMenuSeeder extends Seeder
                 ['title' => 'Iuran Anggota', 'slug' => 'master-membership-dues', 'path' => '/master-data/membership-dues', 'sort_order' => 161],
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data', 'sort_order' => 18, 'children' => [
-                ['title' => 'Master Referensi', 'slug' => 'master-donor-grant-reference', 'path' => '/master-data/donor-types', 'sort_order' => 180],
+                ['title' => 'Master Referensi', 'slug' => 'master-donor-grant-reference', 'path' => '/master-data/donor-grant-reference', 'sort_order' => 180],
                 ['title' => 'Implementing Partners', 'slug' => 'master-beneficiary-partners', 'path' => '/master-data/beneficiary-partners', 'sort_order' => 183],
                 ['title' => 'Donor & Grant Terintegrasi', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 184],
             ]],

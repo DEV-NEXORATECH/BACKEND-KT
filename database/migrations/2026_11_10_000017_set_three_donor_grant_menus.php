@@ -28,7 +28,7 @@ return new class extends Migration
         $reference = DB::table('menus')->where('slug', 'master-donor-grant-reference')->first();
         $values = [
             'title' => 'Master Referensi',
-            'path' => '/master-data/donor-types',
+            'path' => '/master-data/donor-grant-reference',
             'parent_id' => $parent->id,
             'sort_order' => 180,
             'is_active' => true,
@@ -37,12 +37,22 @@ return new class extends Migration
 
         if ($reference) {
             DB::table('menus')->where('id', $reference->id)->update($values);
+            $referenceId = $reference->id;
         } else {
-            DB::table('menus')->insert([
+            $referenceId = DB::table('menus')->insertGetId([
                 ...$values,
                 'slug' => 'master-donor-grant-reference',
                 'created_at' => now(),
             ]);
+        }
+
+        if (DB::getSchemaBuilder()->hasTable('menu_role')) {
+            foreach (DB::table('roles')->pluck('id') as $roleId) {
+                DB::table('menu_role')->insertOrIgnore([
+                    'role_id' => $roleId,
+                    'menu_id' => $referenceId,
+                ]);
+            }
         }
     }
 
