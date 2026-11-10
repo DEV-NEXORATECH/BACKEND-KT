@@ -164,15 +164,9 @@ class RoleSeeder extends Seeder
                 ['title' => 'Budget Reallocation', 'slug' => 'budget-forecast-reallocation', 'path' => '/funding-projects/budget-reallocation', 'sort_order' => 284],
             ]],
             ['title' => 'Expenses & Approvals', 'slug' => 'expenses-approvals', 'path' => '/expenses-approvals', 'icon' => 'wallet', 'sort_order' => 30, 'children' => [
-                ['title' => 'Dashboard', 'slug' => 'expenses-dashboard', 'path' => '/expenses-approvals/dashboard', 'sort_order' => 30],
-                ['title' => 'Expense Requests', 'slug' => 'expense-requests', 'path' => '/expenses-approvals/requests', 'sort_order' => 31],
-                ['title' => 'Reimbursements', 'slug' => 'reimbursements', 'path' => '/expenses-approvals/reimbursements', 'sort_order' => 32],
-                ['title' => 'Cash Advances', 'slug' => 'cash-advances', 'path' => '/expenses-approvals/cash-advances', 'sort_order' => 33],
-                ['title' => 'Settlement', 'slug' => 'settlement', 'path' => '/expenses-approvals/settlement', 'sort_order' => 34],
-                ['title' => 'Approval Center', 'slug' => 'approval-center', 'path' => '/expenses-approvals/approvals', 'sort_order' => 35],
-                ['title' => 'Finance Verification', 'slug' => 'finance-verification', 'path' => '/expenses-approvals/finance-verification', 'sort_order' => 36],
-                ['title' => 'Payment Processing', 'slug' => 'payment-processing', 'path' => '/expenses-approvals/payment-processing', 'sort_order' => 37],
-                ['title' => 'Staff Aging', 'slug' => 'expense-staff-aging', 'path' => '/expenses-approvals/staff-aging', 'sort_order' => 39],
+                ['title' => 'Requests & Verification', 'slug' => 'expenses-requests-verification', 'path' => '/expenses-approvals/approvals', 'sort_order' => 31],
+                ['title' => 'Payment Processing', 'slug' => 'expenses-payment-processing', 'path' => '/expenses-approvals/payment-processing', 'sort_order' => 32],
+                ['title' => 'Advances & Settlements', 'slug' => 'expenses-advances-settlements', 'path' => '/expenses-approvals/cash-advances', 'sort_order' => 33],
             ]],
             ['title' => 'Accounting', 'slug' => 'accounting', 'path' => '/accounting', 'icon' => 'accounting', 'sort_order' => 40, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'accounting-dashboard', 'path' => '/accounting/dashboard', 'sort_order' => 40],
