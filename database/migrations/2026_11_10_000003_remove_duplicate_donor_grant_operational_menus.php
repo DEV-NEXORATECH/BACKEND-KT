@@ -10,6 +10,7 @@ return new class extends Migration
         $ids = DB::table('menus')->whereIn('slug', [
             'donor-grant-programs-projects',
             'donor-grant-reporting',
+            'donor-grant-project-workplan',
         ])->pluck('id');
         if ($ids->isNotEmpty() && DB::getSchemaBuilder()->hasTable('menu_role')) {
             DB::table('menu_role')->whereIn('menu_id', $ids)->delete();

@@ -113,21 +113,18 @@ class MasterMenuSeeder extends Seeder
         // standalone menu seeder is run without RoleSeeder first.
         $donorGrantMenu = Menu::where('slug', 'donor-grant')->first();
         if ($donorGrantMenu) {
-            Menu::whereIn('slug', ['donor-grant-integrated-record', 'donor-grant-donors'])->update(['is_active' => false]);
-            Menu::updateOrCreate(['slug' => 'donor-grant-project-frameworks'], [
-                'parent_id' => $donorGrantMenu->id,
-                'title' => 'Project Frameworks',
-                'path' => '/project-frameworks',
-                'sort_order' => 23,
-                'is_active' => true,
-            ]);
-            Menu::updateOrCreate(['slug' => 'donor-grant-grants'], [
-                'parent_id' => $donorGrantMenu->id,
-                'title' => 'Grant Agreements',
-                'path' => '/donor-grant/grants',
-                'sort_order' => 24,
-                'is_active' => true,
-            ]);
+            Menu::whereIn('slug', ['donor-grant-integrated-record', 'donor-grant-donors', 'donor-grant-grants', 'donor-grant-project-workplan', 'donor-grant-reporting', 'donor-grant-donor-reporting'])->update(['is_active' => false]);
+            foreach ([
+                ['slug' => 'donor-grant-dashboard', 'title' => 'Dashboard', 'path' => '/donor-grant/dashboard', 'sort_order' => 21],
+                ['slug' => 'donor-grant-project-frameworks-canonical', 'title' => 'Project Frameworks', 'path' => '/project-frameworks', 'sort_order' => 22],
+                ['slug' => 'donor-grant-workplan-activities', 'title' => 'Workplan & Activities', 'path' => '/project-timeline-workplan', 'sort_order' => 23],
+                ['slug' => 'donor-grant-project-budget', 'title' => 'Project Budget', 'path' => '/donor-grant/budget', 'sort_order' => 24],
+                ['slug' => 'donor-grant-forecast-canonical', 'title' => 'Forecast', 'path' => '/donor-grant/forecast-disbursement', 'sort_order' => 25],
+                ['slug' => 'donor-grant-budget-monitoring-canonical', 'title' => 'Budget Monitoring', 'path' => '/donor-grant/budget-monitoring', 'sort_order' => 26],
+                ['slug' => 'donor-grant-donor-reporting-canonical', 'title' => 'Donor Reporting', 'path' => '/donor-grant/donor-reporting', 'sort_order' => 27],
+            ] as $item) {
+                Menu::updateOrCreate(['slug' => $item['slug']], [...$item, 'parent_id' => $donorGrantMenu->id, 'is_active' => true]);
+            }
         }
 
         // Project Frameworks belongs only under the functional Donor & Grant

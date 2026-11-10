@@ -156,8 +156,6 @@ class RoleSeeder extends Seeder
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/donor-grant', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'donor-grant-dashboard', 'path' => '/donor-grant/dashboard', 'sort_order' => 21],
-                ['title' => 'Project Timeline / Workplan', 'slug' => 'donor-grant-project-workplan', 'path' => '/project-timeline-workplan', 'sort_order' => 23.2],
-                ['title' => 'Donor Reporting', 'slug' => 'donor-grant-donor-reporting', 'path' => '/donor-grant/donor-reporting', 'sort_order' => 28],
             ]],
             ['title' => 'Budget & Forecast', 'slug' => 'budget-forecast', 'path' => '/donor-grant/budget', 'icon' => 'chart', 'sort_order' => 28, 'children' => [
                 ['title' => 'Budget Planning', 'slug' => 'budget-forecast-planning', 'path' => '/donor-grant/budget', 'sort_order' => 281],
