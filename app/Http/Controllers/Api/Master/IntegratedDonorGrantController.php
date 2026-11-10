@@ -22,6 +22,45 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class IntegratedDonorGrantController extends Controller
 {
+    public function destroyProject(Donor $donor, Project $project)
+    {
+        $belongsToDonor = $donor->grantAgreements()
+            ->whereKey($project->grant_agreement_id)
+            ->exists();
+        if (! $belongsToDonor) {
+            return response()->json(['message' => 'Project tidak terhubung ke Funder ini.'], 404);
+        }
+
+        $project->delete();
+        return response()->json(['success' => true, 'message' => 'Project berhasil dihapus.']);
+    }
+
+    public function storeDraft(Request $request)
+    {
+        $data = $request->validate([
+            'donor.id' => 'nullable|integer|exists:donors,id',
+            'donor' => 'required|array',
+            'donor.code' => 'required|string|max:30|unique:donors,code,' . ((int) $request->input('donor.id')),
+            'donor.name' => 'required|string|max:150',
+            'donor.type' => 'nullable|string|max:50',
+            'donor.lead_applicant' => 'nullable|string|max:150',
+            'donor.country' => 'nullable|string|max:100',
+            'donor.contact_person' => 'nullable|string|max:100',
+            'donor.email' => 'nullable|email|max:150',
+            'donor.phone' => 'nullable|string|max:50',
+        ]);
+
+        $draftPayload = $request->except(['documents']);
+        $donor = ! empty($data['donor']['id']) ? Donor::findOrFail($data['donor']['id']) : Donor::create(array_merge($data['donor'], [
+            'type' => $data['donor']['type'] ?? 'Other',
+            'status' => 'inactive',
+            'is_active' => false,
+        ]));
+        $donor->update(['draft_payload' => $draftPayload, 'status' => 'inactive', 'is_active' => false]);
+
+        return response()->json(['success' => true, 'data' => $donor, 'message' => 'Funder draft berhasil disimpan.'], 201);
+    }
+
     public function export(Request $request)
     {
         $records = Donor::with([
@@ -137,7 +176,7 @@ class IntegratedDonorGrantController extends Controller
         ]);
 
         $result = DB::transaction(function () use ($data, $donor) {
-            $donor->update($data['donor']);
+            $donor->update(array_merge($data['donor'], ['draft_payload' => null, 'status' => $data['grant']['status'] ?? 'draft']));
             $grant = $donor->grantAgreements()->firstOrFail();
             $grant->update(array_merge($data['grant'], ['donor_id' => $donor->id]));
             $project = $grant->projects()->firstOrFail();
@@ -363,7 +402,7 @@ class IntegratedDonorGrantController extends Controller
                 'is_active' => $data['donor']['is_active'] ?? true,
             ]));
             unset($data['donor']['id']);
-            if ($donor->wasRecentlyCreated === false) $donor->update($data['donor']);
+            if ($donor->wasRecentlyCreated === false) $donor->update(array_merge($data['donor'], ['draft_payload' => null]));
             $grant = GrantAgreement::create(array_merge($data['grant'], [
                 'donor_id' => $donor->id,
                 'agreement_document_path' => $agreementFile?->store('donor-grant-documents', 'public'),

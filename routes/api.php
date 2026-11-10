@@ -408,9 +408,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // -------------------------------------------------------------
     Route::prefix('v1/master')->group(function () {
         Route::post('donor-grant-integrated', [IntegratedDonorGrantController::class, 'store'])->middleware('permission:master-data.manage');
+        Route::post('donor-grant-integrated/draft', [IntegratedDonorGrantController::class, 'storeDraft'])->middleware('permission:master-data.manage');
         Route::post('donor-grant-integrated/import', [IntegratedDonorGrantController::class, 'import'])->middleware('permission:master-data.manage');
         Route::get('donor-grant-integrated/export', [IntegratedDonorGrantController::class, 'export'])->middleware('permission:master-data.export');
         Route::put('donor-grant-integrated/{donor}', [IntegratedDonorGrantController::class, 'update'])->middleware('permission:master-data.manage');
+        Route::delete('donor-grant-integrated/{donor}/projects/{project}', [IntegratedDonorGrantController::class, 'destroyProject'])->middleware('permission:master-data.manage');
         Route::delete('donor-grant-integrated/{donor}', [IntegratedDonorGrantController::class, 'destroy'])->middleware('permission:master-data.manage');
         Route::get('donor-grant-documents/download', [IntegratedDonorGrantController::class, 'downloadDocument'])->middleware('permission:master-data.view');
         Route::get('organization-structure', [OrganizationStructureController::class, 'index'])->middleware('permission:master-data.view');
