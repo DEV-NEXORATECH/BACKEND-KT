@@ -51,10 +51,7 @@ class MasterMenuSeeder extends Seeder
                 ['title' => 'Members / Anggota', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 160],
                 ['title' => 'Iuran Anggota', 'slug' => 'master-membership-dues', 'path' => '/master-data/membership-dues', 'sort_order' => 161],
             ]],
-            ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 18, 'children' => [
-                ['title' => 'Donor Types', 'slug' => 'master-donor-types', 'path' => '/master-data/donor-types', 'sort_order' => 180],
-                ['title' => 'Programs', 'slug' => 'master-programs', 'path' => '/master-data/programs', 'sort_order' => 181],
-                ['title' => 'Funding Sources', 'slug' => 'master-funding-sources', 'path' => '/master-data/funding-sources', 'sort_order' => 182],
+            ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data', 'sort_order' => 18, 'children' => [
                 ['title' => 'Implementing Partners', 'slug' => 'master-beneficiary-partners', 'path' => '/master-data/beneficiary-partners', 'sort_order' => 183],
                 ['title' => 'Donor & Grant Terintegrasi', 'slug' => 'master-donor-grant-integrated', 'path' => '/master-data/donor-grant-integrated', 'sort_order' => 184],
             ]],
@@ -93,6 +90,12 @@ class MasterMenuSeeder extends Seeder
                 Menu::updateOrCreate(['slug' => $child['slug']], [...$child, 'parent_id' => $groupMenu->id, 'is_active' => true]);
             }
         }
+
+        // These records remain available through tabs on the integrated page,
+        // but must not be rendered as sidebar children.
+        Menu::whereIn('slug', [
+            'master-donor-types', 'master-programs', 'master-funding-sources',
+        ])->update(['is_active' => false]);
 
         // Programs and projects are presented under Donor & Grant in the UI.
         // Their routes and database relationships remain unchanged.
