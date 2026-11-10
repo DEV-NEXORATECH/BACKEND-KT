@@ -493,6 +493,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get("{$uri}/export", [$controller, 'export'])->middleware('permission:master-data.export');
             Route::post("{$uri}/export/email", [$controller, 'emailExport'])->middleware('permission:master-data.export');
             Route::post("{$uri}/import", [$controller, 'import'])->middleware('permission:master-data.manage');
+            Route::post("{$uri}/{id}/delete", [$controller, 'destroy'])->middleware('permission:master-data.manage');
             Route::patch("{$uri}/{id}/toggle-status", [$controller, 'toggleStatus'])->middleware('permission:master-data.manage');
             Route::apiResource($uri, $controller)
                 ->parameters([$uri => 'id'])
