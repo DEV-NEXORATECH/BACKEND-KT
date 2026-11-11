@@ -165,7 +165,7 @@ class JournalController extends Controller
             $grouped[$number]['reference'] ??= $value($row, $index, ['reference', 'ref']);
             $grouped[$number]['description'] ??= $value($row, $index, ['description', 'journal_description']) ?: 'Imported journal';
             $grouped[$number]['lines'][] = [
-                'account_id' => (int) ($value($row, $index, ['account_id', 'coa_id', 'coa', 'gl_account_id']) ?: 0),
+                'account_id' => self::resolveImportId($value($row, $index, ['account_id', 'coa_id', 'coa', 'gl_account_id']), 'chart_of_accounts', ['code', 'name']),
                 // Donor/program/project dimensions are resolved from the project
                 // during validation. Empty CSV cells must stay NULL, not become 0.
                 'donor_id' => self::nullableInteger($value($row, $index, ['donor_id', 'sof'])),
@@ -182,7 +182,10 @@ class JournalController extends Controller
         foreach ($grouped as $number => $data) {
             try {
                 $payload = new Request($data);
-                $validated = $this->validatePayload($payload);
+                $isDraftImport = collect($data['lines'] ?? [])->contains(fn ($line) => empty($line['project_id']) || empty($line['budget_line_id']));
+                $validated = $isDraftImport
+                    ? $this->validateDraftImportPayload($payload)
+                    : $this->validatePayload($payload);
                 $this->guardOpenPeriod($validated['journal_date']);
                 DB::transaction(function () use ($validated, &$created) {
                     $lines = $validated['lines']; unset($validated['lines']);
@@ -196,10 +199,55 @@ class JournalController extends Controller
         return response()->json(['success' => $created > 0, 'message' => "{$created} journal berhasil diimport, ".count($errors).' gagal.', 'created' => $created, 'skipped' => count($errors), 'errors' => $errors]);
     }
 
+    private function validateDraftImportPayload(Request $request): array
+    {
+        $payload = $request->validate([
+            'journal_number' => ['nullable', 'string', 'max:40', 'unique:journals,journal_number'],
+            'journal_date' => ['required', 'date'],
+            'reference' => ['nullable', 'string', 'max:100'],
+            'description' => ['required', 'string'],
+            'lines' => ['required', 'array', 'min:2'],
+            'lines.*.account_id' => ['required', 'integer', 'exists:chart_of_accounts,id'],
+            'lines.*.donor_id' => ['nullable', 'integer', 'exists:donors,id'],
+            'lines.*.program_id' => ['nullable', 'integer', 'exists:programs,id'],
+            'lines.*.project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'lines.*.budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
+            'lines.*.department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'lines.*.line_description' => ['required', 'string', 'max:255'],
+            'lines.*.debit' => ['nullable', 'numeric', 'min:0'],
+            'lines.*.credit' => ['nullable', 'numeric', 'min:0'],
+        ]);
+        $payload['journal_type'] = 'manual';
+        foreach ($payload['lines'] as $index => $line) {
+            $debit = round((float) ($line['debit'] ?? 0), 2);
+            $credit = round((float) ($line['credit'] ?? 0), 2);
+            if (($debit > 0 && $credit > 0) || ($debit <= 0 && $credit <= 0)) {
+                throw ValidationException::withMessages(["lines.{$index}" => 'Each journal line must have either a debit or a credit.']);
+            }
+            $payload['lines'][$index]['debit'] = $debit;
+            $payload['lines'][$index]['credit'] = $credit;
+            $payload['lines'][$index]['line_order'] = $index + 1;
+        }
+        return $payload;
+    }
+
     private static function nullableInteger(mixed $value): ?int
     {
         if ($value === null || trim((string) $value) === '') return null;
         return is_numeric($value) ? (int) $value : null;
+    }
+
+    private static function resolveImportId(mixed $value, string $table, array $columns): ?int
+    {
+        $id = self::nullableInteger($value);
+        if ($id !== null) return $id;
+        $text = trim((string) $value);
+        if ($text === '') return null;
+        foreach ($columns as $column) {
+            $match = DB::table($table)->whereRaw("LOWER(TRIM(`{$column}`)) = ?", [strtolower($text)])->value('id');
+            if ($match !== null) return (int) $match;
+        }
+        return null;
     }
 
     public function show(Request $request, Journal $journal): JsonResponse
