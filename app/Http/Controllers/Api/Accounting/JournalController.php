@@ -178,9 +178,13 @@ class JournalController extends Controller
                 'credit' => (float) ($value($row, $index, ['credit', 'credits']) ?: 0),
             ];
         }
-        $created = 0; $errors = [];
+        $created = 0; $errors = []; $alreadyExists = [];
         foreach ($grouped as $number => $data) {
             try {
+                if (Journal::query()->where('journal_number', $number)->exists()) {
+                    $alreadyExists[] = $number;
+                    continue;
+                }
                 $payload = new Request($data);
                 $isDraftImport = collect($data['lines'] ?? [])->contains(fn ($line) => empty($line['project_id']) || empty($line['budget_line_id']));
                 $validated = $isDraftImport
@@ -196,7 +200,9 @@ class JournalController extends Controller
                 $errors[] = "{$number}: ".($error->getMessage() ?: 'Invalid journal data');
             }
         }
-        return response()->json(['success' => $created > 0, 'message' => "{$created} journal berhasil diimport, ".count($errors).' gagal.', 'created' => $created, 'skipped' => count($errors), 'errors' => $errors]);
+        $message = "{$created} journal berhasil diimport, ".count($errors).' gagal.';
+        if ($alreadyExists) $message .= ' '.count($alreadyExists).' journal dilewati karena sudah ada.';
+        return response()->json(['success' => $created > 0, 'message' => $message, 'created' => $created, 'skipped' => count($errors) + count($alreadyExists), 'already_exists' => $alreadyExists, 'errors' => $errors]);
     }
 
     private function validateDraftImportPayload(Request $request): array
