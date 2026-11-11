@@ -166,10 +166,12 @@ class JournalController extends Controller
             $grouped[$number]['description'] ??= $value($row, $index, ['description', 'journal_description']) ?: 'Imported journal';
             $grouped[$number]['lines'][] = [
                 'account_id' => (int) ($value($row, $index, ['account_id', 'coa_id', 'coa', 'gl_account_id']) ?: 0),
-                'donor_id' => (int) ($value($row, $index, ['donor_id', 'sof']) ?: 0),
-                'program_id' => $value($row, $index, ['program_id']) ?: null,
-                'project_id' => $value($row, $index, ['project_id']) ?: null,
-                'budget_line_id' => (int) ($value($row, $index, ['budget_line_id', 'budget_code']) ?: 0),
+                // Donor/program/project dimensions are resolved from the project
+                // during validation. Empty CSV cells must stay NULL, not become 0.
+                'donor_id' => self::nullableInteger($value($row, $index, ['donor_id', 'sof'])),
+                'program_id' => self::nullableInteger($value($row, $index, ['program_id'])),
+                'project_id' => self::nullableInteger($value($row, $index, ['project_id'])),
+                'budget_line_id' => self::nullableInteger($value($row, $index, ['budget_line_id', 'budget_code'])),
                 'department_id' => $value($row, $index, ['department_id']) ?: null,
                 'line_description' => $value($row, $index, ['line_description', 'line_note']) ?: 'Imported journal line',
                 'debit' => (float) ($value($row, $index, ['debit', 'debits']) ?: 0),
@@ -192,6 +194,12 @@ class JournalController extends Controller
             }
         }
         return response()->json(['success' => $created > 0, 'message' => "{$created} journal berhasil diimport, ".count($errors).' gagal.', 'created' => $created, 'skipped' => count($errors), 'errors' => $errors]);
+    }
+
+    private static function nullableInteger(mixed $value): ?int
+    {
+        if ($value === null || trim((string) $value) === '') return null;
+        return is_numeric($value) ? (int) $value : null;
     }
 
     public function show(Request $request, Journal $journal): JsonResponse
