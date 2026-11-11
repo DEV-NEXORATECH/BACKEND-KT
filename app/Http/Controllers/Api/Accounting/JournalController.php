@@ -206,7 +206,7 @@ class JournalController extends Controller
             'journal_date' => ['required', 'date'],
             'reference' => ['nullable', 'string', 'max:100'],
             'description' => ['required', 'string'],
-            'lines' => ['required', 'array', 'min:2'],
+            'lines' => ['required', 'array', 'min:1'],
             'lines.*.account_id' => ['required', 'integer', 'exists:chart_of_accounts,id'],
             'lines.*.donor_id' => ['nullable', 'integer', 'exists:donors,id'],
             'lines.*.program_id' => ['nullable', 'integer', 'exists:programs,id'],
