@@ -240,7 +240,7 @@ class JournalController extends Controller
     private static function resolveImportId(mixed $value, string $table, array $columns): ?int
     {
         $id = self::nullableInteger($value);
-        if ($id !== null) return $id;
+        if ($id !== null && DB::table($table)->where('id', $id)->exists()) return $id;
         $text = trim((string) $value);
         if ($text === '') return null;
         foreach ($columns as $column) {
