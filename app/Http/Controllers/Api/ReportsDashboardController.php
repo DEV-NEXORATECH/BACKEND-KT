@@ -558,6 +558,12 @@ class ReportsDashboardController extends Controller
 
     public function donorDashboard(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
+        $request->validate([
+            'relation_no' => 'nullable|string|max:100',
+            'project_id' => 'nullable|integer',
+            'grant_agreement_id' => 'nullable|integer',
+        ]);
+
         $period = $this->donorPeriod($request);
         if (! app(DataScopeService::class)->canAccessAll($request->user())) {
             return response()->json([
@@ -570,8 +576,31 @@ class ReportsDashboardController extends Controller
             ]);
         }
 
-        $donors = \App\Models\Master\Donor::query()->with(['grantAgreements'])->get();
-        $grants = \App\Models\Master\GrantAgreement::query()->with(['donor', 'currency', 'projects', 'bankAccount'])->get();
+        $relationNo = trim((string) $request->query('relation_no', ''));
+        $projectId = $request->integer('project_id') ?: null;
+        $grantAgreementId = $request->integer('grant_agreement_id') ?: null;
+        $isFiltered = $relationNo !== '' || $projectId !== null || $grantAgreementId !== null;
+
+        $grantQuery = \App\Models\Master\GrantAgreement::query()
+            ->with(['donor', 'currency', 'projects', 'bankAccount'])
+            ->when($relationNo !== '', function (Builder $query) use ($relationNo) {
+                $query->where(function (Builder $scope) use ($relationNo) {
+                    $scope->where('relation_no', $relationNo)
+                        ->orWhereHas('projects', fn (Builder $project) => $project->where('relation_no', $relationNo));
+                });
+            })
+            ->when($projectId, fn (Builder $query, int $id) => $query->whereHas('projects', fn (Builder $project) => $project->whereKey($id)))
+            ->when($grantAgreementId, fn (Builder $query, int $id) => $query->whereKey($id));
+
+        $grants = $grantQuery->get();
+        $grantIds = $grants->pluck('id');
+        $projectIds = $grants->pluck('projects')->flatten()->pluck('id')
+            ->when($projectId, fn ($ids) => $ids->filter(fn ($id) => (int) $id === $projectId))
+            ->values();
+        $donors = \App\Models\Master\Donor::query()
+            ->with(['grantAgreements' => fn ($query) => $query->whereIn('id', $grantIds)])
+            ->whereIn('id', $grants->pluck('donor_id')->unique())
+            ->get();
         $grantDeadlines = GrantReportingDeadline::query()->whereIn('grant_agreement_id', $grants->pluck('id'))->orderBy('due_date')->get()->groupBy('grant_agreement_id');
 
         $bankBalances = BankTransaction::query()
@@ -584,6 +613,7 @@ class ReportsDashboardController extends Controller
             $bal = round((float) ($bankBalances[$bank?->id] ?? 0), 2);
             return [
                 'grant_id' => $grant->id,
+                'relation_no' => $grant->relation_no ?? $grant->projects->first()?->relation_no,
                 'grant_no' => $grant->grant_no,
                 'agreement_name' => $grant->agreement_name,
                 'donor_name' => $grant->donor?->name ?? '—',
@@ -598,7 +628,7 @@ class ReportsDashboardController extends Controller
         $totalCashBalance = collect($cashPositions)->sum('balance');
 
         $upcomingDeadlines = GrantReportingDeadline::query()
-            ->with(['grantAgreement:id,grant_no,agreement_name,donor_id', 'grantAgreement.donor:id,name,code'])
+            ->with(['grantAgreement:id,grant_no,relation_no,agreement_name,donor_id', 'grantAgreement.donor:id,name,code'])
             ->whereIn('grant_agreement_id', $grants->pluck('id'))
             ->whereNotIn('status', ['approved'])
             ->orderBy('due_date', 'asc')
@@ -613,6 +643,7 @@ class ReportsDashboardController extends Controller
                 return [
                     'id' => $dl->id,
                     'grant_id' => $dl->grant_agreement_id,
+                    'relation_no' => $dl->grantAgreement?->relation_no,
                     'grant_no' => $dl->grantAgreement?->grant_no,
                     'agreement_name' => $dl->grantAgreement?->agreement_name,
                     'donor_name' => $dl->grantAgreement?->donor?->name ?? '—',
@@ -641,8 +672,23 @@ class ReportsDashboardController extends Controller
             ->whereNotIn('status', ['submitted', 'approved'])
             ->count();
 
-        $budgetRows = $budgetService->summary($request->only(['fiscal_year_id', 'project_id', 'grant_agreement_id', 'donor_id']));
-        $postedLines = $this->postedLines($period['start'], $period['end'], null, null, $period['fiscal_year_id']);
+        $budgetFilters = $request->only(['fiscal_year_id', 'project_id', 'grant_agreement_id', 'donor_id']);
+        if (! isset($budgetFilters['project_id']) && $projectIds->count() === 1) {
+            $budgetFilters['project_id'] = $projectIds->first();
+        }
+        if (! isset($budgetFilters['grant_agreement_id']) && $grantIds->count() === 1) {
+            $budgetFilters['grant_agreement_id'] = $grantIds->first();
+        }
+        if ($isFiltered && $grantIds->isEmpty()) {
+            $budgetFilters['grant_agreement_id'] = -1;
+        }
+
+        $budgetRows = $budgetService->summary($budgetFilters);
+        if ($isFiltered && $projectIds->isNotEmpty()) {
+            $budgetRows = $budgetRows->filter(fn (array $row) => $projectIds->contains((int) ($row['project']['id'] ?? 0)));
+        }
+        $postedProjectId = $projectIds->count() === 1 ? (string) $projectIds->first() : null;
+        $postedLines = $this->postedLines($period['start'], $period['end'], $postedProjectId, null, $period['fiscal_year_id']);
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
         $totals = $this->budgetTotals($budgetRows);
 
@@ -658,6 +704,7 @@ class ReportsDashboardController extends Controller
                 'code' => $donor->code,
                 'name' => $donor->name,
                 'type' => $donor->donor_type ?? 'Institutional',
+                'relation_nos' => $donor->grantAgreements->pluck('relation_no')->filter()->values()->all(),
                 'active_grants_count' => $donor->grantAgreements->count(),
                 'approved_budget' => round($approved, 2),
                 'actual' => round($actual, 2),
@@ -696,6 +743,8 @@ class ReportsDashboardController extends Controller
 
             return [
                 'id' => $grant->id,
+                'relation_no' => $grant->relation_no ?? $grant->projects->first()?->relation_no,
+                'project_ids' => $grant->projects->pluck('id')->values()->all(),
                 'grant_no' => $grant->grant_no,
                 'agreement_name' => $grant->agreement_name,
                 'donor_name' => $grant->donor?->name ?? '-',
@@ -725,6 +774,11 @@ class ReportsDashboardController extends Controller
 
         return response()->json([
             'success' => true,
+            'scope' => [
+                'relation_no' => $relationNo ?: null,
+                'project_id' => $projectId,
+                'grant_agreement_id' => $grantAgreementId,
+            ],
             'period' => $period['label'],
             'donor_fiscal_calendar' => $period['donor_fiscal_calendar'],
             'summary' => [

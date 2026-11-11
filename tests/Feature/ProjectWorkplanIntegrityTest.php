@@ -75,6 +75,54 @@ class ProjectWorkplanIntegrityTest extends TestCase
         ])->assertStatus(422)->assertJsonValidationErrors('activity_id');
     }
 
+    public function test_workplan_is_scoped_and_persisted_by_integrated_relation_number(): void
+    {
+        $user = $this->userWithMasterPermission();
+        $grant = $this->grant();
+        $grant->update(['relation_no' => 'KT-REL-WP-A']);
+
+        $projectA = Project::create([
+            'code' => 'P-REL-A',
+            'name' => 'Project Relation A',
+            'grant_agreement_id' => $grant->id,
+            'relation_no' => 'KT-REL-WP-A',
+            'is_active' => true,
+        ]);
+        $projectB = Project::create([
+            'code' => 'P-REL-B',
+            'name' => 'Project Relation B',
+            'relation_no' => 'KT-REL-WP-B',
+            'is_active' => true,
+        ]);
+        $frameworkA = ProjectLogframe::create([
+            'project_id' => $projectA->id,
+            'relation_no' => 'KT-REL-WP-A',
+            'level' => 'output',
+            'code' => 'OUT-REL-A',
+            'description' => 'Output Relation A',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($user, 'sanctum');
+
+        $this->postJson('/api/v1/master/project-workplans', [
+            'project_id' => $projectA->id,
+            'relation_no' => 'KT-REL-WP-A',
+            'logframe_id' => $frameworkA->id,
+            'activity' => 'Integrated relation activity',
+        ])->assertCreated()
+            ->assertJsonPath('data.relation_no', 'KT-REL-WP-A');
+
+        $this->getJson("/api/v1/master/project-workplans?project_id={$projectA->id}&relation_no=KT-REL-WP-A")
+            ->assertOk()
+            ->assertJsonPath('scope.relation_no', 'KT-REL-WP-A')
+            ->assertJsonCount(1, 'data');
+
+        $this->getJson("/api/v1/master/project-workplans?project_id={$projectB->id}&relation_no=KT-REL-WP-A")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('relation_no');
+    }
+
     public function test_import_rejects_cross_project_activity_atomically(): void
     {
         $user = $this->userWithMasterPermission();

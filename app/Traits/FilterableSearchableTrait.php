@@ -56,7 +56,7 @@ trait FilterableSearchableTrait
         // Relational filter helpers
         $filterRelations = [
             'organization_id', 'department_id', 'donor_id', 'funding_source_id',
-            'grant_agreement_id', 'program_id', 'project_id', 'budget_category_id', 'fiscal_year_id',
+            'grant_agreement_id', 'program_id', 'project_id', 'relation_no', 'budget_category_id', 'fiscal_year_id',
             'currency_id', 'gl_account_id', 'office_location_id', 'role_id'
         ];
 

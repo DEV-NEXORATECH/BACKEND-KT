@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Master;
 
+use App\Http\Requests\Master\Concerns\ValidatesBudgetLineRelation;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 use App\Models\Master\ChartOfAccount;
@@ -10,6 +11,8 @@ use App\Models\Master\Activity;
 
 class UpdateBudgetLineRequest extends FormRequest
 {
+    use ValidatesBudgetLineRelation;
+
     public function authorize(): bool
     {
         return true;
@@ -21,6 +24,7 @@ class UpdateBudgetLineRequest extends FormRequest
             'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'grant_agreement_id' => 'nullable|integer|exists:grant_agreements,id',
             'project_id' => 'nullable|integer|exists:projects,id',
+            'relation_no' => 'nullable|string|max:100',
             'activity_id' => 'nullable|integer|exists:activities,id',
             'sub_output_code' => 'nullable|string|max:80',
             'budget_category_id' => 'required|integer|exists:budget_categories,id',
@@ -47,6 +51,8 @@ class UpdateBudgetLineRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $this->mergeBudgetRelationContext();
+
         $mapping = ['BCAT-100' => '5100', 'BCAT-200' => '5200', 'BCAT-300' => '5300'];
         $categoryCode = BudgetCategory::query()->whereKey($this->input('budget_category_id'))->value('code');
         $coaCode = $mapping[$categoryCode] ?? null;
@@ -75,6 +81,8 @@ class UpdateBudgetLineRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
+            $this->validateBudgetRelationContext($validator);
+
             $allocations = $this->input('period_allocations');
             if (is_array($allocations) && count($allocations) > 0) {
                 $sum = collect($allocations)->sum(fn ($row) => (float) ($row['amount'] ?? 0));

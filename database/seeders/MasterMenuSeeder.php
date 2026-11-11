@@ -47,7 +47,7 @@ class MasterMenuSeeder extends Seeder
                 ['title' => 'Holiday Calendar', 'slug' => 'master-holidays', 'path' => '/master-data/holidays', 'sort_order' => 175],
                 ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
             ]],
-            ['title' => 'Members / Anggota', 'slug' => 'master-membership', 'sort_order' => 16, 'children' => [
+            ['title' => 'Membership & Dues', 'slug' => 'master-membership', 'sort_order' => 16, 'children' => [
                 ['title' => 'Members / Anggota', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 160],
                 ['title' => 'Iuran Anggota', 'slug' => 'master-membership-dues', 'path' => '/master-data/membership-dues', 'sort_order' => 161],
             ]],

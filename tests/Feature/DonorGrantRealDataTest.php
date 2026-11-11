@@ -74,6 +74,47 @@ class DonorGrantRealDataTest extends TestCase
             ->assertJsonPath('expenditures.0.reference', 'REAL-GRANT-ACTUAL');
     }
 
+    public function test_donor_dashboard_is_scoped_by_integrated_relation_number(): void
+    {
+        [$user, $budgetLine, $expenseAccount, $liabilityAccount, $donor, $grant, $project] = $this->fixture();
+
+        $relationNo = 'KT-REL-DON-REAL-GR-REAL-001-PROJ-REAL';
+        $grant->update(['relation_no' => $relationNo]);
+        $project->update(['relation_no' => $relationNo]);
+
+        $otherDonor = Donor::create(['code' => 'DON-OTHER', 'name' => 'Other Donor', 'type' => 'institutional', 'is_active' => true]);
+        $otherGrant = GrantAgreement::create([
+            'grant_no' => 'GR-OTHER-001',
+            'relation_no' => 'KT-REL-OTHER',
+            'donor_id' => $otherDonor->id,
+            'agreement_name' => 'Other Agreement',
+            'start_date' => '2026-01-01',
+            'end_date' => '2026-12-31',
+            'currency_id' => $grant->currency_id,
+            'grant_value' => 500,
+            'status' => 'active',
+            'is_active' => true,
+        ]);
+        Project::create([
+            'code' => 'PROJ-OTHER',
+            'relation_no' => 'KT-REL-OTHER',
+            'grant_agreement_id' => $otherGrant->id,
+            'name' => 'Other Project',
+            'budget_currency_id' => $grant->currency_id,
+            'total_budget' => 500,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/donors/dashboard?relation_no='.urlencode($relationNo))
+            ->assertOk()
+            ->assertJsonPath('scope.relation_no', $relationNo)
+            ->assertJsonPath('summary.total_donors', 1)
+            ->assertJsonPath('summary.total_grants', 1)
+            ->assertJsonPath('grants.0.relation_no', $relationNo)
+            ->assertJsonPath('grants.0.grant_no', 'GR-REAL-001');
+    }
+
     private function fixture(): array
     {
         $role = Role::create(['name' => 'Finance', 'slug' => 'finance']);
@@ -84,9 +125,9 @@ class DonorGrantRealDataTest extends TestCase
         $expenseAccount = ChartOfAccount::create(['code' => '5200', 'name' => 'Grant Expense', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
         $liabilityAccount = ChartOfAccount::create(['code' => '2100', 'name' => 'Grant Payable', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
         $donor = Donor::create(['code' => 'DON-REAL', 'name' => 'Real Donor', 'type' => 'institutional', 'default_currency_id' => $currency->id, 'is_active' => true]);
-        $grant = GrantAgreement::create(['grant_no' => 'GR-REAL-001', 'donor_id' => $donor->id, 'agreement_name' => 'Real Grant Agreement', 'start_date' => '2026-01-01', 'end_date' => '2026-12-31', 'currency_id' => $currency->id, 'grant_value' => 1200, 'status' => 'active', 'is_active' => true]);
+        $grant = GrantAgreement::create(['grant_no' => 'GR-REAL-001', 'relation_no' => 'KT-REL-REAL', 'donor_id' => $donor->id, 'agreement_name' => 'Real Grant Agreement', 'start_date' => '2026-01-01', 'end_date' => '2026-12-31', 'currency_id' => $currency->id, 'grant_value' => 1200, 'status' => 'active', 'is_active' => true]);
         $program = Program::create(['code' => 'PRG-REAL', 'name' => 'Program Real', 'is_active' => true]);
-        $project = Project::create(['code' => 'PROJ-REAL', 'program_id' => $program->id, 'grant_agreement_id' => $grant->id, 'name' => 'Project Real', 'budget_currency_id' => $currency->id, 'total_budget' => 1000, 'is_active' => true]);
+        $project = Project::create(['code' => 'PROJ-REAL', 'relation_no' => 'KT-REL-REAL', 'program_id' => $program->id, 'grant_agreement_id' => $grant->id, 'name' => 'Project Real', 'budget_currency_id' => $currency->id, 'total_budget' => 1000, 'is_active' => true]);
         $category = BudgetCategory::create(['code' => 'GRANT', 'name' => 'Grant Program', 'is_active' => true]);
         $budgetLine = BudgetLine::create(['grant_agreement_id' => $grant->id, 'project_id' => $project->id, 'budget_category_id' => $category->id, 'line_code' => 'GR-REAL-001', 'description' => 'Real grant activity', 'currency_id' => $currency->id, 'total_amount' => 1000, 'gl_account_id' => $expenseAccount->id, 'is_active' => true]);
 

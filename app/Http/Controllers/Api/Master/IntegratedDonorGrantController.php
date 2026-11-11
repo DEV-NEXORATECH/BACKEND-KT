@@ -17,11 +17,20 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Throwable;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class IntegratedDonorGrantController extends Controller
 {
+    private function resolveRelationNo(array $data, ?GrantAgreement $grant = null): string
+    {
+        $relationNo = trim((string) ($data['relation_no'] ?? $grant?->relation_no ?? ''));
+
+        return $relationNo !== '' ? Str::upper($relationNo) : 'KT-REL-'.Str::upper((string) Str::uuid());
+    }
+
     public function show(Donor $donor)
     {
         return response()->json([
@@ -100,15 +109,16 @@ class IntegratedDonorGrantController extends Controller
                     $projects = $grant->projects->isEmpty() ? [null] : $grant->projects;
                     return collect($projects)->map(function ($project) use ($donor, $grant) {
                         return [
+                            'relation_no' => $project?->relation_no ?? $grant->relation_no,
                             'donor' => $donor->only(['code', 'name', 'type', 'lead_applicant', 'country', 'contact_person', 'email', 'phone']),
                             'grant' => array_merge($grant->only(['grant_no', 'agreement_no', 'agreement_date', 'agreement_name', 'terms_conditions', 'reporting_period', 'donor_fiscal_calendar', 'grant_value', 'start_date', 'end_date', 'status']), ['currency_id' => $grant->currency_id, 'funding_source_id' => $grant->funding_source_id, 'bank_account_id' => $grant->bank_account_id]),
                             'programme' => $project?->program?->only(['id', 'code', 'name', 'objective']) ?? [],
                             'project' => $project ? array_merge($project->only(['code', 'name', 'program_id', 'theme', 'manager_name', 'start_date', 'end_date', 'total_budget']), ['partner_ids' => $project->partners->pluck('id')->values()->all(), 'funding_source_ids' => $project->fundingSources->pluck('id')->values()->all()]) : [],
                             'partners' => $project?->partners?->map->only(['id', 'code', 'name'])->values() ?? [],
                             'funding_sources' => $project?->fundingSources?->map->only(['id', 'code', 'name'])->values() ?? [],
-                            'frameworks' => $project?->logframes?->map->only(['level', 'code', 'description', 'indicator', 'baseline', 'target'])->values() ?? [],
-                            'workplans' => $project?->workplans?->map->only(['output_code', 'activity', 'start_date', 'end_date', 'status', 'baseline'])->values() ?? [],
-                            'budgets' => $project?->budgetLines?->map->only(['line_code', 'description', 'budget_category_id', 'total_amount'])->values() ?? [],
+                            'frameworks' => $project?->logframes?->map->only(['relation_no', 'level', 'code', 'description', 'indicator', 'baseline', 'target'])->values() ?? [],
+                            'workplans' => $project?->workplans?->map->only(['relation_no', 'output_code', 'activity', 'start_date', 'end_date', 'status', 'baseline'])->values() ?? [],
+                            'budgets' => $project?->budgetLines?->map->only(['relation_no', 'line_code', 'description', 'budget_category_id', 'total_amount'])->values() ?? [],
                             'deadlines' => $grant->reportingDeadlines->map->only(['report_type', 'period_label', 'due_date', 'status', 'notes', 'reminder_days'])->values(),
                         ];
                     });
@@ -183,7 +193,9 @@ class IntegratedDonorGrantController extends Controller
 
     public function update(Request $request, Donor $donor)
     {
+        $currentGrant = $donor->grantAgreements()->first();
         $data = $request->validate([
+            'relation_no' => ['nullable', 'string', 'max:100', Rule::unique('grant_agreements', 'relation_no')->ignore($currentGrant?->id)],
             'donor' => 'required|array', 'donor.code' => 'required|string|max:30', 'donor.name' => 'required|string|max:150', 'donor.type' => 'required|string|max:50', 'donor.lead_applicant' => 'nullable|string|max:150', 'donor.country' => 'nullable|string|max:100', 'donor.contact_person' => 'nullable|string|max:100', 'donor.email' => 'nullable|email|max:150', 'donor.phone' => 'nullable|string|max:50',
             'grant' => 'required|array', 'grant.grant_no' => 'required|string|max:50', 'grant.agreement_no' => 'nullable|string|max:50', 'grant.agreement_date' => 'nullable|date', 'grant.agreement_name' => 'required|string|max:200', 'grant.terms_conditions' => 'nullable|string', 'grant.reporting_period' => 'nullable|string|max:30', 'grant.donor_fiscal_calendar' => 'nullable|in:JAN_DEC,APR_MAR', 'grant.currency_id' => 'required|exists:currencies,id', 'grant.funding_source_id' => 'nullable|exists:funding_sources,id', 'grant.bank_account_id' => 'nullable|exists:bank_accounts,id', 'grant.grant_value' => 'required|numeric|min:0', 'grant.start_date' => 'required|date', 'grant.end_date' => 'required|date|after_or_equal:grant.start_date', 'grant.status' => 'nullable|in:draft,active,closed,suspended',
             'project' => 'required|array', 'project.code' => 'required|string|max:30', 'project.name' => 'required|string|max:150', 'project.program_id' => 'nullable|exists:programs,id', 'project.theme' => 'nullable|string|max:200', 'project.manager_name' => 'nullable|string|max:100', 'project.start_date' => 'nullable|date', 'project.end_date' => 'nullable|date|after_or_equal:project.start_date', 'project.total_budget' => 'nullable|numeric|min:0', 'project.partner_ids' => 'nullable|array', 'project.partner_ids.*' => 'integer|exists:beneficiary_partners,id', 'project.funding_source_ids' => 'nullable|array', 'project.funding_source_ids.*' => 'integer|exists:funding_sources,id',
@@ -197,11 +209,13 @@ class IntegratedDonorGrantController extends Controller
         $result = DB::transaction(function () use ($data, $donor) {
             $donor->update(array_merge($data['donor'], ['draft_payload' => null, 'status' => $data['grant']['status'] ?? 'draft']));
             $grant = $donor->grantAgreements()->first();
+            $relationNo = $this->resolveRelationNo($data, $grant);
             if ($grant) {
-                $grant->update(array_merge($data['grant'], ['donor_id' => $donor->id]));
+                $grant->update(array_merge($data['grant'], ['donor_id' => $donor->id, 'relation_no' => $relationNo]));
             } else {
                 $grant = GrantAgreement::create(array_merge($data['grant'], [
                     'donor_id' => $donor->id,
+                    'relation_no' => $relationNo,
                     'status' => $data['grant']['status'] ?? 'draft',
                     'is_active' => true,
                 ]));
@@ -210,10 +224,11 @@ class IntegratedDonorGrantController extends Controller
             if (!empty($data['programme']['id'])) $data['project']['program_id'] = $data['programme']['id'];
             elseif (!empty($data['programme']['code']) && !empty($data['programme']['name'])) $data['project']['program_id'] = Program::firstOrCreate(['code' => $data['programme']['code']], ['name' => $data['programme']['name'], 'objective' => $data['programme']['objective'] ?? null, 'is_active' => true])->id;
             if ($project) {
-                $project->update($data['project']);
+                $project->update(array_merge($data['project'], ['relation_no' => $relationNo]));
             } else {
                 $project = Project::create(array_merge($data['project'], [
                     'grant_agreement_id' => $grant->id,
+                    'relation_no' => $relationNo,
                     'budget_currency_id' => $data['project']['budget_currency_id'] ?? $grant->currency_id,
                     'is_active' => true,
                 ]));
@@ -224,16 +239,16 @@ class IntegratedDonorGrantController extends Controller
             ProjectLogframe::where('project_id', $project->id)->get()->each->delete();
             ProjectWorkplan::where('project_id', $project->id)->get()->each->delete();
             foreach (collect($data['frameworks'] ?? [])->unique('code')->values() as $framework) {
-                ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id]));
+                ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id, 'relation_no' => $relationNo]));
             }
-            foreach ($data['workplans'] ?? [] as $workplan) ProjectWorkplan::create(array_merge($workplan, ['project_id' => $project->id, 'grant_agreement_id' => $grant->id, 'donor_id' => $donor->id]));
+            foreach ($data['workplans'] ?? [] as $workplan) ProjectWorkplan::create(array_merge($workplan, ['project_id' => $project->id, 'relation_no' => $relationNo, 'grant_agreement_id' => $grant->id, 'donor_id' => $donor->id]));
             // Budget is maintained in the dedicated Project Budget editor.
             // Only legacy callers that explicitly send budgets may replace
             // them; normal master-data edits must never delete budget history.
             if (array_key_exists('budgets', $data)) {
                 BudgetLine::where('project_id', $project->id)->get()->each->delete();
                 foreach ($data['budgets'] ?? [] as $budget) {
-                    BudgetLine::create($this->budgetLineDefaults(array_merge($budget, ['project_id' => $project->id, 'grant_agreement_id' => $grant->id]), $grant));
+                    BudgetLine::create($this->budgetLineDefaults(array_merge($budget, ['project_id' => $project->id, 'relation_no' => $relationNo, 'grant_agreement_id' => $grant->id]), $grant));
                 }
             }
 
@@ -306,6 +321,7 @@ class IntegratedDonorGrantController extends Controller
         }
 
         $data = $request->validate([
+            'relation_no' => 'nullable|string|max:100|unique:grant_agreements,relation_no',
             'donor' => 'required|array',
             'donor.id' => 'nullable|integer|exists:donors,id',
             'donor.code' => 'required|string|max:30|unique:donors,code,' . ((int) $request->input('donor.id')),
@@ -440,8 +456,10 @@ class IntegratedDonorGrantController extends Controller
             ]));
             unset($data['donor']['id']);
             if ($donor->wasRecentlyCreated === false) $donor->update(array_merge($data['donor'], ['draft_payload' => null]));
+            $relationNo = $this->resolveRelationNo($data);
             $grant = GrantAgreement::create(array_merge($data['grant'], [
                 'donor_id' => $donor->id,
+                'relation_no' => $relationNo,
                 'agreement_document_path' => $agreementFile?->store('donor-grant-documents', 'public'),
                 'supporting_documents' => $documents ?: null,
                 'status' => $data['grant']['status'] ?? 'draft',
@@ -451,6 +469,7 @@ class IntegratedDonorGrantController extends Controller
             elseif (!empty($data['programme']['code']) && !empty($data['programme']['name'])) $data['project']['program_id'] = Program::firstOrCreate(['code' => $data['programme']['code']], ['name' => $data['programme']['name'], 'objective' => $data['programme']['objective'] ?? null, 'is_active' => true])->id;
             $project = Project::create(array_merge($data['project'], [
                 'grant_agreement_id' => $grant->id,
+                'relation_no' => $relationNo,
                 'budget_currency_id' => $data['project']['budget_currency_id'] ?? $grant->currency_id,
                 'is_active' => true,
             ]));
@@ -458,11 +477,12 @@ class IntegratedDonorGrantController extends Controller
             $project->fundingSources()->sync($data['project']['funding_source_ids'] ?? []);
 
             foreach ($data['frameworks'] ?? [] as $framework) {
-                ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id]));
+                ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id, 'relation_no' => $relationNo]));
             }
             foreach ($data['workplans'] ?? [] as $workplan) {
                 ProjectWorkplan::create(array_merge($workplan, [
                     'project_id' => $project->id,
+                    'relation_no' => $relationNo,
                     'grant_agreement_id' => $grant->id,
                     'donor_id' => $donor->id,
                 ]));
@@ -470,6 +490,7 @@ class IntegratedDonorGrantController extends Controller
             foreach ($data['budgets'] ?? [] as $budget) {
                 BudgetLine::create($this->budgetLineDefaults(array_merge($budget, [
                     'project_id' => $project->id,
+                    'relation_no' => $relationNo,
                     'grant_agreement_id' => $grant->id,
                     'proposal_period' => $budget['proposal_period'] ?? 'annual',
                     'document_path' => $budget['document_path'] ?? ($documents['detailed_budget'] ?? null),

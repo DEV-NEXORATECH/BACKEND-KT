@@ -462,6 +462,30 @@ abstract class BaseMasterController extends Controller
             }
 
             if ($this->modelClass === \App\Models\Master\BudgetLine::class) {
+                $project = ! empty($payload['project_id'])
+                    ? \App\Models\Master\Project::query()->with('grantAgreement:id,relation_no')->find($payload['project_id'])
+                    : null;
+                $grant = ! empty($payload['grant_agreement_id'])
+                    ? \App\Models\Master\GrantAgreement::query()->find($payload['grant_agreement_id'])
+                    : $project?->grantAgreement;
+
+                if ($project && $grant && $project->grant_agreement_id && (int) $project->grant_agreement_id !== (int) $grant->id) {
+                    $errors[] = ['row' => $rowNumber, 'message' => 'Grant Agreement tidak sesuai dengan Project.'];
+                    $skipped++;
+                    continue;
+                }
+
+                $expectedRelationNo = $project?->relation_no ?: $project?->grantAgreement?->relation_no ?: $grant?->relation_no;
+                $importedRelationNo = trim((string) ($payload['relation_no'] ?? ''));
+                if ($importedRelationNo !== '' && $expectedRelationNo && strcasecmp($expectedRelationNo, $importedRelationNo) !== 0) {
+                    $errors[] = ['row' => $rowNumber, 'message' => 'Nomor Relasi tidak sesuai dengan Project atau Grant Agreement.'];
+                    $skipped++;
+                    continue;
+                }
+                if ($expectedRelationNo) {
+                    $payload['relation_no'] = $expectedRelationNo;
+                }
+
                 $coaCode = trim((string) ($payload['coa_code'] ?? $payload['co_a_code'] ?? ''));
                 if ($coaCode === '') {
                     $errors[] = ['row' => $created + $skipped + 2, 'message' => 'CoA Code is required for every Budget Line.'];

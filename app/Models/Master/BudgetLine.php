@@ -15,7 +15,7 @@ class BudgetLine extends Model
 
     protected $table = 'budget_lines';
 
-    protected $fillable = ['fiscal_year_id', 'grant_agreement_id', 'project_id', 'activity_id', 'sub_output_code', 'budget_category_id', 'line_code', 'description', 'cost_type', 'document_path', 'proposal_period', 'currency_id', 'exchange_rate', 'unit_of_measure_id', 'unit_price', 'quantity', 'total_amount', 'base_amount', 'period_allocations', 'gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['fiscal_year_id', 'grant_agreement_id', 'project_id', 'relation_no', 'activity_id', 'sub_output_code', 'budget_category_id', 'line_code', 'description', 'cost_type', 'document_path', 'proposal_period', 'currency_id', 'exchange_rate', 'unit_of_measure_id', 'unit_price', 'quantity', 'total_amount', 'base_amount', 'period_allocations', 'gl_account_id', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',

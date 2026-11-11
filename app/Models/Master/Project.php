@@ -14,7 +14,7 @@ class Project extends Model
 
     protected $table = 'projects';
 
-    protected $fillable = ['code', 'program_id', 'grant_agreement_id', 'bank_account_id', 'name', 'theme', 'manager_name', 'start_date', 'end_date', 'budget_currency_id', 'total_budget', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
+    protected $fillable = ['code', 'relation_no', 'program_id', 'grant_agreement_id', 'bank_account_id', 'name', 'theme', 'manager_name', 'start_date', 'end_date', 'budget_currency_id', 'total_budget', 'is_active', 'created_by', 'updated_by', 'deleted_by'];
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -24,7 +24,7 @@ class Project extends Model
 
     public function getRelationNumberAttribute(): string
     {
-        return $this->id ? 'KT-PRJ-'.str_pad((string) $this->id, 4, '0', STR_PAD_LEFT) : 'KT-PRJ-0000';
+        return $this->relation_no ?: ($this->id ? 'KT-PRJ-'.str_pad((string) $this->id, 4, '0', STR_PAD_LEFT) : 'KT-PRJ-0000');
     }
 
     protected static function booted(): void

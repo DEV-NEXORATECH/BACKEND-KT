@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\Accounting;
 
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
+use App\Models\Master\BudgetLine;
+use App\Models\Master\Project;
 use App\Models\Procurement\SupplierInvoice;
 use App\Models\Finance\CustomerInvoice;
 use App\Services\Accounting\AccountingPeriodService;
@@ -74,6 +76,7 @@ class JournalController extends Controller
             ->with(['currency:id,code,name', 'lines'])
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->query('status')))
             ->when($request->filled('project_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('project_id', $request->integer('project_id'))))
+            ->when($request->filled('relation_no'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('relation_no', $request->query('relation_no'))))
             ->when($request->filled('donor_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('donor_id', $request->integer('donor_id'))))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->query('search');
@@ -416,7 +419,9 @@ class JournalController extends Controller
             'rate_date' => ['nullable', 'date'],
             'lines' => ['required', 'array', 'min:2'],
             'lines.*.account_id' => ['required', 'integer', 'exists:chart_of_accounts,id'],
-            'lines.*.donor_id' => ['required', 'integer', 'exists:donors,id'],
+            // These dimensions are resolved from the selected project. Values
+            // sent by clients are never trusted as the source of truth.
+            'lines.*.donor_id' => ['nullable', 'integer', 'exists:donors,id'],
             'lines.*.grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
             'lines.*.program_id' => ['nullable', 'integer', 'exists:programs,id'],
             // Every journal line is booked to a project so donor reporting can
@@ -442,10 +447,35 @@ class JournalController extends Controller
         $totalCredit = 0;
 
         foreach ($payload['lines'] as $index => $line) {
-            $project = \App\Models\Master\Project::with('grantAgreement')->find($line['project_id']);
-            $payload['lines'][$index]['program_id'] = $project?->program_id;
-            $payload['lines'][$index]['grant_agreement_id'] = $project?->grant_agreement_id;
-            $payload['lines'][$index]['donor_id'] = $project?->grantAgreement?->donor_id;
+            $project = Project::with('grantAgreement')->findOrFail($line['project_id']);
+            $budgetLine = BudgetLine::findOrFail($line['budget_line_id']);
+
+            if ((int) $budgetLine->project_id !== (int) $project->id) {
+                throw ValidationException::withMessages([
+                    "lines.{$index}.budget_line_id" => 'Budget Code tidak terdaftar pada project yang dipilih.',
+                ]);
+            }
+
+            $projectRelationNo = $project->relation_no ?: $project->grantAgreement?->relation_no;
+            $budgetRelationNo = $budgetLine->relation_no;
+
+            if (! $projectRelationNo || ! $budgetRelationNo || $budgetRelationNo !== $projectRelationNo) {
+                throw ValidationException::withMessages([
+                    "lines.{$index}.budget_line_id" => 'Nomor relasi Budget Code tidak sesuai dengan project.',
+                ]);
+            }
+
+            if ($budgetLine->grant_agreement_id
+                && (int) $budgetLine->grant_agreement_id !== (int) $project->grant_agreement_id) {
+                throw ValidationException::withMessages([
+                    "lines.{$index}.budget_line_id" => 'Grant Agreement Budget Code tidak sesuai dengan project.',
+                ]);
+            }
+
+            $payload['lines'][$index]['program_id'] = $project->program_id;
+            $payload['lines'][$index]['grant_agreement_id'] = $project->grant_agreement_id;
+            $payload['lines'][$index]['donor_id'] = $project->grantAgreement?->donor_id;
+            $payload['lines'][$index]['relation_no'] = $projectRelationNo;
             $debit = round((float) ($line['debit'] ?? 0), 2);
             $credit = round((float) ($line['credit'] ?? 0), 2);
 
@@ -582,6 +612,7 @@ class JournalController extends Controller
                 'grant_donor_name' => $line->project?->grantAgreement?->donor?->name,
                 'budget_line_id' => $line->budget_line_id,
                 'budget_code' => $line->budgetLine?->line_code,
+                'relation_no' => $line->relation_no,
                 'department_id' => $line->department_id,
                 'line_description' => $line->line_description,
                 'class' => $line->class,

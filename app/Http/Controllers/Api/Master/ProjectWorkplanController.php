@@ -15,8 +15,24 @@ class ProjectWorkplanController extends Controller
 {
     public function index(Request $request)
     {
-        $rows = ProjectWorkplan::with(['project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name', 'logframe:id,project_id,level,code,description'])
-            ->when($request->filled('project_id'), fn ($q) => $q->where('project_id', $request->integer('project_id')))
+        $filters = $request->validate([
+            'project_id' => 'nullable|integer|exists:projects,id',
+            'relation_no' => 'nullable|string|max:100',
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
+        ]);
+        $relationNo = trim((string) ($filters['relation_no'] ?? ''));
+        if (! empty($filters['project_id'])) {
+            $this->validateProjectRelation((int) $filters['project_id'], $relationNo);
+        }
+
+        $rows = ProjectWorkplan::with(['project:id,code,relation_no,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,relation_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,relation_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name', 'logframe:id,project_id,relation_no,level,code,description'])
+            ->when($filters['project_id'] ?? null, fn ($q, $projectId) => $q->where('project_id', $projectId))
+            ->when($relationNo !== '', function ($query) use ($relationNo) {
+                $query->where(function ($scope) use ($relationNo) {
+                    $scope->where('relation_no', $relationNo)
+                        ->orWhereHas('project', fn ($project) => $project->where('relation_no', $relationNo));
+                });
+            })
             ->when($request->filled('fiscal_year_id'), function ($q) use ($request) {
                 $fiscalYearId = $request->integer('fiscal_year_id');
                 $q->where(function ($scope) use ($fiscalYearId) {
@@ -29,13 +45,13 @@ class ProjectWorkplanController extends Controller
                 });
             })
             ->orderByRaw('COALESCE(start_date, "9999-12-31") ASC')->orderBy('id', 'asc')->get();
-        return response()->json(['success' => true, 'data' => $rows]);
+        return response()->json(['success' => true, 'scope' => ['relation_no' => $relationNo ?: null, 'project_id' => $filters['project_id'] ?? null], 'data' => $rows]);
     }
 
     public function store(Request $request)
     {
         $data = $request->validate([
-            'project_id' => 'required|exists:projects,id', 'logframe_id' => 'nullable|exists:project_logframes,id', 'donor_id' => 'nullable|exists:donors,id', 'grant_agreement_id' => 'nullable|exists:grant_agreements,id', 'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'activity_id' => 'nullable|exists:activities,id',
+            'project_id' => 'required|exists:projects,id', 'relation_no' => 'nullable|string|max:100', 'logframe_id' => 'nullable|exists:project_logframes,id', 'donor_id' => 'nullable|exists:donors,id', 'grant_agreement_id' => 'nullable|exists:grant_agreements,id', 'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'activity_id' => 'nullable|exists:activities,id',
             'output_code' => 'nullable|string|max:50', 'activity_code' => 'nullable|string|max:50',
             'activity' => 'required|string|max:500', 'responsible' => 'nullable|string|max:255',
             'start_date' => 'nullable|date', 'end_date' => 'nullable|date|after_or_equal:start_date',
@@ -43,6 +59,7 @@ class ProjectWorkplanController extends Controller
             'status' => 'nullable|in:planned,in_progress,completed,delayed,cancelled', 'progress' => 'nullable|numeric|min:0|max:100',
             'notes' => 'nullable|string', 'periods' => 'nullable|array',
         ]);
+        $data['relation_no'] = $this->validateProjectRelation((int) $data['project_id'], (string) ($data['relation_no'] ?? ''));
         [$data['grant_agreement_id'], $data['donor_id']] = $this->resolveProjectFunding($data['project_id'], $data['grant_agreement_id'] ?? null, $data['donor_id'] ?? null);
         $data['logframe_id'] = $this->resolveLogframeId($data['project_id'], $data['logframe_id'] ?? null, $data['output_code'] ?? null);
         $framework = $this->resolveLogframe($data['project_id'], (int) $data['logframe_id']);
@@ -58,19 +75,23 @@ class ProjectWorkplanController extends Controller
         if (empty($data['baseline_end_date']) && !empty($data['end_date'])) {
             $data['baseline_end_date'] = $data['end_date'];
         }
-        $workplan = ProjectWorkplan::create($data)->load(['project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name', 'logframe:id,project_id,level,code,description']);
+        $workplan = ProjectWorkplan::create($data)->load(['project:id,code,relation_no,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,relation_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,relation_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name', 'logframe:id,project_id,relation_no,level,code,description']);
         return response()->json(['success' => true, 'data' => $workplan], 201);
     }
 
     public function update(Request $request, ProjectWorkplan $projectWorkplan)
     {
         $data = $request->validate([
-            'logframe_id' => 'nullable|exists:project_logframes,id', 'donor_id' => 'nullable|exists:donors,id', 'grant_agreement_id' => 'nullable|exists:grant_agreements,id', 'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'activity_id' => 'nullable|exists:activities,id', 'output_code' => 'nullable|string|max:50', 'activity_code' => 'nullable|string|max:50',
+            'relation_no' => 'nullable|string|max:100', 'logframe_id' => 'nullable|exists:project_logframes,id', 'donor_id' => 'nullable|exists:donors,id', 'grant_agreement_id' => 'nullable|exists:grant_agreements,id', 'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'activity_id' => 'nullable|exists:activities,id', 'output_code' => 'nullable|string|max:50', 'activity_code' => 'nullable|string|max:50',
             'activity' => 'sometimes|string|max:500', 'responsible' => 'nullable|string|max:255', 'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'baseline_start_date' => 'nullable|date', 'baseline_end_date' => 'nullable|date|after_or_equal:baseline_start_date', 'status' => 'nullable|in:planned,in_progress,completed,delayed,cancelled',
             'progress' => 'nullable|numeric|min:0|max:100', 'notes' => 'nullable|string', 'periods' => 'nullable|array',
         ]);
+        $data['relation_no'] = $this->validateProjectRelation(
+            (int) $projectWorkplan->project_id,
+            (string) ($data['relation_no'] ?? $projectWorkplan->relation_no ?? '')
+        );
         if (array_key_exists('donor_id', $data) || array_key_exists('grant_agreement_id', $data)) {
             [$data['grant_agreement_id'], $data['donor_id']] = $this->resolveProjectFunding($projectWorkplan->project_id, $data['grant_agreement_id'] ?? $projectWorkplan->grant_agreement_id, $data['donor_id'] ?? $projectWorkplan->donor_id);
         }
@@ -83,14 +104,15 @@ class ProjectWorkplanController extends Controller
         $this->validateProjectFiscalYear($projectWorkplan->project_id, $data['fiscal_year_id'] ?? $request->query('fiscal_year_id'));
         $this->validateActivityProject($projectWorkplan->project_id, $data['activity_id'] ?? $projectWorkplan->activity_id);
         $projectWorkplan->update($data);
-        return response()->json(['success' => true, 'data' => $projectWorkplan->fresh()->load(['project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name', 'logframe:id,project_id,level,code,description'])]);
+        return response()->json(['success' => true, 'data' => $projectWorkplan->fresh()->load(['project:id,code,relation_no,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,relation_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,relation_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name', 'logframe:id,project_id,relation_no,level,code,description'])]);
     }
 
     public function destroy(ProjectWorkplan $projectWorkplan) { $projectWorkplan->delete(); return response()->json(['success' => true]); }
 
     public function import(Request $request)
     {
-        $request->validate(['project_id' => 'required|exists:projects,id', 'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'file' => 'required|file|mimes:xlsx,xls,csv|max:10240']);
+        $request->validate(['project_id' => 'required|exists:projects,id', 'relation_no' => 'nullable|string|max:100', 'fiscal_year_id' => 'nullable|exists:fiscal_years,id', 'file' => 'required|file|mimes:xlsx,xls,csv|max:10240']);
+        $relationNo = $this->validateProjectRelation($request->integer('project_id'), (string) $request->input('relation_no', ''));
         $this->validateProjectFiscalYear($request->integer('project_id'), $request->input('fiscal_year_id'));
         $workbook = IOFactory::load($request->file('file')->getRealPath());
         $sheet = $workbook->getSheetByName('Workplan') ?: $workbook->getActiveSheet();
@@ -103,7 +125,7 @@ class ProjectWorkplanController extends Controller
             if ($activity === '') continue;
             if (mb_strlen($activity) < 3) { $errors[] = "Row {$index}: activity is too short."; continue; }
             $created[] = [
-                'project_id' => $request->integer('project_id'), 'grant_agreement_id' => $this->resolveProjectFunding($request->integer('project_id'), null, null)[0], 'donor_id' => $this->resolveProjectFunding($request->integer('project_id'), null, null)[1], 'fiscal_year_id' => $request->input('fiscal_year_id'), 'output_code' => trim((string) ($row['A'] ?? '')),
+                'project_id' => $request->integer('project_id'), 'relation_no' => $relationNo, 'grant_agreement_id' => $this->resolveProjectFunding($request->integer('project_id'), null, null)[0], 'donor_id' => $this->resolveProjectFunding($request->integer('project_id'), null, null)[1], 'fiscal_year_id' => $request->input('fiscal_year_id'), 'output_code' => trim((string) ($row['A'] ?? '')),
                 'activity_code' => trim((string) ($row['B'] ?? '')), 'activity_id' => $this->activityIdFromRow($row), 'activity' => $activity,
                 'responsible' => trim((string) ($row['D'] ?? '')), 'start_date' => $this->dateValue($row['E'] ?? null),
                 'end_date' => $this->dateValue($row['F'] ?? null), 'baseline_start_date' => $this->dateValue($row['E'] ?? null),
@@ -120,7 +142,7 @@ class ProjectWorkplanController extends Controller
         }
         if ($errors) throw ValidationException::withMessages(['file' => $errors]);
         $saved = DB::transaction(fn () => collect($created)->map(fn ($data) => ProjectWorkplan::create($data))->values());
-        $saved->load(['project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name']);
+        $saved->load(['project:id,code,relation_no,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,relation_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,relation_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name']);
         return response()->json(['success' => true, 'data' => $saved, 'imported' => $saved->count()]);
     }
 
@@ -128,6 +150,19 @@ class ProjectWorkplanController extends Controller
     {
         $value = $row['G'] ?? $row['H'] ?? null;
         return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
+    }
+
+    private function validateProjectRelation(int $projectId, string $relationNo = ''): ?string
+    {
+        $project = Project::query()->findOrFail($projectId);
+        $relationNo = trim($relationNo);
+        if ($relationNo !== '' && $project->relation_no && strcasecmp($project->relation_no, $relationNo) !== 0) {
+            throw ValidationException::withMessages([
+                'relation_no' => 'Nomor Relasi tidak sesuai dengan project yang dipilih.',
+            ]);
+        }
+
+        return $project->relation_no ?: ($relationNo !== '' ? $relationNo : null);
     }
 
     private function validateActivityProject(int $projectId, $activityId): void

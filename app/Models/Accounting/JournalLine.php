@@ -24,6 +24,7 @@ class JournalLine extends Model
         'project_id',
         'partner_id',
         'budget_line_id',
+        'relation_no',
         'department_id',
         'line_description',
         'class',

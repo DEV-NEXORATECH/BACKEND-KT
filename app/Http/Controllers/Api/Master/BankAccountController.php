@@ -21,6 +21,31 @@ class BankAccountController extends BaseMasterController
     protected array $searchableColumns = ['bank_name', 'account_number', 'account_name'];
     protected array $defaultWith = ['organization', 'currency', 'glAccount', 'fiscalYear'];
 
+    /**
+     * Keep opening-balance data intact when the edit form does not send the
+     * date/balance fields (some clients submit them as an empty value).
+     */
+    public function update(Request $request, $id): \Illuminate\Http\JsonResponse
+    {
+        $record = BankAccount::findOrFail($id);
+        $validated = app($this->updateRequestClass)->validated();
+
+        foreach (['opening_balance', 'opening_balance_date'] as $field) {
+            if (! array_key_exists($field, $validated) || blank($validated[$field])) {
+                unset($validated[$field]);
+            }
+        }
+
+        $record->update($validated);
+        $record->loadMissing($this->defaultWith);
+        $record->loadCount($this->defaultWithCount);
+
+        return $this->successResponse(
+            new $this->resourceClass($record),
+            'Data berhasil diperbarui.'
+        );
+    }
+
     public function postOpeningBalance(Request $request, BankAccount $bankAccount): \Illuminate\Http\JsonResponse
     {
         $data = $request->validate([

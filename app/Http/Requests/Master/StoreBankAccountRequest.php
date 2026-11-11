@@ -6,6 +6,18 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class StoreBankAccountRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        if ($this->filled('opening_balance')) {
+            $value = preg_replace('/[^0-9,.-]/', '', (string) $this->input('opening_balance'));
+            if (str_contains($value, ',')) {
+                $value = str_replace('.', '', $value);
+                $value = str_replace(',', '.', $value);
+            }
+            $this->merge(['opening_balance' => $value]);
+        }
+    }
+
     public function authorize(): bool
     {
         return true;

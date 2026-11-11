@@ -125,8 +125,10 @@ class RoleSeeder extends Seeder
                     ['title' => 'Accounting Periods', 'slug' => 'master-accounting-periods', 'path' => '/master-data/accounting-periods', 'sort_order' => 174],
                     ['title' => 'Holiday Calendar', 'slug' => 'master-holidays', 'path' => '/master-data/holidays', 'sort_order' => 175],
                     ['title' => 'Tax Master', 'slug' => 'master-taxes', 'path' => '/master-data/taxes', 'sort_order' => 176],
-                    ['title' => 'Members / Anggota', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 178],
-                    ['title' => 'Iuran Anggota', 'slug' => 'master-membership-dues', 'path' => '/master-data/membership-dues', 'sort_order' => 181],
+                ]],
+                ['title' => 'Membership & Dues', 'slug' => 'master-membership', 'path' => '/master-data', 'sort_order' => 16, 'children' => [
+                    ['title' => 'Members / Anggota', 'slug' => 'master-customers', 'path' => '/master-data/customers', 'sort_order' => 160],
+                    ['title' => 'Iuran Anggota', 'slug' => 'master-membership-dues', 'path' => '/master-data/membership-dues', 'sort_order' => 161],
                 ]],
                 ['title' => 'Donor & Grant', 'slug' => 'master-funding-projects', 'path' => '/master-data', 'sort_order' => 18, 'children' => [
                     ['title' => 'Implementing Partners', 'slug' => 'master-beneficiary-partners', 'path' => '/master-data/beneficiary-partners', 'sort_order' => 183],
@@ -156,9 +158,6 @@ class RoleSeeder extends Seeder
                 ['title' => 'Dashboard', 'slug' => 'donor-grant-dashboard', 'path' => '/donor-grant/dashboard', 'sort_order' => 21],
             ]],
             ['title' => 'Budget & Forecast', 'slug' => 'budget-forecast', 'path' => '/donor-grant/budget', 'icon' => 'chart', 'sort_order' => 28, 'children' => [
-                ['title' => 'Budget Planning', 'slug' => 'budget-forecast-planning', 'path' => '/donor-grant/budget', 'sort_order' => 281],
-                ['title' => 'Budget Monitoring', 'slug' => 'budget-forecast-monitoring', 'path' => '/donor-grant/budget-monitoring', 'sort_order' => 282],
-                ['title' => 'Forecast', 'slug' => 'budget-forecast-forecast', 'path' => '/reports/forecast', 'sort_order' => 283],
                 ['title' => 'Budget Reallocation', 'slug' => 'budget-forecast-reallocation', 'path' => '/funding-projects/budget-reallocation', 'sort_order' => 284],
             ]],
             ['title' => 'Expenses & Approvals', 'slug' => 'expenses-approvals', 'path' => '/expenses-approvals', 'icon' => 'wallet', 'sort_order' => 30, 'children' => [
@@ -280,8 +279,9 @@ class RoleSeeder extends Seeder
             'Dashboard' => ['dashboard'],
             'Master Data' => [
                 'master-data', 'master-organization-structure', 'master-organization-chart', 'master-organizations', 'master-office-locations', 'master-departments', 'master-positions', 'master-employees',
-                'master-finance-accounting', 'master-chart-of-accounts', 'master-account-categories', 'master-bank-accounts', 'master-payment-methods', 'master-fx-rates', 'master-currencies', 'master-fiscal-years', 'master-accounting-periods', 'master-taxes', 'master-customers',
-                'master-funding-projects', 'master-donor-grant-integrated', 'master-donor-types', 'master-programs', 'master-funding-sources', 'master-membership-dues', 'master-donors', 'master-grant-agreements', 'master-programs-projects', 'master-projects', 'master-activities', 'master-budget-codes',
+                'master-membership', 'master-customers', 'master-membership-dues',
+                'master-finance-accounting', 'master-chart-of-accounts', 'master-account-categories', 'master-bank-accounts', 'master-payment-methods', 'master-fx-rates', 'master-currencies', 'master-fiscal-years', 'master-accounting-periods', 'master-taxes',
+                'master-funding-projects', 'master-donor-grant-integrated', 'master-donor-types', 'master-programs', 'master-funding-sources', 'master-donors', 'master-grant-agreements', 'master-programs-projects', 'master-projects', 'master-activities', 'master-budget-codes',
                 'master-budget-reporting', 'master-budget-categories', 'master-reporting-categories', 'master-reporting-dimensions',
                 'master-expenses', 'master-expenses-assets', 'master-expense-categories', 'master-expense-types', 'master-assets', 'master-asset-categories',
             ],
@@ -290,7 +290,7 @@ class RoleSeeder extends Seeder
             ],
             'Donor / Grant' => [
                 'donor-grant', 'donor-grant-dashboard', 'donor-grant-project-frameworks-canonical', 'donor-grant-workplan-activities', 'donor-grant-project-budget', 'donor-grant-forecast-canonical', 'donor-grant-budget-monitoring-canonical', 'donor-grant-donor-reporting-canonical',
-                'budget-forecast', 'budget-forecast-planning', 'budget-forecast-monitoring', 'budget-forecast-forecast', 'budget-forecast-reallocation',
+                'budget-forecast', 'budget-forecast-reallocation',
             ],
             'Expenses / Approval' => [
                 'expenses-approvals', 'expenses-requests-verification', 'expenses-payment-processing', 'expenses-advances-settlements',
