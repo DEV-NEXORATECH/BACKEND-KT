@@ -16,6 +16,9 @@ trait FiscalYearScopedTrait
             }
 
             $request = request();
+            if ($request->boolean('all_years')) {
+                return;
+            }
             $requestedFiscalYearId = $request->query('fiscal_year_id')
                 ?: $request->input('fiscal_year_id')
                 ?: $request->header('X-Fiscal-Year-Id');

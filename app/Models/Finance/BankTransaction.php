@@ -16,7 +16,7 @@ class BankTransaction extends Model
 
     protected $casts = ['transaction_date' => 'date', 'debit' => 'decimal:2', 'credit' => 'decimal:2', 'difference' => 'decimal:2'];
 
-    public function bankAccount(): BelongsTo { return $this->belongsTo(BankAccount::class); }
+    public function bankAccount(): BelongsTo { return $this->belongsTo(BankAccount::class)->withoutGlobalScope('fiscal_year_context'); }
     public function project(): BelongsTo { return $this->belongsTo(\App\Models\Master\Project::class); }
     public function payment(): BelongsTo { return $this->belongsTo(Payment::class); }
     public function cashAdvanceReturn(): BelongsTo { return $this->belongsTo(\App\Models\Expense\CashAdvanceReturn::class); }

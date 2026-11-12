@@ -62,7 +62,7 @@ class Project extends Model
 
     public function bankAccount()
     {
-        return $this->belongsTo(\App\Models\Master\BankAccount::class, 'bank_account_id');
+        return $this->belongsTo(\App\Models\Master\BankAccount::class, 'bank_account_id')->withoutGlobalScope('fiscal_year_context');
     }
 
     public function activities()

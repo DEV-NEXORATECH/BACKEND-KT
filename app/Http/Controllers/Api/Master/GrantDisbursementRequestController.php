@@ -3,6 +3,12 @@
 namespace App\Http\Controllers\Api\Master;
 
 use App\Http\Controllers\Controller;
+use App\Models\Accounting\Journal;
+use App\Models\Accounting\JournalLine;
+use App\Models\Finance\BankTransaction;
+use App\Models\Master\BankAccount;
+use App\Models\Master\ChartOfAccount;
+use App\Models\Master\FiscalYear;
 use App\Models\Master\GrantAgreement;
 use App\Models\Master\GrantDisbursementRequest;
 use App\Models\Master\GrantForecastItem;
@@ -424,6 +430,7 @@ class GrantDisbursementRequestController extends Controller
             'received_amount' => 'required|numeric|min:0.01',
             'actual_fx_rate' => 'required|numeric|min:0.0001',
             'received_bank_account_id' => 'required|exists:bank_accounts,id',
+            'credit_account_id' => 'nullable|integer|exists:chart_of_accounts,id',
             'receipt_proof' => 'nullable|file|max:10240',
             'received_notes' => 'nullable|string',
         ]);
@@ -447,23 +454,126 @@ class GrantDisbursementRequestController extends Controller
             $receiptPath = $request->file('receipt_proof')->store('disbursement-receipts', 'public');
         }
 
-        $disbursement->update([
-            'status' => 'received',
-            'received_date' => $validated['received_date'],
-            'received_amount' => $receivedAmount,
-            'actual_fx_rate' => $actualRate,
-            'received_amount_idr' => $receivedAmountIdr,
-            'fx_gain_loss' => $fxGainLoss,
-            'received_bank_account_id' => $validated['received_bank_account_id'],
-            'receipt_proof_path' => $receiptPath,
-            'received_notes' => $validated['received_notes'] ?? null,
-            'updated_by' => auth()->id(),
-        ]);
+        $disbursement->loadMissing(['grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')]);
+        $bank = BankAccount::withoutGlobalScope('fiscal_year_context')->findOrFail($validated['received_bank_account_id']);
+
+        $journal = null;
+        $bankTransaction = null;
+
+        DB::transaction(function () use ($disbursement, $validated, $receivedAmount, $actualRate, $receivedAmountIdr, $fxGainLoss, $receiptPath, $bank, &$journal, &$bankTransaction) {
+            $disbursement->update([
+                'status' => 'received',
+                'received_date' => $validated['received_date'],
+                'received_amount' => $receivedAmount,
+                'actual_fx_rate' => $actualRate,
+                'received_amount_idr' => $receivedAmountIdr,
+                'fx_gain_loss' => $fxGainLoss,
+                'received_bank_account_id' => $validated['received_bank_account_id'],
+                'receipt_proof_path' => $receiptPath,
+                'received_notes' => $validated['received_notes'] ?? null,
+                'updated_by' => auth()->id(),
+            ]);
+
+            $fiscalYearId = $disbursement->fiscal_year_id
+                ?: FiscalYear::query()->where('is_active', true)->orderByDesc('year')->value('id');
+
+            $existingJournal = Journal::withoutGlobalScope('fiscal_year_context')
+                ->where('source_type', 'grant_disbursement_receipt')
+                ->where('source_id', $disbursement->id)
+                ->first();
+
+            if (! $existingJournal && $bank->gl_account_id && $fiscalYearId) {
+                $creditAccountId = $validated['credit_account_id']
+                    ?? ChartOfAccount::withoutGlobalScope('fiscal_year_context')
+                        ->where('is_active', true)
+                        ->where('account_type', 'revenue')
+                        ->orderBy('code')
+                        ->value('id')
+                    ?? ChartOfAccount::withoutGlobalScope('fiscal_year_context')
+                        ->where('is_active', true)
+                        ->where('account_type', 'liability')
+                        ->orderBy('code')
+                        ->value('id');
+
+                if ($creditAccountId) {
+                    $journal = Journal::create([
+                        'fiscal_year_id' => $fiscalYearId,
+                        'journal_number' => 'GDR-'.$disbursement->id.'-'.now()->format('YmdHis'),
+                        'journal_date' => $validated['received_date'],
+                        'journal_type' => 'manual',
+                        'reference' => $disbursement->request_number,
+                        'source_type' => 'grant_disbursement_receipt',
+                        'source_id' => $disbursement->id,
+                        'description' => 'Penerimaan dana hibah '.($disbursement->grantAgreement?->grant_no ?: $disbursement->request_number),
+                        'currency_id' => $disbursement->currency_id,
+                        'exchange_rate' => $actualRate,
+                        'original_amount' => $receivedAmount,
+                        'converted_amount' => $receivedAmountIdr,
+                        'fx_gain_loss' => $fxGainLoss,
+                        'rate_source' => 'disbursement_receipt',
+                        'rate_date' => $validated['received_date'],
+                        'status' => 'posted',
+                        'posted_by' => auth()->id(),
+                        'posted_at' => now(),
+                        'created_by' => auth()->id(),
+                    ]);
+
+                    $lineContext = [
+                        'donor_id' => $disbursement->grantAgreement?->donor_id,
+                        'grant_agreement_id' => $disbursement->grant_agreement_id,
+                        'relation_no' => $disbursement->grantAgreement?->relation_no,
+                    ];
+
+                    JournalLine::create(array_merge([
+                        'journal_id' => $journal->id,
+                        'account_id' => $bank->gl_account_id,
+                        'line_description' => 'Bank receipt grant disbursement '.$disbursement->request_number,
+                        'debit' => $receivedAmountIdr,
+                        'credit' => 0,
+                        'line_order' => 1,
+                    ], $lineContext));
+
+                    JournalLine::create(array_merge([
+                        'journal_id' => $journal->id,
+                        'account_id' => $creditAccountId,
+                        'line_description' => 'Grant revenue receipt '.$disbursement->request_number,
+                        'debit' => 0,
+                        'credit' => $receivedAmountIdr,
+                        'line_order' => 2,
+                    ], $lineContext));
+                }
+            } else {
+                $journal = $existingJournal;
+            }
+
+            $existingBankTx = BankTransaction::withoutGlobalScope('fiscal_year_context')
+                ->where('bank_account_id', $bank->id)
+                ->where('reference', $disbursement->request_number)
+                ->first();
+
+            if (! $existingBankTx) {
+                $bankTransaction = BankTransaction::create([
+                    'fiscal_year_id' => $fiscalYearId,
+                    'bank_account_id' => $bank->id,
+                    'transaction_date' => $validated['received_date'],
+                    'reference' => $disbursement->request_number,
+                    'description' => 'Penerimaan dana hibah '.($disbursement->grantAgreement?->grant_no ?: $disbursement->request_number),
+                    'debit' => $receivedAmountIdr,
+                    'credit' => 0,
+                    'status' => 'unmatched',
+                    'created_by' => auth()->id(),
+                ]);
+            } else {
+                $bankTransaction = $existingBankTx;
+            }
+        });
 
         return response()->json([
             'success' => true,
-            'message' => 'Penerimaan dana berhasil dicatat dengan kurs realisasi (Actual FX Rate).',
+            'message' => 'Penerimaan dana berhasil dicatat dengan kurs realisasi (Actual FX Rate) dan otomatis diposting ke Journal & Banking.',
             'data' => $disbursement->load(['grantAgreement.donor', 'currency', 'bankAccount', 'receivedBankAccount']),
+            'journal' => $journal?->load('lines'),
+            'bank_transaction' => $bankTransaction,
             'calculation' => [
                 'received_amount' => $receivedAmount,
                 'actual_fx_rate' => $actualRate,

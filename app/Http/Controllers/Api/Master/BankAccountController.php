@@ -27,7 +27,7 @@ class BankAccountController extends BaseMasterController
      */
     public function update(Request $request, $id): \Illuminate\Http\JsonResponse
     {
-        $record = BankAccount::findOrFail($id);
+        $record = BankAccount::withoutGlobalScope('fiscal_year_context')->findOrFail($id);
         $validated = app($this->updateRequestClass)->validated();
 
         foreach (['opening_balance', 'opening_balance_date'] as $field) {

@@ -336,10 +336,13 @@ class ApprovalWorkflowService
         $active = $run?->status === 'in_progress'
             ? $actions->filter(fn ($a) => $a->status === 'pending' && (int)$a->level === (int)$run->current_level)
             : collect();
+        $isPostedJournal = $module === 'journal' && $entity->getAttribute('status') === 'posted';
         $ready = true;
         $reason = null;
         if ($module === 'journal') {
-            if (!$viewer) { $ready = false; $reason = 'authentication_required'; }
+            if ($isPostedJournal) {
+                $ready = false;
+            } elseif (!$viewer) { $ready = false; $reason = 'authentication_required'; }
             else {
                 try { $entity = clone $entity; $entity->fiscal_year_id = app(\App\Services\Accounting\JournalPostingGuard::class)->assertReady($entity, $viewer); }
                 catch (ValidationException $error) { $ready = false; $reason = $error->validator->errors()->first(); }
@@ -349,7 +352,7 @@ class ApprovalWorkflowService
         $canApprove = $ready && $viewer && $active->contains(fn ($a) => $this->matchesApprover($a, $viewer, $entity));
         $amount = $module === 'journal' ? (float)$entity->lines()->sum('debit') : (float)($entity->total_amount ?? $entity->amount ?? 0);
         $canPost = $module === 'journal' && $ready && $viewer && ($run?->status === 'approved' || (!$run && !$this->requiresApproval($module, $entity, $amount, $viewer)));
-        if (!$canApprove && !$canPost && !$reason) {
+        if (!$canApprove && !$canPost && !$reason && !$isPostedJournal) {
             $reason = $run?->status === 'in_progress' ? 'not_current_approver' : ($run ? 'workflow_not_active' : 'approval_not_started');
         }
         $visible = $viewer && $this->isSuperAdmin($viewer) ? $actions : $actions->filter(fn ($a) => in_array($a->status, ['approved', 'pending', 'rejected', 'skipped'], true));
@@ -388,6 +391,9 @@ class ApprovalWorkflowService
                 $configuredApprovers = $this->approversFor($firstMatrix, $entity, $module);
             }
         }
+        if ($isPostedJournal && empty($steps)) {
+            $steps = $this->journalLifecycleSteps($entity, $configuredStage);
+        }
 
         $needsApproverAssignment = $run?->status === 'in_progress'
             && collect($steps)->contains(fn ($step) => in_array($step['status'], ['pending', 'current'], true) && empty($step['approvers']));
@@ -411,6 +417,42 @@ class ApprovalWorkflowService
             'configured_approvers' => $configuredApprovers,
             'steps' => $steps,
         ];
+    }
+
+    private function journalLifecycleSteps(Model $entity, ?string $configuredStage): array
+    {
+        $userIds = array_values(array_filter(array_unique([
+            $entity->getAttribute('submitted_by'),
+            $entity->getAttribute('reviewed_by'),
+            $entity->getAttribute('posted_by'),
+        ])));
+        $users = empty($userIds) ? collect() : User::query()->whereIn('id', $userIds)->get()->keyBy('id');
+        $stages = [];
+        $pushStage = function (string $key, string $label, string $actionStatus, ?int $userId, $at, ?string $notes = null) use (&$stages, $users) {
+            $name = $userId ? $users->get($userId)?->name : null;
+            $stages[] = [
+                'id' => $key,
+                'level' => count($stages) + 1,
+                'label' => $label,
+                'status' => 'approved',
+                'action_by' => $userId,
+                'approver_name' => $name,
+                'actor_name' => $name,
+                'approved_at' => $at?->toISOString(),
+                'action_status' => $actionStatus,
+                'notes' => $notes,
+                'can_approve' => false,
+            ];
+        };
+        if ($entity->getAttribute('submitted_at') || $entity->getAttribute('submitted_by')) {
+            $pushStage('journal-submit', 'Submit Journal', 'Submitted', $entity->getAttribute('submitted_by'), $entity->getAttribute('submitted_at'));
+        }
+        if ($entity->getAttribute('reviewed_at') || $entity->getAttribute('reviewed_by')) {
+            $pushStage('journal-review', 'Review Journal', 'Reviewed', $entity->getAttribute('reviewed_by'), $entity->getAttribute('reviewed_at'));
+        }
+        $postNote = $configuredStage ? "Direct post tanpa multi-stage approval ({$configuredStage})" : 'Posted langsung ke ledger';
+        $pushStage('journal-post', 'Post to Ledger', 'Posted to Ledger', $entity->getAttribute('posted_by'), $entity->getAttribute('posted_at'), $postNote);
+        return $stages;
     }
 
     private function missingApproverReason($action, Model $entity, string $module): string

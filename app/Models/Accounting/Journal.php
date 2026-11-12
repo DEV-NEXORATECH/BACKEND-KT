@@ -2,6 +2,8 @@
 
 namespace App\Models\Accounting;
 
+use App\Models\Finance\BankTransaction;
+use App\Models\Master\BankAccount;
 use App\Models\Master\Currency;
 use App\Traits\AuditTrailTrait;
 use App\Traits\FiscalYearScopedTrait;
@@ -61,6 +63,69 @@ class Journal extends Model
                 $journal->converted_amount = round((float) $journal->original_amount * (float) $journal->exchange_rate, 2);
                 $journal->rate_date ??= $journal->journal_date?->toDateString() ?? now()->toDateString();
                 $journal->rate_source ??= 'transaction_snapshot';
+            }
+        });
+
+        static::updated(function (Journal $journal) {
+            if (! $journal->wasChanged('status') || $journal->status !== 'posted') {
+                return;
+            }
+            if (in_array($journal->source_type, ['grant_disbursement_receipt', 'bank_account_opening_balance'], true)) {
+                return;
+            }
+            if (str_starts_with((string) $journal->journal_number, 'PAY-')) {
+                return;
+            }
+
+            $lines = $journal->lines()->get();
+            $accountIds = $lines->pluck('account_id')->filter()->unique()->values();
+            if ($accountIds->isEmpty()) {
+                return;
+            }
+
+            $banksByGl = BankAccount::withoutGlobalScope('fiscal_year_context')
+                ->whereIn('gl_account_id', $accountIds)
+                ->get()
+                ->keyBy('gl_account_id');
+
+            if ($banksByGl->isEmpty()) {
+                return;
+            }
+
+            foreach ($lines as $line) {
+                $bank = $banksByGl->get($line->account_id);
+                if (! $bank) {
+                    continue;
+                }
+                $debit = round((float) $line->debit, 2);
+                $credit = round((float) $line->credit, 2);
+                if ($debit <= 0 && $credit <= 0) {
+                    continue;
+                }
+
+                $exists = BankTransaction::withoutGlobalScope('fiscal_year_context')
+                    ->where('bank_account_id', $bank->id)
+                    ->where('reference', $journal->journal_number)
+                    ->where('debit', $debit)
+                    ->where('credit', $credit)
+                    ->exists();
+
+                if ($exists) {
+                    continue;
+                }
+
+                BankTransaction::create([
+                    'fiscal_year_id' => $journal->fiscal_year_id,
+                    'bank_account_id' => $bank->id,
+                    'project_id' => $line->project_id,
+                    'transaction_date' => $journal->journal_date,
+                    'reference' => $journal->journal_number,
+                    'description' => $line->line_description ?: $journal->description,
+                    'debit' => $debit,
+                    'credit' => $credit,
+                    'status' => 'unmatched',
+                    'created_by' => $journal->posted_by ?: $journal->created_by,
+                ]);
             }
         });
     }

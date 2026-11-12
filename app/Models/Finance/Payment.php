@@ -27,7 +27,7 @@ class Payment extends Model
     public function expenseRequest(): BelongsTo { return $this->belongsTo(ExpenseRequest::class); }
     public function customerInvoice(): BelongsTo { return $this->belongsTo(CustomerInvoice::class); }
     public function vendor(): BelongsTo { return $this->belongsTo(Vendor::class); }
-    public function bankAccount(): BelongsTo { return $this->belongsTo(BankAccount::class); }
+    public function bankAccount(): BelongsTo { return $this->belongsTo(BankAccount::class)->withoutGlobalScope('fiscal_year_context'); }
     public function paymentMethod(): BelongsTo { return $this->belongsTo(PaymentMethod::class); }
     public function journal(): BelongsTo { return $this->belongsTo(Journal::class); }
 }

@@ -16,8 +16,10 @@ class BudgetMonitoringService
             ->with([
                 'grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
                 'grantAgreement.donor:id,code,name',
+                'grantAgreement.bankAccount:id,bank_name,account_number,account_name',
                 'project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
                 'project.program:id,code,name',
+                'project.bankAccount:id,bank_name,account_number,account_name',
                 'fiscalYear:id,year,name',
                 'budgetCategory:id,code,name',
                 'glAccount:id,code,name',
@@ -27,6 +29,12 @@ class BudgetMonitoringService
             ->when($filters['project_id'] ?? null, fn (Builder $query, $projectId) => $query->where('project_id', $projectId))
             ->when($filters['fiscal_year_id'] ?? null, fn (Builder $query, $id) => $query->where('fiscal_year_id', $id))
             ->when($filters['grant_agreement_id'] ?? null, fn (Builder $query, $grantId) => $query->where('grant_agreement_id', $grantId))
+            ->when($filters['bank_account_id'] ?? null, function (Builder $query, $bankAccountId) {
+                $query->where(function (Builder $scope) use ($bankAccountId) {
+                    $scope->whereHas('project', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->where('bank_account_id', $bankAccountId))
+                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('bank_account_id', $bankAccountId));
+                });
+            })
             ->when($filters['relation_no'] ?? null, fn (Builder $query, $relationNo) => $query->whereRaw("COALESCE(NULLIF(budget_lines.relation_no, ''),
                 (SELECT NULLIF(relation_no, '') FROM projects WHERE projects.id = budget_lines.project_id AND deleted_at IS NULL),
                 (SELECT relation_no FROM grant_agreements WHERE grant_agreements.id = budget_lines.grant_agreement_id AND deleted_at IS NULL)) = ?", [$relationNo]))
@@ -135,6 +143,12 @@ class BudgetMonitoringService
                     'id' => $line->glAccount->id,
                     'code' => $line->glAccount->code,
                     'name' => $line->glAccount->name,
+                ] : null,
+                'bank_account' => ($bank = $line->project?->bankAccount ?: $line->grantAgreement?->bankAccount) ? [
+                    'id' => $bank->id,
+                    'bank_name' => $bank->bank_name,
+                    'account_number' => $bank->account_number,
+                    'account_name' => $bank->account_name,
                 ] : null,
             ];
         });

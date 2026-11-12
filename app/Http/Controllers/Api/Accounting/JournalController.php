@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Accounting;
 
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
+use App\Models\Master\BankAccount;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\Project;
 use App\Models\Procurement\SupplierInvoice;
@@ -75,6 +76,7 @@ class JournalController extends Controller
             'grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
+            'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
             'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
         ]);
         $fetchAll = $request->boolean('all') || $request->query('per_page') === 'all';
@@ -88,6 +90,18 @@ class JournalController extends Controller
             ->when($request->filled('project_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('project_id', $request->integer('project_id'))))
             ->when($request->filled('grant_agreement_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('grant_agreement_id', $request->integer('grant_agreement_id'))))
             ->when($request->filled('budget_line_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('budget_line_id', $request->integer('budget_line_id'))))
+            ->when($request->filled('bank_account_id'), function ($query) use ($request) {
+                $bankAccountId = $request->integer('bank_account_id');
+                $glAccountId = BankAccount::withoutGlobalScope('fiscal_year_context')->whereKey($bankAccountId)->value('gl_account_id');
+                $query->where(function ($scope) use ($bankAccountId, $glAccountId) {
+                    $scope->where(function ($ob) use ($bankAccountId) {
+                        $ob->where('source_type', 'bank_account_opening_balance')->where('source_id', $bankAccountId);
+                    });
+                    if ($glAccountId) {
+                        $scope->orWhereHas('lines', fn ($line) => $line->where('account_id', $glAccountId));
+                    }
+                });
+            })
             ->when($request->filled('relation_no'), function ($query) use ($request) {
                 $relationNo = trim((string) $request->query('relation_no'));
                 $query->whereHas('lines', function ($line) use ($relationNo) {
@@ -232,18 +246,39 @@ class JournalController extends Controller
                 ->value('id');
 
             $rowRelationNo = trim((string) ($value($row, $index, ['relation_no', 'nomor_relasi']) ?: '')) ?: $defaultRelationNo;
+            $grantId = self::resolveImportId($value($row, $index, ['grant_agreement_id', 'grant_agreement', 'grant_no']), 'grant_agreements', ['grant_no', 'agreement_no', 'agreement_name', 'relation_no'])
+                ?: $defaultGrantId;
+            if (! $grantId && $rowRelationNo) {
+                $matchedGrant = DB::table('grant_agreements')->where('relation_no', $rowRelationNo)->value('id');
+                $grantId = $matchedGrant ? (int) $matchedGrant : null;
+            }
             $projectId = self::resolveImportId($value($row, $index, ['project_id', 'project']), 'projects', ['code', 'name', 'relation_no'])
                 ?: $defaultProjectId;
             if (! $projectId && $rowRelationNo) {
                 $matchedProject = DB::table('projects')->where('relation_no', $rowRelationNo)->value('id');
                 $projectId = $matchedProject ? (int) $matchedProject : null;
             }
-            $grantId = self::resolveImportId($value($row, $index, ['grant_agreement_id', 'grant_agreement', 'grant_no']), 'grant_agreements', ['grant_no', 'agreement_no', 'agreement_name', 'relation_no'])
-                ?: $defaultGrantId;
+            if (! $projectId && $grantId) {
+                $matchedProject = DB::table('projects')->where('grant_agreement_id', $grantId)->value('id');
+                $projectId = $matchedProject ? (int) $matchedProject : null;
+            }
             if (! $grantId && $projectId) {
                 $matchedGrant = DB::table('projects')->where('id', $projectId)->value('grant_agreement_id');
                 $grantId = $matchedGrant ? (int) $matchedGrant : null;
             }
+
+            $classValue = trim((string) ($value($row, $index, ['class']) ?: '')) ?: null;
+            $budgetRaw = $value($row, $index, ['budget_line_id', 'budget_code']);
+            $budgetLineId = self::resolveBudgetLineImportId($budgetRaw, $classValue, $projectId, $grantId, $rowRelationNo, $fiscalYearId);
+            if ($budgetLineId) {
+                $blRow = DB::table('budget_lines')->where('id', $budgetLineId)->first(['project_id', 'grant_agreement_id', 'relation_no']);
+                if ($blRow) {
+                    $projectId = $projectId ?: ($blRow->project_id ? (int) $blRow->project_id : null);
+                    $grantId = $grantId ?: ($blRow->grant_agreement_id ? (int) $blRow->grant_agreement_id : null);
+                    $rowRelationNo = $rowRelationNo ?: ($blRow->relation_no ?: null);
+                }
+            }
+
             $donorId = self::resolveImportId($value($row, $index, ['donor_id', 'sof', 'donor']), 'donors', ['code', 'name']);
             if (! $donorId && $grantId) {
                 $matchedDonor = DB::table('grant_agreements')->where('id', $grantId)->value('donor_id');
@@ -257,10 +292,6 @@ class JournalController extends Controller
             if (! $rowRelationNo && $grantId) {
                 $rowRelationNo = DB::table('grant_agreements')->where('id', $grantId)->value('relation_no') ?: null;
             }
-
-            $classValue = trim((string) ($value($row, $index, ['class']) ?: '')) ?: null;
-            $budgetRaw = $value($row, $index, ['budget_line_id', 'budget_code']);
-            $budgetLineId = self::resolveBudgetLineImportId($budgetRaw, $classValue, $projectId, $grantId, $rowRelationNo, $fiscalYearId);
 
             $groupKey = json_encode([$number, $fiscalYearId ?: 'unknown']);
             $grouped[$groupKey]['journal_number'] = $number;

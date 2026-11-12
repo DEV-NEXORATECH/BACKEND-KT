@@ -7,6 +7,7 @@ use App\Models\Master\BudgetLine;
 use App\Models\Master\Activity;
 use App\Models\Master\GrantReportingDeadline;
 use App\Models\Master\ProjectLogframe;
+use App\Models\Master\ProjectWorkplan;
 use App\Services\Budget\BudgetMonitoringService;
 use App\Services\Rbac\DataScopeService;
 use Illuminate\Database\Eloquent\Builder;
@@ -21,6 +22,7 @@ class BudgetMonitoringController extends Controller
             'budget_line_id',
             'project_id',
             'grant_agreement_id',
+            'bank_account_id',
             'relation_no',
             'budget_category_id',
             'search',
@@ -33,6 +35,7 @@ class BudgetMonitoringController extends Controller
             'relation_no' => ['nullable', 'string', 'max:100'],
             'project_id' => ['nullable', 'integer'],
             'grant_agreement_id' => ['nullable', 'integer'],
+            'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
         ]);
 
         $query = BudgetLine::withoutGlobalScope('fiscal_year_context')
@@ -40,6 +43,12 @@ class BudgetMonitoringController extends Controller
             ->when($filters['budget_line_id'] ?? null, fn (Builder $q, $id) => $q->whereKey($id))
             ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where('project_id', $id))
             ->when($filters['grant_agreement_id'] ?? null, fn (Builder $q, $id) => $q->where('grant_agreement_id', $id))
+            ->when($filters['bank_account_id'] ?? null, function (Builder $q, $bankAccountId) {
+                $q->where(function (Builder $scope) use ($bankAccountId) {
+                    $scope->whereHas('project', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->where('bank_account_id', $bankAccountId))
+                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('bank_account_id', $bankAccountId));
+                });
+            })
             ->when($filters['relation_no'] ?? null, fn (Builder $query, $relationNo) => $query->whereRaw("COALESCE(NULLIF(budget_lines.relation_no, ''),
                 (SELECT NULLIF(relation_no, '') FROM projects WHERE projects.id = budget_lines.project_id AND deleted_at IS NULL),
                 (SELECT relation_no FROM grant_agreements WHERE grant_agreements.id = budget_lines.grant_agreement_id AND deleted_at IS NULL)) = ?", [$relationNo]))
@@ -132,28 +141,71 @@ class BudgetMonitoringController extends Controller
 
         $visibleProjects = $items->pluck('project.id')->filter()->unique()->values()->all();
         $visibleGrants = $items->pluck('grant_agreement.id')->filter()->unique()->values()->all();
-        $activities = Activity::query()->whereIn('project_id', $visibleProjects)
+        $fiscalYearFilter = $filters['fiscal_year_id'] ?? null;
+
+        $masterActivities = Activity::withoutGlobalScope('fiscal_year_context')
+            ->whereIn('project_id', $visibleProjects)
             ->with(['project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'code', 'name', 'relation_no', 'manager_name']), 'project.fiscalYears'])
             ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where('project_id', $id))
-            ->when($filters['relation_no'] ?? null, fn (Builder $q, $relationNo) => $q->whereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo)))
-            ->when($filters['fiscal_year_id'] ?? null, fn (Builder $q, $id) => $q->whereHas('project.fiscalYears', fn (Builder $fiscalQuery) => $fiscalQuery->whereKey($id)))
+            ->when($filters['relation_no'] ?? null, fn (Builder $q, $relationNo) => $q->whereHas('project', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo)))
+            ->when($fiscalYearFilter, fn (Builder $q, $id) => $q->where(function (Builder $scope) use ($id) {
+                $scope->where('fiscal_year_id', $id)
+                    ->orWhereNull('fiscal_year_id')
+                    ->orWhereHas('project.fiscalYears', fn (Builder $fiscalQuery) => $fiscalQuery->whereKey($id));
+            }))
+            ->where('is_active', true)
+            ->orderBy('start_date')
+            ->get();
+
+        $masterActivityIds = $masterActivities->pluck('id')->all();
+
+        $workplanActivities = ProjectWorkplan::withoutGlobalScope('fiscal_year_context')
+            ->whereIn('project_id', $visibleProjects)
+            ->with(['fiscalYear:id,year,name', 'project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'code', 'name', 'relation_no', 'manager_name']), 'project.fiscalYears'])
+            ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where('project_id', $id))
+            ->when($filters['relation_no'] ?? null, function (Builder $q, string $relationNo) {
+                $q->where(function (Builder $scope) use ($relationNo) {
+                    $scope->where('relation_no', $relationNo)
+                        ->orWhereHas('project', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo));
+                });
+            })
+            ->when($fiscalYearFilter, fn (Builder $q, $id) => $q->where(function (Builder $scope) use ($id) {
+                $scope->where('fiscal_year_id', $id)
+                    ->orWhereNull('fiscal_year_id')
+                    ->orWhereHas('project.fiscalYears', fn (Builder $fiscalQuery) => $fiscalQuery->whereKey($id));
+            }))
             ->where('is_active', true)
             ->orderBy('start_date')
             ->get()
-            ->map(fn (Activity $activity) => [
-                'id' => $activity->id,
-                'relation_no' => $activity->project?->relation_no,
-                'fiscal_year_year' => $activity->project?->fiscalYears?->pluck('year')->filter()->implode(', ') ?: null,
-                'code' => $activity->code,
-                'name' => $activity->name,
-                'project' => $activity->project?->name,
-                'project_code' => $activity->project?->code,
-                'pic_name' => $activity->pic_name,
-                'start_date' => $activity->start_date?->toDateString(),
-                'end_date' => $activity->end_date?->toDateString(),
-                'target_output' => $activity->target_output,
-                'budget_holder' => $activity->project?->manager_name,
-            ])->values();
+            ->reject(fn (ProjectWorkplan $wp) => $wp->activity_id && in_array($wp->activity_id, $masterActivityIds, true));
+
+        $activities = $masterActivities->map(fn (Activity $activity) => [
+            'id' => $activity->id,
+            'relation_no' => $activity->project?->relation_no,
+            'fiscal_year_year' => $activity->project?->fiscalYears?->pluck('year')->filter()->implode(', ') ?: null,
+            'code' => $activity->code,
+            'name' => $activity->name,
+            'project' => $activity->project?->name,
+            'project_code' => $activity->project?->code,
+            'pic_name' => $activity->pic_name,
+            'start_date' => $activity->start_date?->toDateString(),
+            'end_date' => $activity->end_date?->toDateString(),
+            'target_output' => $activity->target_output,
+            'budget_holder' => $activity->project?->manager_name,
+        ])->toBase()->merge($workplanActivities->map(fn (ProjectWorkplan $wp) => [
+            'id' => 'wp-'.$wp->id,
+            'relation_no' => $wp->relation_no ?: $wp->project?->relation_no,
+            'fiscal_year_year' => $wp->fiscalYear?->year ?: ($wp->project?->fiscalYears?->pluck('year')->filter()->implode(', ') ?: null),
+            'code' => $wp->activity_code ?: $wp->output_code ?: ('WP-'.$wp->id),
+            'name' => $wp->activity,
+            'project' => $wp->project?->name,
+            'project_code' => $wp->project?->code,
+            'pic_name' => $wp->responsible,
+            'start_date' => $wp->start_date?->toDateString(),
+            'end_date' => $wp->end_date?->toDateString(),
+            'target_output' => $wp->output_code,
+            'budget_holder' => $wp->project?->manager_name,
+        ])->toBase())->values();
 
         $logframes = ProjectLogframe::withoutGlobalScope('fiscal_year_context')->whereIn('project_id', $visibleProjects)
             ->with(['fiscalYear:id,year,name', 'project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'code', 'name', 'relation_no']), 'project.fiscalYears'])
@@ -184,8 +236,9 @@ class BudgetMonitoringController extends Controller
                 'unit' => $item->unit,
             ])->values();
 
-        $upcomingEvents = collect($activities)->filter(fn (array $activity) => $activity['start_date'] && $activity['start_date'] >= now()->toDateString())->take(20)->values()
-            ->merge(GrantReportingDeadline::query()->whereIn('grant_agreement_id', $visibleGrants)->with(['grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'grant_no', 'agreement_name', 'relation_no'])])->when($filters['fiscal_year_id'] ?? null, fn (Builder $q, $id) => $q->whereHas('grantAgreement', fn (Builder $grantQuery) => $grantQuery->withoutGlobalScope('fiscal_year_context')->where('fiscal_year_id', $id)))->when($filters['grant_agreement_id'] ?? null, fn (Builder $q, $id) => $q->where('grant_agreement_id', $id))->when($filters['relation_no'] ?? null, fn (Builder $q, $relationNo) => $q->whereHas('grantAgreement', fn (Builder $grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo)))->whereDate('due_date', '>=', now()->toDateString())->orderBy('due_date')->limit(20)->get()->map(fn ($deadline) => [
+        $today = now()->toDateString();
+        $upcomingEvents = collect($activities)->filter(fn (array $activity) => ($activity['start_date'] && $activity['start_date'] >= $today) || ($activity['end_date'] && $activity['end_date'] >= $today))->take(20)->values()
+            ->merge(GrantReportingDeadline::query()->whereIn('grant_agreement_id', $visibleGrants)->with(['grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'grant_no', 'agreement_name', 'relation_no'])])->when($filters['fiscal_year_id'] ?? null, fn (Builder $q, $id) => $q->whereHas('grantAgreement', fn (Builder $grantQuery) => $grantQuery->withoutGlobalScope('fiscal_year_context')->where(fn (Builder $s) => $s->where('fiscal_year_id', $id)->orWhereNull('fiscal_year_id'))))->when($filters['grant_agreement_id'] ?? null, fn (Builder $q, $id) => $q->where('grant_agreement_id', $id))->when($filters['relation_no'] ?? null, fn (Builder $q, $relationNo) => $q->whereHas('grantAgreement', fn (Builder $grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo)))->whereDate('due_date', '>=', $today)->orderBy('due_date')->limit(20)->get()->map(fn ($deadline) => [
                 'type' => 'grant_reporting', 'relation_no' => $deadline->grantAgreement?->relation_no, 'code' => $deadline->report_type, 'name' => $deadline->grantAgreement?->grant_no ?: $deadline->grantAgreement?->agreement_name, 'start_date' => $deadline->due_date?->toDateString(), 'status' => $deadline->status,
             ]))->values();
 

@@ -23,6 +23,11 @@ class BankAccount extends Model
         'opening_balance_date' => 'date',
     ];
 
+    public function resolveRouteBindingQuery($query, $value, $field = null)
+    {
+        return parent::resolveRouteBindingQuery($query, $value, $field)->withoutGlobalScope('fiscal_year_context');
+    }
+
     public function organization()
     {
         return $this->belongsTo(\App\Models\Master\Organization::class, 'organization_id');

@@ -466,7 +466,7 @@ class AccountsPayableController extends Controller
     {
         $data = $request->validate([
             'bank_account_id' => ['required', 'integer', 'exists:bank_accounts,id'],
-            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls,pdf', 'max:10240'],
             'preview' => ['nullable', 'in:0,1,true,false'],
         ]);
 
@@ -569,6 +569,10 @@ class AccountsPayableController extends Controller
 
     private function readStatementRows(string $path, string $extension): array
     {
+        if ($extension === 'pdf') {
+            return $this->readPdfStatementRows($path);
+        }
+
         if (in_array($extension, ['xlsx', 'xls'], true)) {
             $reader = IOFactory::createReaderForFile($path);
             $reader->setReadDataOnly(true);
@@ -595,6 +599,116 @@ class AccountsPayableController extends Controller
         fclose($handle);
 
         return $rows;
+    }
+
+    private function readPdfStatementRows(string $path): array
+    {
+        $parser = new \Smalot\PdfParser\Parser();
+        $text = $parser->parseFile($path)->getText();
+        $lines = preg_split('/\r\n|\r|\n/', (string) $text) ?: [];
+        $rows = [];
+
+        foreach ($lines as $rawLine) {
+            $line = trim(preg_replace('/\s+/', ' ', (string) $rawLine) ?? '');
+            if ($line === '') {
+                continue;
+            }
+
+            if (! preg_match('/^(\d{4}-\d{2}-\d{2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4})\s+(.+)$/', $line, $dateMatch)) {
+                continue;
+            }
+
+            $rawDate = $dateMatch[1];
+            $rest = trim($dateMatch[2]);
+
+            try {
+                $normalizedDate = preg_match('/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/', $rawDate)
+                    ? \Carbon\Carbon::createFromFormat(str_contains($rawDate, '/') ? (strlen($rawDate) <= 8 ? 'd/m/y' : 'd/m/Y') : (strlen($rawDate) <= 8 ? 'd-m-y' : 'd-m-Y'), $rawDate)->toDateString()
+                    : \Carbon\Carbon::parse($rawDate)->toDateString();
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if (! preg_match_all('/(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2})?)(\s*(?:DB|CR|D|K))?(?=\s|$)/i', $rest, $amountMatches, PREG_OFFSET_CAPTURE)) {
+                continue;
+            }
+
+            $amounts = [];
+            $firstAmountOffset = null;
+            foreach ($amountMatches[0] as $idx => $fullMatch) {
+                $rawNum = $amountMatches[1][$idx][0];
+                $flag = strtoupper(trim($amountMatches[2][$idx][0] ?? ''));
+                $parsed = $this->parseStatementNumber($rawNum);
+                if ($parsed === null) {
+                    continue;
+                }
+                if ($firstAmountOffset === null) {
+                    $firstAmountOffset = $fullMatch[1];
+                }
+                $amounts[] = ['value' => $parsed, 'flag' => $flag];
+            }
+
+            if (empty($amounts)) {
+                continue;
+            }
+
+            $description = $firstAmountOffset !== null ? trim(substr($rest, 0, $firstAmountOffset)) : $rest;
+            if ($this->isHeaderRow([$rawDate, $description])) {
+                continue;
+            }
+
+            $debit = 0.0;
+            $credit = 0.0;
+            if (count($amounts) >= 3) {
+                $debit = $amounts[0]['value'];
+                $credit = $amounts[1]['value'];
+            } elseif (count($amounts) === 2) {
+                $first = $amounts[0];
+                if (in_array($first['flag'], ['DB', 'D'], true)) {
+                    $credit = $first['value'];
+                } elseif (in_array($first['flag'], ['CR', 'K'], true)) {
+                    $debit = $first['value'];
+                } else {
+                    $debit = $first['value'];
+                }
+            } else {
+                $only = $amounts[0];
+                if (in_array($only['flag'], ['DB', 'D'], true)) {
+                    $credit = $only['value'];
+                } else {
+                    $debit = $only['value'];
+                }
+            }
+
+            $rows[] = [$normalizedDate, '', $description, (string) $debit, (string) $credit];
+        }
+
+        if (empty($rows)) {
+            throw ValidationException::withMessages([
+                'file' => 'PDF tidak memiliki baris mutasi teks yang dapat dibaca (pastikan PDF hasil export bank dengan teks aktif, bukan scan gambar).',
+            ]);
+        }
+
+        return $rows;
+    }
+
+    private function parseStatementNumber(string $raw): ?float
+    {
+        $clean = trim($raw);
+        if ($clean === '' || ! preg_match('/\d/', $clean)) {
+            return null;
+        }
+        if (preg_match('/^\d{1,3}(\.\d{3})+,\d{2}$/', $clean)) {
+            $clean = str_replace(['.', ','], ['', '.'], $clean);
+        } elseif (preg_match('/^\d{1,3}(,\d{3})+\.\d{2}$/', $clean)) {
+            $clean = str_replace(',', '', $clean);
+        } elseif (substr_count($clean, ',') === 1 && ! str_contains($clean, '.')) {
+            $clean = str_replace(',', '.', $clean);
+        } else {
+            $clean = str_replace(',', '', $clean);
+        }
+
+        return is_numeric($clean) ? round((float) $clean, 2) : null;
     }
 
     private function isHeaderRow(array $columns): bool
