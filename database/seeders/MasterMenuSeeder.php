@@ -19,7 +19,7 @@ class MasterMenuSeeder extends Seeder
             'master-programs-projects', 'master-programs',
             'master-donor-types', 'master-projects-activities', 'master-project-workplan',
             'master-grant-agreements', 'master-project-frameworks', 'master-project-timeline-workplan',
-            'master-expenses-assets',
+            'master-expenses-assets', 'master-chart-of-accounts',
         ])->update(['is_active' => false]);
 
         // Keep this standalone seeder aligned with DatabaseSeeder. These are
@@ -36,7 +36,6 @@ class MasterMenuSeeder extends Seeder
         $groups = [
             ['title' => 'Finance & Accounting', 'slug' => 'master-finance-accounting', 'sort_order' => 17, 'children' => [
                 ['title' => 'Bank Accounts', 'slug' => 'master-bank-accounts', 'path' => '/master-data/bank-accounts', 'sort_order' => 177],
-                ['title' => 'Chart of Accounts', 'slug' => 'master-chart-of-accounts', 'path' => '/master-data/chart-of-accounts', 'sort_order' => 170],
                 ['title' => 'Cost Centers', 'slug' => 'master-cost-centers', 'path' => '/master-data/cost-centers', 'sort_order' => 180],
                 ['title' => 'Petty Cash', 'slug' => 'master-petty-cashes', 'path' => '/master-data/petty-cashes', 'sort_order' => 182],
                 ['title' => 'Payment Methods', 'slug' => 'master-payment-methods', 'path' => '/master-data/payment-methods', 'sort_order' => 179],

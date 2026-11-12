@@ -582,14 +582,23 @@ class ReportsDashboardController extends Controller
         $isFiltered = $relationNo !== '' || $projectId !== null || $grantAgreementId !== null;
 
         $grantQuery = \App\Models\Master\GrantAgreement::query()
-            ->with(['donor', 'currency', 'projects', 'bankAccount'])
+            ->when($isFiltered, fn (Builder $query) => $query->withoutGlobalScope('fiscal_year_context'))
+            ->with([
+                'fiscalYear:id,year,name',
+                'donor' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
+                'donor.fiscalYear:id,year,name',
+                'currency',
+                'projects' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
+                'projects.fiscalYears',
+                'bankAccount',
+            ])
             ->when($relationNo !== '', function (Builder $query) use ($relationNo) {
                 $query->where(function (Builder $scope) use ($relationNo) {
                     $scope->where('relation_no', $relationNo)
-                        ->orWhereHas('projects', fn (Builder $project) => $project->where('relation_no', $relationNo));
+                        ->orWhereHas('projects', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo));
                 });
             })
-            ->when($projectId, fn (Builder $query, int $id) => $query->whereHas('projects', fn (Builder $project) => $project->whereKey($id)))
+            ->when($projectId, fn (Builder $query, int $id) => $query->whereHas('projects', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->whereKey($id)))
             ->when($grantAgreementId, fn (Builder $query, int $id) => $query->whereKey($id));
 
         $grants = $grantQuery->get();
@@ -598,7 +607,8 @@ class ReportsDashboardController extends Controller
             ->when($projectId, fn ($ids) => $ids->filter(fn ($id) => (int) $id === $projectId))
             ->values();
         $donors = \App\Models\Master\Donor::query()
-            ->with(['grantAgreements' => fn ($query) => $query->whereIn('id', $grantIds)])
+            ->when($isFiltered, fn (Builder $query) => $query->withoutGlobalScope('fiscal_year_context'))
+            ->with(['grantAgreements' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context')->whereIn('id', $grantIds)])
             ->whereIn('id', $grants->pluck('donor_id')->unique())
             ->get();
         $grantDeadlines = GrantReportingDeadline::query()->whereIn('grant_agreement_id', $grants->pluck('id'))->orderBy('due_date')->get()->groupBy('grant_agreement_id');
@@ -613,6 +623,7 @@ class ReportsDashboardController extends Controller
             $bal = round((float) ($bankBalances[$bank?->id] ?? 0), 2);
             return [
                 'grant_id' => $grant->id,
+                'fiscal_year' => $grant->fiscalYear?->year,
                 'relation_no' => $grant->relation_no ?? $grant->projects->first()?->relation_no,
                 'grant_no' => $grant->grant_no,
                 'agreement_name' => $grant->agreement_name,
@@ -628,7 +639,7 @@ class ReportsDashboardController extends Controller
         $totalCashBalance = collect($cashPositions)->sum('balance');
 
         $upcomingDeadlines = GrantReportingDeadline::query()
-            ->with(['grantAgreement:id,grant_no,relation_no,agreement_name,donor_id', 'grantAgreement.donor:id,name,code'])
+            ->with(['grantAgreement:id,fiscal_year_id,grant_no,relation_no,agreement_name,donor_id', 'grantAgreement.fiscalYear:id,year,name', 'grantAgreement.donor:id,name,code'])
             ->whereIn('grant_agreement_id', $grants->pluck('id'))
             ->whereNotIn('status', ['approved'])
             ->orderBy('due_date', 'asc')
@@ -643,6 +654,7 @@ class ReportsDashboardController extends Controller
                 return [
                     'id' => $dl->id,
                     'grant_id' => $dl->grant_agreement_id,
+                    'fiscal_year' => $dl->grantAgreement?->fiscalYear?->year ?? $dl->due_date?->year,
                     'relation_no' => $dl->grantAgreement?->relation_no,
                     'grant_no' => $dl->grantAgreement?->grant_no,
                     'agreement_name' => $dl->grantAgreement?->agreement_name,
@@ -704,6 +716,7 @@ class ReportsDashboardController extends Controller
                 'code' => $donor->code,
                 'name' => $donor->name,
                 'type' => $donor->donor_type ?? 'Institutional',
+                'fiscal_years' => $donor->grantAgreements->map(fn ($g) => $g->fiscalYear?->year)->filter()->unique()->values()->all(),
                 'relation_nos' => $donor->grantAgreements->pluck('relation_no')->filter()->values()->all(),
                 'active_grants_count' => $donor->grantAgreements->count(),
                 'approved_budget' => round($approved, 2),
@@ -743,6 +756,7 @@ class ReportsDashboardController extends Controller
 
             return [
                 'id' => $grant->id,
+                'fiscal_year' => $grant->fiscalYear?->year ?? ($grant->projects->pluck('fiscalYears')->flatten()->pluck('year')->filter()->unique()->implode(', ') ?: null),
                 'relation_no' => $grant->relation_no ?? $grant->projects->first()?->relation_no,
                 'project_ids' => $grant->projects->pluck('id')->values()->all(),
                 'grant_no' => $grant->grant_no,
@@ -823,9 +837,9 @@ class ReportsDashboardController extends Controller
         $totals = $this->budgetTotals($budgetRows);
 
         $deadlines = GrantReportingDeadline::query()
-            ->with('grantAgreement:id,grant_no,relation_no,agreement_name')
+            ->with(['grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'grant_no', 'relation_no', 'agreement_name'])])
             ->when($request->filled('grant_agreement_id'), fn (Builder $q) => $q->where('grant_agreement_id', $request->integer('grant_agreement_id')))
-            ->when($request->filled('relation_no'), fn (Builder $q) => $q->whereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $request->string('relation_no')->trim()->toString())))
+            ->when($request->filled('relation_no'), fn (Builder $q) => $q->whereHas('grantAgreement', fn (Builder $grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('relation_no', $request->string('relation_no')->trim()->toString())))
             ->orderBy('due_date')
             ->get()
             ->map(fn (GrantReportingDeadline $deadline) => [
@@ -877,13 +891,19 @@ class ReportsDashboardController extends Controller
             ->groupBy('bank_account_id')
             ->pluck('balance', 'bank_account_id');
         $linkedBanking = \App\Models\Master\GrantAgreement::query()
-            ->with(['bankAccount:id,bank_name,account_number,account_name,currency_id', 'currency:id,code', 'projects:id,grant_agreement_id,code,name,bank_account_id', 'projects.bankAccount:id,bank_name,account_number,account_name,currency_id'])
+            ->when($request->filled('relation_no') || $request->filled('grant_agreement_id') || $request->filled('project_id'), fn (Builder $q) => $q->withoutGlobalScope('fiscal_year_context'))
+            ->with([
+                'bankAccount:id,bank_name,account_number,account_name,currency_id',
+                'currency:id,code',
+                'projects' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'grant_agreement_id', 'code', 'name', 'relation_no', 'bank_account_id']),
+                'projects.bankAccount:id,bank_name,account_number,account_name,currency_id',
+            ])
             ->when($request->filled('grant_agreement_id'), fn (Builder $q) => $q->whereKey($request->integer('grant_agreement_id')))
             ->when($request->filled('relation_no'), function (Builder $q) use ($request) {
                 $relationNo = $request->string('relation_no')->trim()->toString();
                 $q->where(function (Builder $scope) use ($relationNo) {
                     $scope->where('relation_no', $relationNo)
-                        ->orWhereHas('projects', fn (Builder $project) => $project->where('relation_no', $relationNo));
+                        ->orWhereHas('projects', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo));
                 });
             })
             ->where(function (Builder $q) {
@@ -893,6 +913,9 @@ class ReportsDashboardController extends Controller
             ->flatMap(fn ($grant) => ($grant->projects->isNotEmpty() ? $grant->projects : collect([null]))->map(function ($project) use ($grant, $bankBalances) {
                 $bank = $project?->bankAccount ?: $grant->bankAccount;
                 return [
+                    'relation_no' => $project?->relation_no ?: $grant->relation_no,
+                    'grant_agreement_id' => $grant->id,
+                    'project_id' => $project?->id,
                     'project' => $project?->name,
                     'grant' => $grant->grant_no,
                     'grant_name' => $grant->agreement_name,
@@ -1413,7 +1436,7 @@ class ReportsDashboardController extends Controller
         $calendar = $request->input('donor_fiscal_calendar');
 
         if (! in_array($calendar, ['JAN_DEC', 'APR_MAR'], true) && $request->filled('grant_agreement_id')) {
-            $calendar = App\Models\Master\GrantAgreement::query()
+            $calendar = \App\Models\Master\GrantAgreement::query()
                 ->whereKey($request->integer('grant_agreement_id'))
                 ->value('donor_fiscal_calendar');
         }

@@ -85,10 +85,29 @@ trait FilterableSearchableTrait
                             ->orWhere($filterCol, $request->query($filterCol));
                     });
                 } else {
-                    if (\Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), $filterCol)) {
+                    if ($filterCol === 'relation_no') {
+                        $relationVal = trim((string) $request->query($filterCol));
+                        if (\Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), $filterCol)) {
+                            $query->where(function (Builder $scope) use ($relationVal) {
+                                $scope->where($this->getTable().'.relation_no', $relationVal);
+                                if (method_exists($this, 'project')) {
+                                    $scope->orWhere(function (Builder $fallback) use ($relationVal) {
+                                        $fallback->whereNull($this->getTable().'.relation_no')
+                                            ->whereHas('project', fn (Builder $projectQuery) => $projectQuery->where('relation_no', $relationVal));
+                                    });
+                                }
+                                if (method_exists($this, 'grantAgreement')) {
+                                    $scope->orWhere(function (Builder $fallback) use ($relationVal) {
+                                        $fallback->whereNull($this->getTable().'.relation_no')
+                                            ->whereHas('grantAgreement', fn (Builder $grantQuery) => $grantQuery->where('relation_no', $relationVal));
+                                    });
+                                }
+                            });
+                        } elseif (method_exists($this, 'project')) {
+                            $query->whereHas('project', fn (Builder $projectQuery) => $projectQuery->where('relation_no', $relationVal));
+                        }
+                    } elseif (\Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), $filterCol)) {
                         $query->where($filterCol, $request->query($filterCol));
-                    } elseif ($filterCol === 'relation_no' && method_exists($this, 'project')) {
-                        $query->whereHas('project', fn (Builder $projectQuery) => $projectQuery->where('relation_no', $request->query($filterCol)));
                     } elseif ($filterCol === 'donor_id' && method_exists($this, 'grantAgreement')) {
                         $query->whereHas('grantAgreement', fn (Builder $grantQuery) => $grantQuery->where('donor_id', $request->query($filterCol)));
                     }

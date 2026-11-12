@@ -20,8 +20,11 @@ class GrantDisbursementRequestController extends Controller
     public function index(Request $request)
     {
         $query = GrantDisbursementRequest::with([
-            'grantAgreement:id,grant_no,agreement_no,agreement_name,donor_id,currency_id,grant_value,exchange_rate_contract,bank_account_id',
-            'grantAgreement.donor:id,code,name,type',
+            'fiscalYear:id,year,name',
+            'grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'fiscal_year_id', 'grant_no', 'relation_no', 'agreement_no', 'agreement_name', 'donor_id', 'currency_id', 'grant_value', 'exchange_rate_contract', 'bank_account_id']),
+            'grantAgreement.fiscalYear:id,year,name',
+            'grantAgreement.donor' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'code', 'name', 'type']),
+            'grantAgreement.projects' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['projects.id', 'grant_agreement_id', 'code', 'name', 'relation_no']),
             'grantAgreement.currency:id,code,name',
             'currency:id,code,name',
             'bankAccount:id,bank_name,account_number,account_name',
@@ -30,6 +33,16 @@ class GrantDisbursementRequestController extends Controller
 
         if ($request->filled('grant_agreement_id')) {
             $query->where('grant_agreement_id', $request->input('grant_agreement_id'));
+        }
+        if ($request->filled('relation_no')) {
+            $relationNo = trim((string) $request->input('relation_no'));
+            $query->whereHas('grantAgreement', function ($grantQuery) use ($relationNo) {
+                $grantQuery->where('relation_no', $relationNo)
+                    ->orWhereHas('projects', fn ($projectQuery) => $projectQuery->where('relation_no', $relationNo));
+            });
+        }
+        if ($request->filled('project_id')) {
+            $query->whereHas('grantAgreement.projects', fn ($projectQuery) => $projectQuery->where('projects.id', $request->integer('project_id')));
         }
 
         if ($request->filled('status') && $request->input('status') !== 'ALL') {
@@ -108,17 +121,39 @@ class GrantDisbursementRequestController extends Controller
             ], 422);
         }
 
-        $grant = GrantAgreement::with(['donor', 'currency', 'bankAccount'])->findOrFail($grantId);
+        $grant = GrantAgreement::query()
+            ->withoutGlobalScope('fiscal_year_context')
+            ->with([
+                'fiscalYear:id,year,name',
+                'donor' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
+                'currency',
+                'bankAccount',
+                'projects' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
+            ])
+            ->findOrFail($grantId);
+        if ($request->filled('relation_no')) {
+            $relationNo = trim((string) $request->input('relation_no'));
+            $matchesRelation = ($grant->relation_no && strcasecmp($grant->relation_no, $relationNo) === 0)
+                || $grant->projects()->where('relation_no', $relationNo)->exists();
+            if (! $matchesRelation) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Grant Agreement tidak sesuai dengan Nomor Relasi yang dipilih.',
+                ], 422);
+            }
+        }
 
-        $budgetLines = BudgetLine::with(['activity', 'glAccount', 'currency'])
+        $budgetLines = BudgetLine::withoutGlobalScope('fiscal_year_context')
+            ->with(['activity', 'glAccount', 'currency', 'project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'relation_no'])])
             ->where('grant_agreement_id', $grantId)
+            ->when($request->filled('project_id'), fn ($q) => $q->where('project_id', $request->integer('project_id')))
             ->where('is_active', true)
             ->orderBy('id')
             ->get();
 
         $contractRate = (float) ($grant->exchange_rate_contract ?: 1);
 
-        $items = $budgetLines->map(function ($line) use ($quarter, $contractRate) {
+        $items = $budgetLines->map(function ($line) use ($quarter, $contractRate, $grant) {
             $allocations = is_array($line->period_allocations) ? $line->period_allocations : [];
 
             // Extract quarterly budget allocation if specified, otherwise 1/4 of total
@@ -142,6 +177,7 @@ class GrantDisbursementRequestController extends Controller
 
             return [
                 'budget_line_id' => $line->id,
+                'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: $grant->relation_no),
                 'line_code' => $line->line_code,
                 'description' => $line->description,
                 'sub_output_code' => $line->sub_output_code,
@@ -165,6 +201,9 @@ class GrantDisbursementRequestController extends Controller
             'success' => true,
             'grant' => [
                 'id' => $grant->id,
+                'fiscal_year_id' => $grant->fiscal_year_id,
+                'fiscal_year' => $grant->fiscalYear?->year,
+                'relation_no' => $grant->relation_no,
                 'grant_no' => $grant->grant_no,
                 'agreement_name' => $grant->agreement_name,
                 'donor_name' => $grant->donor->name ?? '—',

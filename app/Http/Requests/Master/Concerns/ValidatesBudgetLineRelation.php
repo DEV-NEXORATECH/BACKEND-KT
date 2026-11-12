@@ -11,10 +11,20 @@ trait ValidatesBudgetLineRelation
 {
     protected function mergeBudgetRelationContext(): void
     {
-        [, , $expectedRelationNo] = $this->budgetRelationContext();
+        [$project, $grant, $expectedRelationNo] = $this->budgetRelationContext();
 
+        $updates = [];
+        if (! $this->filled('project_id') && $project) {
+            $updates['project_id'] = $project->id;
+        }
+        if (! $this->filled('grant_agreement_id') && $grant) {
+            $updates['grant_agreement_id'] = $grant->id;
+        }
         if (! $this->filled('relation_no') && $expectedRelationNo) {
-            $this->merge(['relation_no' => $expectedRelationNo]);
+            $updates['relation_no'] = $expectedRelationNo;
+        }
+        if ($updates !== []) {
+            $this->merge($updates);
         }
     }
 
@@ -36,6 +46,7 @@ trait ValidatesBudgetLineRelation
     {
         $projectId = $this->input('project_id');
         $grantId = $this->input('grant_agreement_id');
+        $relationNo = trim((string) $this->input('relation_no', ''));
 
         if (! $projectId && ! $grantId && $this->route('id')) {
             $budgetLine = BudgetLine::query()
@@ -45,8 +56,15 @@ trait ValidatesBudgetLineRelation
             $grantId = $budgetLine?->grant_agreement_id;
         }
 
-        $project = $projectId ? Project::query()->with('grantAgreement:id,relation_no')->find($projectId) : null;
-        $grant = $grantId ? GrantAgreement::query()->find($grantId) : $project?->grantAgreement;
+        $project = $projectId
+            ? Project::query()->with('grantAgreement:id,relation_no')->find($projectId)
+            : ($relationNo !== '' ? Project::query()->with('grantAgreement:id,relation_no')->where('relation_no', $relationNo)->first() : null);
+
+        $grant = $grantId
+            ? GrantAgreement::query()->withoutGlobalScope('fiscal_year_context')->find($grantId)
+            : ($project?->grantAgreement
+                ?: ($relationNo !== '' ? GrantAgreement::query()->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo)->first() : null));
+
         $expectedRelationNo = $project?->relation_no ?: $project?->grantAgreement?->relation_no ?: $grant?->relation_no;
 
         return [$project, $grant, $expectedRelationNo];

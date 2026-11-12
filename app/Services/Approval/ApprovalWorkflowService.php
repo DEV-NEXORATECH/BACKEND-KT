@@ -123,19 +123,114 @@ class ApprovalWorkflowService
         });
     }
 
-    public function reject(string $module, Model $entity, User $user, string $notes): void
+    public function reject(string $module, Model $entity, User $user, string $notes, bool $asReviewer = false): void
     {
-        DB::transaction(function () use ($module, $entity, $user, $notes) {
+        DB::transaction(function () use ($module, $entity, $user, $notes, $asReviewer) {
             $run = ApprovalWorkflowRun::query()
                 ->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])
                 ->lockForUpdate()->first();
             if (! $run) return;
             $run->load('actions.approvalMatrix');
-            $action = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get()->first(fn ($item) => $this->matchesApprover($item, $user, $entity));
-            if (! $action) throw ValidationException::withMessages(['approval' => 'You are not the approver for the current approval stage.']);
-            $action->update(['status' => 'rejected', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
+            $currentActions = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get();
+            if ($asReviewer && $this->isRequester($entity, $user)) {
+                throw ValidationException::withMessages(['approval' => 'Requester cannot reject their own document as reviewer.']);
+            }
+            $action = $asReviewer
+                ? $currentActions->first()
+                : $currentActions->first(fn ($item) => $this->matchesApprover($item, $user, $entity));
+            if (! $asReviewer && ! $action) throw ValidationException::withMessages(['approval' => 'You are not the approver for the current approval stage.']);
+            if ($action) {
+                $action->update(['status' => 'rejected', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
+            }
             $run->update(['status' => 'rejected', 'completed_at' => now()]);
             $this->recordEvent($run, 'rejected', $run->current_level, null, $user->id, $notes);
+        });
+    }
+
+    /** Assign or reassign an active eligible user to approve the active stage of a workflow run. */
+    public function assignCurrentStageApprover(string $module, Model $entity, User $targetUser, User $actor, ?string $notes = null): array
+    {
+        if ($targetUser->is_active === false) {
+            throw ValidationException::withMessages(['user_id' => 'User approver yang dipilih tidak aktif.']);
+        }
+        if ($this->isRequester($entity, $targetUser)) {
+            throw ValidationException::withMessages(['user_id' => 'Requester atau pembuat dokumen tidak dapat ditugaskan sebagai approver.']);
+        }
+        if ($module === 'journal' && ! $targetUser->hasPermission('accounting.journal.post')) {
+            throw ValidationException::withMessages(['user_id' => 'User yang dipilih tidak memiliki izin accounting.journal.post untuk approve/post journal.']);
+        }
+
+        return DB::transaction(function () use ($module, $entity, $targetUser, $actor, $notes) {
+            $resolver = app(ApprovalIdentityResolver::class);
+            $resolvedEmployeeId = $resolver->employeeId($targetUser);
+            $run = ApprovalWorkflowRun::query()
+                ->where(['module' => $module, 'approvable_type' => $entity::class, 'approvable_id' => $entity->getKey()])
+                ->lockForUpdate()
+                ->first();
+
+            if (! $run) {
+                $run = ApprovalWorkflowRun::create([
+                    'module' => $module,
+                    'approvable_type' => $entity::class,
+                    'approvable_id' => $entity->getKey(),
+                    'status' => 'in_progress',
+                    'current_level' => 1,
+                    'submitted_by' => $entity->getAttribute('submitted_by') ?: $entity->getAttribute('created_by') ?: $actor->id,
+                ]);
+                $run->actions()->create([
+                    'approval_matrix_id' => null,
+                    'level' => 1,
+                    'role_id' => $targetUser->role_id,
+                    'user_id' => $targetUser->id,
+                    'employee_id' => $resolvedEmployeeId,
+                    'status' => 'pending',
+                ]);
+            } else {
+                if ($run->status !== 'in_progress') {
+                    throw ValidationException::withMessages(['approval' => 'Approver hanya dapat ditetapkan saat workflow berstatus in_progress.']);
+                }
+                $run->load('actions.approvalMatrix');
+                $action = $run->actions()
+                    ->where('level', $run->current_level)
+                    ->where('status', 'pending')
+                    ->orderBy('id')
+                    ->first();
+
+                if (! $action) {
+                    $action = $run->actions()->create([
+                        'approval_matrix_id' => null,
+                        'level' => $run->current_level ?: 1,
+                        'role_id' => $targetUser->role_id,
+                        'user_id' => $targetUser->id,
+                        'employee_id' => $resolvedEmployeeId,
+                        'status' => 'pending',
+                    ]);
+                } else {
+                    $action->update([
+                        'user_id' => $targetUser->id,
+                        'employee_id' => $resolvedEmployeeId,
+                        'role_id' => $action->role_id ?: $targetUser->role_id,
+                    ]);
+                }
+            }
+
+            $level = (int) ($run->current_level ?: 1);
+            $auditNote = trim((string) $notes) !== ''
+                ? trim((string) $notes)
+                : "Approver tahap {$level} ditetapkan ke {$targetUser->name}.";
+
+            $this->recordEvent($run, 'approver_assigned', $level, $level, $actor->id, $auditNote, [
+                'assigned_user_id' => $targetUser->id,
+                'assigned_user_name' => $targetUser->name,
+                'assigned_employee_id' => $resolvedEmployeeId,
+            ]);
+
+            return [
+                'level' => $level,
+                'assigned_user_id' => $targetUser->id,
+                'assigned_user_name' => $targetUser->name,
+                'message' => $auditNote,
+            ];
         });
     }
 
@@ -252,6 +347,45 @@ class ApprovalWorkflowService
             $reason = $run?->status === 'in_progress' ? 'not_current_approver' : ($run ? 'workflow_not_active' : 'approval_not_started');
         }
         $visible = $viewer && $this->isSuperAdmin($viewer) ? $actions : $actions->filter(fn ($a) => in_array($a->status, ['approved', 'pending', 'rejected', 'skipped'], true));
+        $steps = $visible->map(function ($action) use ($entity, $viewer, $active, $module, $ready) {
+            $approvers = $this->approversFor($action, $entity, $module);
+            $isActive = $active->contains('id', $action->id);
+            $missingReason = empty($approvers) ? $this->missingApproverReason($action, $entity, $module) : null;
+            return [
+                'id' => $action->id,
+                'level' => (int)$action->level,
+                'label' => $action->approvalMatrix?->approver_title ?: 'Approval Level '.$action->level,
+                'status' => $action->status,
+                'user_id' => $action->user_id,
+                'employee_id' => $action->employee_id,
+                'role_id' => $action->role_id,
+                'approvers' => $approvers,
+                'missing_reason' => $missingReason,
+                'approver_name' => $action->actionBy?->name ?: (count($approvers) === 1 ? $approvers[0]['name'] : null),
+                'approver_position' => $action->approvalMatrix?->approver_title,
+                'approved_at' => $action->action_at?->toISOString(),
+                'action_by' => $action->action_by,
+                'signature_url' => $action->actionBy?->employee?->signature_path ? url($action->actionBy->employee->signature_path) : null,
+                'can_approve' => (bool)($ready && $viewer && $isActive && $this->matchesApprover($action, $viewer, $entity)),
+            ];
+        })->values()->all();
+
+        $configuredStage = null;
+        $configuredApprovers = [];
+        $configuredStagesCount = 0;
+        if (! $run && $module === 'journal') {
+            $previewMatrices = $this->matricesFor($module, $entity, $amount);
+            $configuredStagesCount = $previewMatrices->count();
+            $firstMatrix = $previewMatrices->first();
+            if ($firstMatrix) {
+                $configuredStage = $firstMatrix->approver_title ?: ($firstMatrix->role?->name ?: 'Approval Level '.$firstMatrix->level);
+                $configuredApprovers = $this->approversFor($firstMatrix, $entity, $module);
+            }
+        }
+
+        $needsApproverAssignment = $run?->status === 'in_progress'
+            && collect($steps)->contains(fn ($step) => in_array($step['status'], ['pending', 'current'], true) && empty($step['approvers']));
+
         return [
             'status' => $run?->status ?? 'not_started',
             'document_status' => $entity->getAttribute('status'),
@@ -264,27 +398,52 @@ class ApprovalWorkflowService
             'unavailable_reason' => $reason,
             'can_approve_reason' => $canApprove ? null : ($reason ?: 'no_pending_approval'),
             'can_post_reason' => $canPost ? null : ($reason ?: 'approval_pending'),
-            'steps' => $visible->map(function ($action) use ($entity, $viewer, $active, $module, $ready) {
-                $approvers = $this->approversFor($action, $entity, $module);
-                $isActive = $active->contains('id', $action->id);
-                return [
-                    'id' => $action->id,
-                    'level' => (int)$action->level,
-                    'label' => $action->approvalMatrix?->approver_title ?: 'Approval Level '.$action->level,
-                    'status' => $action->status,
-                    'user_id' => $action->user_id,
-                    'employee_id' => $action->employee_id,
-                    'role_id' => $action->role_id,
-                    'approvers' => $approvers,
-                    'approver_name' => $action->actionBy?->name ?: (count($approvers) === 1 ? $approvers[0]['name'] : null),
-                    'approver_position' => $action->approvalMatrix?->approver_title,
-                    'approved_at' => $action->action_at?->toISOString(),
-                    'action_by' => $action->action_by,
-                    'signature_url' => $action->actionBy?->employee?->signature_path ? url($action->actionBy->employee->signature_path) : null,
-                    'can_approve' => (bool)($ready && $viewer && $isActive && $this->matchesApprover($action, $viewer, $entity)),
-                ];
-            })->values()->all(),
+            'needs_approver_assignment' => $needsApproverAssignment,
+            'requires_approval' => $module === 'journal' ? $this->requiresApproval($module, $entity, $amount, $viewer) : ($actions->isNotEmpty()),
+            'configured_stages_count' => $configuredStagesCount,
+            'configured_stage' => $configuredStage,
+            'configured_approvers' => $configuredApprovers,
+            'steps' => $steps,
         ];
+    }
+
+    private function missingApproverReason($action, Model $entity, string $module): string
+    {
+        if ($action->user_id || $action->employee_id) {
+            $candidate = $action->user_id
+                ? User::with('role.permissions')->find($action->user_id)
+                : User::with('role.permissions')->where('employee_id', $action->employee_id)->first();
+            if (! $candidate) {
+                return 'Employee/jabatan pada matrix ini belum memiliki akun login user yang terhubung.';
+            }
+            if ($candidate->is_active === false) {
+                return "User {$candidate->name} berstatus nonaktif.";
+            }
+            if ($this->isRequester($entity, $candidate)) {
+                return "User {$candidate->name} adalah requester dokumen ini sehingga tidak dapat melakukan self-approval.";
+            }
+            if ($module === 'journal' && ! $candidate->hasPermission('accounting.journal.post')) {
+                return "User {$candidate->name} belum memiliki izin accounting.journal.post.";
+            }
+            return 'User approver tidak memenuhi scope atau matriks approval dokumen ini.';
+        }
+
+        $role = $action->role_id ? \App\Models\Role::find($action->role_id) : null;
+        if ($action->approvalMatrix?->is_conditional_project_manager || in_array($role?->slug, ['budget-holder', 'budget-holder-project-manager'], true)) {
+            $projects = $this->dimensionIds($entity, 'project_id');
+            if (empty($projects)) {
+                return 'Journal tidak mencantumkan Project sehingga Project Manager kondisional tidak dapat ditentukan.';
+            }
+            return 'Belum ada Project Manager aktif pada Project Assignment yang memenuhi scope & izin approve journal.';
+        }
+
+        if ($role) {
+            return $module === 'journal'
+                ? "Belum ada user aktif pada role {$role->name} dengan izin accounting.journal.post."
+                : "Belum ada user aktif pada role {$role->name}.";
+        }
+
+        return 'Approver belum ditetapkan pada tahap approval ini.';
     }
 
     private function approversFor($action, Model $entity, string $module): array

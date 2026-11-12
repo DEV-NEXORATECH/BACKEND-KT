@@ -30,6 +30,23 @@ class BudgetLine extends Model
             if ($line->total_amount !== null) {
                 $line->base_amount = round((float) $line->total_amount * max((float) ($line->exchange_rate ?: 1), 0.000001), 2);
             }
+
+            if (empty($line->grant_agreement_id) && ! empty($line->project_id)) {
+                $line->grant_agreement_id = Project::query()
+                    ->whereKey($line->project_id)
+                    ->value('grant_agreement_id');
+            }
+
+            if (empty($line->relation_no)) {
+                $projectRelation = ! empty($line->project_id)
+                    ? Project::query()->whereKey($line->project_id)->value('relation_no')
+                    : null;
+                $grantRelation = ! empty($line->grant_agreement_id)
+                    ? GrantAgreement::query()->whereKey($line->grant_agreement_id)->value('relation_no')
+                    : null;
+
+                $line->relation_no = $projectRelation ?: $grantRelation;
+            }
         });
     }
 

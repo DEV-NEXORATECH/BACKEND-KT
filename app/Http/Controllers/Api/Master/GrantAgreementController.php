@@ -18,6 +18,18 @@ class GrantAgreementController extends BaseMasterController
     protected array $searchableColumns = ['grant_no', 'agreement_name'];
     protected array $defaultWith = ['donor', 'fundingSource', 'currency', 'bankAccount', 'reportingDeadlines', 'projects'];
 
+    protected function defaultRelations(): array
+    {
+        return [
+            'donor' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'fundingSource',
+            'currency',
+            'bankAccount',
+            'reportingDeadlines',
+            'projects' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+        ];
+    }
+
     public function store(\Illuminate\Http\Request $request): JsonResponse
     {
         $validated = app($this->storeRequestClass)->validated();
@@ -26,20 +38,20 @@ class GrantAgreementController extends BaseMasterController
         }
         unset($validated['agreement_document']);
         $record = $this->modelClass::create($validated);
-        $record->loadMissing($this->defaultWith);
+        $record->loadMissing($this->defaultRelations());
         return $this->successResponse(new $this->resourceClass($record), 'Data berhasil ditambahkan.', Response::HTTP_CREATED);
     }
 
     public function update(\Illuminate\Http\Request $request, $id): JsonResponse
     {
-        $record = $this->modelClass::findOrFail($id);
+        $record = $this->modelClass::query()->withoutGlobalScope('fiscal_year_context')->findOrFail($id);
         $validated = app($this->updateRequestClass)->validated();
         if ($request->hasFile('agreement_document')) {
             $validated['agreement_document_path'] = $request->file('agreement_document')->store('grant-agreements', 'public');
         }
         unset($validated['agreement_document']);
         $record->update($validated);
-        $record->loadMissing($this->defaultWith);
+        $record->loadMissing($this->defaultRelations());
         return $this->successResponse(new $this->resourceClass($record), 'Data berhasil diperbarui.');
     }
 }

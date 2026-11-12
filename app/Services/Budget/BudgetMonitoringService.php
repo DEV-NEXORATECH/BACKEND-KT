@@ -81,6 +81,7 @@ class BudgetMonitoringService
             return [
                 'budget_line_id' => $line->id,
                 'fiscal_year_id' => $line->fiscal_year_id,
+                'fiscal_year_year' => $line->fiscalYear?->year,
                 'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: $line->grantAgreement?->relation_no),
                 'line_code' => $line->line_code,
                 'description' => $line->description,

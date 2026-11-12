@@ -23,6 +23,11 @@ abstract class BaseMasterController extends Controller
     protected array $defaultWith = [];
     protected array $defaultWithCount = [];
 
+    protected function defaultRelations(): array
+    {
+        return $this->defaultWith;
+    }
+
     public function index(Request $request): JsonResponse
     {
         try {
@@ -91,8 +96,8 @@ abstract class BaseMasterController extends Controller
                 return $this->successResponse($options, 'Daftar opsi berhasil dimuat.');
             }
 
-            if (! empty($this->defaultWith)) {
-                $query->with($this->defaultWith);
+            if (! empty($this->defaultRelations())) {
+                $query->with($this->defaultRelations());
             }
             if (! empty($this->defaultWithCount)) {
                 $query->withCount($this->defaultWithCount);
@@ -142,7 +147,7 @@ abstract class BaseMasterController extends Controller
     {
         $validated = app($this->storeRequestClass)->validated();
         $record = $this->modelClass::create($validated);
-        $record->loadMissing($this->defaultWith);
+        $record->loadMissing($this->defaultRelations());
         $record->loadCount($this->defaultWithCount);
 
         return $this->successResponse(
@@ -154,7 +159,11 @@ abstract class BaseMasterController extends Controller
 
     public function show($id): JsonResponse
     {
-        $record = $this->modelClass::with($this->defaultWith)->withCount($this->defaultWithCount)->findOrFail($id);
+        $record = $this->modelClass::query()
+            ->withoutGlobalScope('fiscal_year_context')
+            ->with($this->defaultRelations())
+            ->withCount($this->defaultWithCount)
+            ->findOrFail($id);
 
         return $this->successResponse(
             new $this->resourceClass($record),
@@ -164,10 +173,12 @@ abstract class BaseMasterController extends Controller
 
     public function update(Request $request, $id): JsonResponse
     {
-        $record = $this->modelClass::findOrFail($id);
+        $record = $this->modelClass::query()
+            ->withoutGlobalScope('fiscal_year_context')
+            ->findOrFail($id);
         $validated = app($this->updateRequestClass)->validated();
         $record->update($validated);
-        $record->loadMissing($this->defaultWith);
+        $record->loadMissing($this->defaultRelations());
         $record->loadCount($this->defaultWithCount);
 
         return $this->successResponse(
@@ -214,7 +225,9 @@ abstract class BaseMasterController extends Controller
 
     public function toggleStatus($id): JsonResponse
     {
-        $record = $this->modelClass::findOrFail($id);
+        $record = $this->modelClass::query()
+            ->withoutGlobalScope('fiscal_year_context')
+            ->findOrFail($id);
         $record->is_active = ! $record->is_active;
         $record->save();
 

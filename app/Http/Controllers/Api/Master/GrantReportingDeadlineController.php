@@ -33,10 +33,11 @@ class GrantReportingDeadlineController extends Controller
             ->update(['status' => 'overdue']);
 
         $query = GrantReportingDeadline::with([
-            'grantAgreement:id,grant_no,relation_no,agreement_no,agreement_name,donor_id,currency_id,start_date,end_date,reporting_period,status',
-            'grantAgreement.donor:id,code,name,type',
+            'grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'fiscal_year_id', 'grant_no', 'relation_no', 'agreement_no', 'agreement_name', 'donor_id', 'currency_id', 'start_date', 'end_date', 'reporting_period', 'status']),
+            'grantAgreement.fiscalYear:id,year,name',
+            'grantAgreement.donor' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'code', 'name', 'type']),
             'grantAgreement.currency:id,code,name',
-            'grantAgreement.projects:id,grant_agreement_id,code,name',
+            'grantAgreement.projects' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['projects.id', 'grant_agreement_id', 'code', 'name', 'relation_no']),
         ]);
 
         if ($request->filled('grant_agreement_id')) {
@@ -179,8 +180,8 @@ class GrantReportingDeadlineController extends Controller
         $year = (int) $request->input('year', date('Y'));
 
         $deadlines = GrantReportingDeadline::with([
-            'grantAgreement:id,grant_no,relation_no,agreement_name,donor_id,currency_id',
-            'grantAgreement.donor:id,code,name',
+            'grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'grant_no', 'relation_no', 'agreement_name', 'donor_id', 'currency_id']),
+            'grantAgreement.donor' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'code', 'name']),
         ])
         ->whereYear('due_date', $year)
         ->when($request->filled('grant_agreement_id'), fn ($query) => $query->where('grant_agreement_id', $request->integer('grant_agreement_id')))

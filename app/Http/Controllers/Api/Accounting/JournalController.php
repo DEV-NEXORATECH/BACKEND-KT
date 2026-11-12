@@ -338,9 +338,9 @@ class JournalController extends Controller
             abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mengubah journal ini.');
         }
 
-        if ($journal->status !== 'draft') {
+        if (! in_array($journal->status, ['draft', 'rejected', 'returned_for_revision'], true)) {
             throw ValidationException::withMessages([
-                'status' => 'Journal hanya dapat diubah saat status draft.',
+                'status' => 'Journal hanya dapat diubah saat status draft, rejected, atau returned for revision.',
             ]);
         }
 
@@ -348,6 +348,9 @@ class JournalController extends Controller
         $this->guardOpenPeriod($payload['journal_date']);
 
         $journal = DB::transaction(function () use ($journal, $payload) {
+            if (in_array($journal->status, ['rejected', 'returned_for_revision'], true)) {
+                $journal->forceFill(['status' => 'draft'])->save();
+            }
             $lines = $payload['lines'];
             unset($payload['lines']);
 
@@ -400,9 +403,12 @@ class JournalController extends Controller
     {
         return DB::transaction(function () use ($request, $journal, $workflow) {
             $journal = Journal::withoutGlobalScope('fiscal_year_context')->lockForUpdate()->findOrFail($journal->id);
-            if ($journal->status !== 'draft') throw ValidationException::withMessages(['status' => 'Journal harus draft sebelum submit.']);
+            if (! in_array($journal->status, ['draft', 'rejected', 'returned_for_revision'], true)) {
+                throw ValidationException::withMessages(['status' => 'Journal harus berstatus draft, rejected, atau returned_for_revision sebelum submit.']);
+            }
             $workflow->start('journal', $journal, (float)$journal->lines()->sum('debit'), $request->user()->id);
-            return $this->transition($journal, 'draft', 'submitted', ['submitted_by' => $request->user()->id, 'submitted_at' => now()], 'Journal berhasil disubmit.');
+            $currentStatus = $journal->fresh()->status;
+            return $this->transition($journal->fresh(), $currentStatus, 'submitted', ['submitted_by' => $request->user()->id, 'submitted_at' => now()], 'Journal berhasil disubmit.');
         });
     }
     public function review(Journal $journal): JsonResponse
@@ -411,6 +417,96 @@ class JournalController extends Controller
             'reviewed_by' => request()->user()->id,
             'reviewed_at' => now(),
         ], 'Journal berhasil direview.');
+    }
+
+    public function approverOptions(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->hasAnyPermission([
+            'accounting.journal.view',
+            'accounting.journal.review',
+            'accounting.journal.post',
+            'master-data.view',
+            'settings.manage',
+        ]), Response::HTTP_FORBIDDEN, 'Tidak diizinkan melihat daftar approver journal.');
+
+        $resolver = app(\App\Services\Approval\ApprovalIdentityResolver::class);
+        $users = \App\Models\User::query()
+            ->with(['role.permissions:id,slug', 'employee:id,employee_id_number,name,position'])
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'role_id', 'employee_id', 'is_active'])
+            ->map(fn ($user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role_id' => $user->role_id,
+                'role' => $user->role?->name,
+                'role_slug' => $user->role?->slug,
+                'employee_id' => $resolver->employeeId($user),
+                'can_approve_journal' => $user->hasPermission('accounting.journal.post'),
+            ])
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $users,
+        ]);
+    }
+
+    public function assignApprover(Request $request, Journal $journal, ApprovalWorkflowService $workflow): JsonResponse
+    {
+        abort_unless($request->user()->hasAnyPermission([
+            'accounting.journal.post',
+            'accounting.journal.review',
+            'master-data.manage',
+            'settings.manage',
+        ]), Response::HTTP_FORBIDDEN, 'Anda tidak memiliki izin menetapkan approver journal.');
+
+        $data = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        return DB::transaction(function () use ($request, $journal, $workflow, $data) {
+            $journal = Journal::withoutGlobalScope('fiscal_year_context')->lockForUpdate()->findOrFail($journal->id);
+            if (! in_array($journal->status, ['submitted', 'reviewed'], true)) {
+                throw ValidationException::withMessages(['status' => 'Approver hanya dapat ditetapkan saat journal berstatus submitted atau reviewed.']);
+            }
+            $targetUser = \App\Models\User::with('role.permissions')->findOrFail($data['user_id']);
+            $result = $workflow->assignCurrentStageApprover('journal', $journal, $targetUser, $request->user(), $data['notes'] ?? null);
+
+            return response()->json([
+                'success' => true,
+                'message' => $result['message'],
+                'data' => $this->formatJournal($journal->fresh($this->with)),
+            ]);
+        });
+    }
+
+    public function reject(Request $request, Journal $journal, ApprovalWorkflowService $workflow): JsonResponse
+    {
+        abort_unless($request->user()->hasAnyPermission([
+            'accounting.journal.post',
+            'accounting.journal.review',
+        ]), Response::HTTP_FORBIDDEN, 'Anda tidak memiliki izin menolak journal.');
+
+        $notes = trim((string) ($request->input('notes') ?? ''));
+        if ($notes === '') {
+            $notes = 'Journal ditolak untuk revisi.';
+        }
+
+        return DB::transaction(function () use ($request, $journal, $workflow, $notes) {
+            $journal = Journal::withoutGlobalScope('fiscal_year_context')->lockForUpdate()->findOrFail($journal->id);
+            if (! in_array($journal->status, ['submitted', 'reviewed'], true)) {
+                throw ValidationException::withMessages(['status' => 'Journal hanya dapat ditolak saat status submitted atau reviewed.']);
+            }
+
+            $asReviewer = $journal->status === 'submitted' && $request->user()->hasPermission('accounting.journal.review');
+            $workflow->reject('journal', $journal, $request->user(), $notes, $asReviewer);
+
+            $from = $journal->status;
+            return $this->transition($journal, $from, 'rejected', [], 'Journal ditolak.');
+        });
     }
 
     public function post(Request $request, Journal $journal, ApprovalWorkflowService $workflow): JsonResponse

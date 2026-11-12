@@ -132,7 +132,7 @@ class ApprovalCenterController extends Controller
         if ($data['module'] === 'payment') {
             $model = ($data['entity_type'] ?? '') === SupplierInvoice::class ? SupplierInvoice::class : ExpenseRequest::class;
         }
-        $entity = $model::query()->findOrFail($data['id']);
+        $entity = ($model === Journal::class ? $model::withoutGlobalScope('fiscal_year_context') : $model::query())->findOrFail($data['id']);
         $result = app(\App\Services\Approval\ApprovalWorkflowService::class)->returnToLevel(
             $workflowModule, $entity, $request->user(), (int) $data['target_level'], $data['notes']
         );
@@ -287,7 +287,8 @@ class ApprovalCenterController extends Controller
         // 6. Journal Entries
         if (! $moduleFilter || $moduleFilter === 'journal') {
             if ($user->hasAnyPermission(['accounting.journal.review', 'accounting.journal.post'])) {
-                $journals = Journal::whereIn('status', ['submitted', 'reviewed'])
+                $journals = Journal::withoutGlobalScope('fiscal_year_context')
+                    ->whereIn('status', ['submitted', 'reviewed'])
                     ->latest('id')
                     ->get()
                     ->map(fn (Journal $j) => [
@@ -573,9 +574,14 @@ class ApprovalCenterController extends Controller
             ->where('approval_workflow_actions.status', 'pending')
             ->whereColumn('approval_workflow_actions.level', 'approval_workflow_runs.current_level')
             ->where(fn ($query) => $query->where('approval_workflow_actions.user_id', $user->id)->orWhere('approval_workflow_actions.role_id', $user->role_id)->orWhere('approval_workflow_actions.employee_id', $employeeId))
-            ->with(['approvalMatrix', 'run:id,module,approvable_type,approvable_id', 'run.approvable'])
+            ->with(['approvalMatrix', 'run:id,module,approvable_type,approvable_id,status,current_level'])
             ->get()
-            ->filter(fn ($action) => $approvalService->userCanApproveAction($action, $user, $action->run?->approvable))
+            ->filter(function ($action) use ($approvalService, $user) {
+                $approvable = $action->run?->approvable_type === Journal::class
+                    ? Journal::withoutGlobalScope('fiscal_year_context')->find($action->run->approvable_id)
+                    : $action->run?->approvable;
+                return $approvalService->userCanApproveAction($action, $user, $approvable);
+            })
             ->mapWithKeys(fn ($action) => ["{$action->run->module}:{$action->run->approvable_type}:{$action->run->approvable_id}" => true]);
 
         $sortedItems = $items->filter(function (array $item) use ($moduleMap, $typeMap, $activeRuns, $allowedRuns, $isSuperAdmin) {
@@ -587,7 +593,7 @@ class ApprovalCenterController extends Controller
         })->map(function (array $item) use ($moduleMap, $typeMap, $user, $isSuperAdmin) {
             if (! isset($moduleMap[$item['module']])) return $item;
             $type = $item['entity_type'] ?? $typeMap[$item['module']];
-            $entity = $type::query()->find($item['id']);
+            $entity = ($type === Journal::class ? $type::withoutGlobalScope('fiscal_year_context') : $type::query())->find($item['id']);
             if ($entity) {
                 $item['approval_progress'] = app(\App\Services\Approval\ApprovalWorkflowService::class)
                     ->progressFor($moduleMap[$item['module']], $entity, $user);
@@ -615,7 +621,9 @@ class ApprovalCenterController extends Controller
         if (! $isSuperAdmin) $query->where('submitted_by', $user->id);
         $workflow = app(\App\Services\Approval\ApprovalWorkflowService::class);
         $data = $query->get()->map(function (ApprovalWorkflowRun $run) use ($workflow, $user, $isSuperAdmin) {
-            $entity = $run->approvable;
+            $entity = $run->approvable_type === Journal::class
+                ? Journal::withoutGlobalScope('fiscal_year_context')->find($run->approvable_id)
+                : $run->approvable;
             if (! $entity) return null;
             return [
                 'id' => $entity->getKey(),
@@ -763,12 +771,13 @@ class ApprovalCenterController extends Controller
                         break;
 
                     case 'journal':
-                        $journal = Journal::find($id);
+                        $journal = Journal::withoutGlobalScope('fiscal_year_context')->find($id);
                         if ($journal) {
+                            $request->merge(['notes' => $validated['notes'] ?? null]);
                             if ($action === 'approve') {
                                 $journalController->post($request, $journal, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             } else {
-                                $journal->update(['status' => 'draft']);
+                                $journalController->reject($request, $journal, app(\App\Services\Approval\ApprovalWorkflowService::class));
                             }
                             $processedCount++;
                         }

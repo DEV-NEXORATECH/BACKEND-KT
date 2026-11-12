@@ -57,6 +57,11 @@ class GrantDisbursementRequest extends Model
         'fx_gain_loss' => 'decimal:2',
     ];
 
+    public function fiscalYear()
+    {
+        return $this->belongsTo(FiscalYear::class, 'fiscal_year_id');
+    }
+
     public function grantAgreement()
     {
         return $this->belongsTo(GrantAgreement::class, 'grant_agreement_id');

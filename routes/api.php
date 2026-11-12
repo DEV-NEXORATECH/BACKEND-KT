@@ -210,6 +210,7 @@ Route::middleware('auth:sanctum')->group(function () {
             ->only(['index', 'store', 'update', 'destroy'])
             ->middleware('permission:accounting.journal.create');
         Route::get('journals', [JournalController::class, 'index'])->middleware('permission:accounting.journal.view');
+        Route::get('journals/approver-options', [JournalController::class, 'approverOptions'])->middleware('permission:accounting.journal.view');
         Route::post('journals', [JournalController::class, 'store'])->middleware('permission:accounting.journal.create');
         Route::post('journals/import', [JournalController::class, 'import'])->middleware('permission:accounting.journal.create');
         Route::get('journals/{journal}', [JournalController::class, 'show'])->middleware('permission:accounting.journal.view');
@@ -218,6 +219,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('journals/{journal}/submit', [JournalController::class, 'submit'])->middleware('permission:accounting.journal.submit');
         Route::post('journals/{journal}/review', [JournalController::class, 'review'])->middleware('permission:accounting.journal.review');
         Route::post('journals/{journal}/post', [JournalController::class, 'post'])->middleware('permission:accounting.journal.post');
+        Route::post('journals/{journal}/reject', [JournalController::class, 'reject']);
+        Route::post('journals/{journal}/assign-approver', [JournalController::class, 'assignApprover']);
         Route::post('journals/{journal}/post-to-ap', [JournalController::class, 'postToAp'])->middleware('permission:accounting.journal.post');
         Route::post('journals/{journal}/post-to-ar', [JournalController::class, 'postToAr'])->middleware('permission:accounting.journal.post');
         Route::post('journals/{journal}/reverse', [JournalController::class, 'reverse'])->middleware('permission:accounting.journal.reverse');
@@ -409,9 +412,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1/master')->group(function () {
         Route::post('donor-grant-integrated', [IntegratedDonorGrantController::class, 'store'])->middleware('permission:master-data.manage');
         Route::post('donor-grant-integrated/draft', [IntegratedDonorGrantController::class, 'storeDraft'])->middleware('permission:master-data.manage');
-        Route::get('donor-grant-integrated/{donor}', [IntegratedDonorGrantController::class, 'show'])->middleware('permission:master-data.view');
         Route::post('donor-grant-integrated/import', [IntegratedDonorGrantController::class, 'import'])->middleware('permission:master-data.manage');
         Route::get('donor-grant-integrated/export', [IntegratedDonorGrantController::class, 'export'])->middleware('permission:master-data.export');
+        Route::get('donor-grant-integrated/{donor}', [IntegratedDonorGrantController::class, 'show'])->middleware('permission:master-data.view');
         Route::put('donor-grant-integrated/{donor}', [IntegratedDonorGrantController::class, 'update'])->middleware('permission:master-data.manage');
         Route::delete('donor-grant-integrated/{donor}/projects/{project}', [IntegratedDonorGrantController::class, 'destroyProject'])->middleware('permission:master-data.manage');
         Route::delete('donor-grant-integrated/{donor}', [IntegratedDonorGrantController::class, 'destroy'])->middleware('permission:master-data.manage');
@@ -490,6 +493,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('accounting-periods/{id}/reopen', [AccountingPeriodController::class, 'reopen'])->middleware('permission:settings.manage');
         Route::get('employees/quality', [EmployeeController::class, 'quality'])->middleware('permission:master-data.view');
         Route::get('chart-of-accounts/{id}/transactions', [ChartOfAccountController::class, 'transactions'])->middleware('permission:master-data.view');
+        Route::get('approval-matrices/approvers', [ApprovalMatrixController::class, 'approvers'])->middleware('permission:master-data.view');
 
         foreach ($masterResources as $uri => $controller) {
             Route::get("{$uri}/template", [$controller, 'template'])->middleware('permission:master-data.view');

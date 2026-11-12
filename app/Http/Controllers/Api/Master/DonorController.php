@@ -29,4 +29,28 @@ class DonorController extends BaseMasterController
         'grantAgreements.projects.partners',
         'grantAgreements.projects.fundingSources',
     ];
+
+    protected function defaultRelations(): array
+    {
+        return [
+            'defaultCurrency',
+            'donorType',
+            'fiscalYear',
+            'grantAgreements' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreements.fiscalYear',
+            'grantAgreements.currency',
+            'grantAgreements.fundingSource',
+            'grantAgreements.reportingDeadlines',
+            'grantAgreements.projects' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreements.projects.fiscalYears',
+            'grantAgreements.projects.grantAgreement' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreements.projects.program',
+            'grantAgreements.projects.logframes' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreements.projects.workplans' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreements.projects.budgetLines' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreements.projects.budgetLines.budgetCategory',
+            'grantAgreements.projects.partners',
+            'grantAgreements.projects.fundingSources',
+        ];
+    }
 }

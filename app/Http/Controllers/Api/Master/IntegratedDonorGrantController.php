@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api\Master;
 
 use App\Http\Controllers\Controller;
+use App\Models\Accounting\JournalLine;
+use App\Models\Budget\BudgetCommitment;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\Donor;
+use App\Models\Master\FiscalYear;
 use App\Models\Master\GrantAgreement;
 use App\Models\Master\Project;
 use App\Models\Master\Program;
@@ -31,35 +34,54 @@ class IntegratedDonorGrantController extends Controller
         return $relationNo !== '' ? Str::upper($relationNo) : 'KT-REL-'.Str::upper((string) Str::uuid());
     }
 
-    public function show(Donor $donor)
+    private function findDonorAcrossFiscalYears(int|string $donorId): Donor
     {
+        return Donor::query()->withoutGlobalScope('fiscal_year_context')->findOrFail($donorId);
+    }
+
+    private function integratedRelations(): array
+    {
+        return [
+            'grantAgreements' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreements.fiscalYear',
+            'grantAgreements.currency',
+            'grantAgreements.fundingSource',
+            'grantAgreements.bankAccount',
+            'grantAgreements.reportingDeadlines',
+            'grantAgreements.projects' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreements.projects.fiscalYears',
+            'grantAgreements.projects.program',
+            'grantAgreements.projects.partners',
+            'grantAgreements.projects.fundingSources',
+            'grantAgreements.projects.logframes' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreements.projects.workplans' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreements.projects.budgetLines' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+        ];
+    }
+
+    public function show(int|string $donor)
+    {
+        $record = $this->findDonorAcrossFiscalYears($donor);
+
         return response()->json([
             'success' => true,
-            'data' => $donor->load([
-                'grantAgreements.currency',
-                'grantAgreements.fundingSource',
-                'grantAgreements.bankAccount',
-                'grantAgreements.reportingDeadlines',
-                'grantAgreements.projects.program',
-                'grantAgreements.projects.partners',
-                'grantAgreements.projects.fundingSources',
-                'grantAgreements.projects.logframes',
-                'grantAgreements.projects.workplans',
-                'grantAgreements.projects.budgetLines',
-            ]),
+            'data' => $record->load($this->integratedRelations()),
         ]);
     }
 
-    public function destroyProject(Donor $donor, Project $project)
+    public function destroyProject(int|string $donor, int|string $project)
     {
-        $belongsToDonor = $donor->grantAgreements()
-            ->whereKey($project->grant_agreement_id)
+        $donorModel = $this->findDonorAcrossFiscalYears($donor);
+        $projectModel = Project::query()->withoutGlobalScope('fiscal_year_context')->findOrFail($project);
+        $belongsToDonor = $donorModel->grantAgreements()
+            ->withoutGlobalScope('fiscal_year_context')
+            ->whereKey($projectModel->grant_agreement_id)
             ->exists();
         if (! $belongsToDonor) {
             return response()->json(['message' => 'Project tidak terhubung ke Funder ini.'], 404);
         }
 
-        $project->delete();
+        $projectModel->delete();
         return response()->json(['success' => true, 'message' => 'Project berhasil dihapus.']);
     }
 
@@ -79,7 +101,7 @@ class IntegratedDonorGrantController extends Controller
         ]);
 
         $draftPayload = $request->except(['documents']);
-        $donor = ! empty($data['donor']['id']) ? Donor::findOrFail($data['donor']['id']) : Donor::create(array_merge($data['donor'], [
+        $donor = ! empty($data['donor']['id']) ? $this->findDonorAcrossFiscalYears($data['donor']['id']) : Donor::create(array_merge($data['donor'], [
             'type' => $data['donor']['type'] ?? 'Other',
             'status' => 'inactive',
             'is_active' => false,
@@ -91,18 +113,10 @@ class IntegratedDonorGrantController extends Controller
 
     public function export(Request $request)
     {
-        $records = Donor::with([
-            'grantAgreements.currency',
-            'grantAgreements.fundingSource',
-            'grantAgreements.bankAccount',
-            'grantAgreements.reportingDeadlines',
-            'grantAgreements.projects.logframes',
-            'grantAgreements.projects.workplans',
-            'grantAgreements.projects.budgetLines',
-            'grantAgreements.projects.program',
-            'grantAgreements.projects.partners',
-            'grantAgreements.projects.fundingSources',
-        ])->get();
+        $records = Donor::query()
+            ->withoutGlobalScope('fiscal_year_context')
+            ->with($this->integratedRelations())
+            ->get();
         if ($request->query('format') === 'json') {
             $payload = $records->flatMap(function ($donor) {
                 return $donor->grantAgreements->flatMap(function ($grant) use ($donor) {
@@ -167,7 +181,172 @@ class IntegratedDonorGrantController extends Controller
         return response()->json(['success' => true, 'message' => 'Import Donor & Grant Terintegrasi berhasil.', 'created' => $created]);
     }
 
-    private function budgetLineDefaults(array $budget, GrantAgreement $grant): array
+    private function syncProjectFiscalYears(Project $project, GrantAgreement $grant, ?Request $request = null): ?int
+    {
+        $explicitId = $request?->input('fiscal_year_id')
+            ?: $request?->query('fiscal_year_id')
+            ?: $request?->header('X-Fiscal-Year-Id')
+            ?: $grant->fiscal_year_id;
+
+        $startDate = $project->start_date ?: $grant->start_date;
+        $endDate = $project->end_date ?: $grant->end_date;
+
+        $overlapIds = collect();
+        if ($startDate && $endDate) {
+            $overlapIds = FiscalYear::query()
+                ->whereDate('start_date', '<=', $endDate)
+                ->whereDate('end_date', '>=', $startDate)
+                ->pluck('id');
+        }
+
+        $ids = collect([$explicitId ? (int) $explicitId : null])
+            ->filter()
+            ->merge($overlapIds)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            $activeId = FiscalYear::query()->where('is_active', true)->orderByDesc('year')->value('id');
+            if ($activeId) {
+                $ids = collect([(int) $activeId]);
+            }
+        }
+
+        if ($ids->isNotEmpty()) {
+            $project->fiscalYears()->syncWithoutDetaching($ids->all());
+        }
+
+        return $explicitId ? (int) $explicitId : ($ids->first() ? (int) $ids->first() : null);
+    }
+
+    private function mergeMultipartPayload(Request $request)
+    {
+        if (! $request->filled('payload')) {
+            return null;
+        }
+        $payload = json_decode((string) $request->input('payload'), true);
+        if (! is_array($payload)) {
+            return response()->json(['message' => 'Payload integrated record tidak valid.'], 422);
+        }
+        $request->merge($payload);
+
+        return null;
+    }
+
+    private function storeUploadedDocuments(Request $request, ?GrantAgreement $grant = null): array
+    {
+        $documents = is_array($grant?->supporting_documents) ? $grant->supporting_documents : [];
+        foreach (['proposal', 'signed_agreement', 'workplan', 'detailed_budget', 'amendment'] as $documentKey) {
+            $file = $request->file("documents.{$documentKey}");
+            if ($file) {
+                if (! $file->isValid()) {
+                    throw new \RuntimeException("Upload dokumen {$documentKey} gagal: ".$file->getErrorMessage());
+                }
+                $documents[$documentKey] = $file->store('donor-grant-documents', 'public');
+            }
+        }
+        $agreementFile = $request->file('documents.agreement_document');
+        if ($agreementFile && ! $agreementFile->isValid()) {
+            throw new \RuntimeException('Upload Dokumen Agreement gagal: '.$agreementFile->getErrorMessage());
+        }
+        $agreementPath = $agreementFile
+            ? $agreementFile->store('donor-grant-documents', 'public')
+            : $grant?->agreement_document_path;
+
+        return [$documents, $agreementPath];
+    }
+
+    private function syncFrameworksAndWorkplans(
+        Project $project,
+        GrantAgreement $grant,
+        Donor $donor,
+        string $relationNo,
+        array $frameworks,
+        array $workplans,
+        ?int $fiscalYearId = null
+    ): void {
+        $existingLogframes = ProjectLogframe::withoutGlobalScope('fiscal_year_context')
+            ->withTrashed()
+            ->where('project_id', $project->id)
+            ->get()
+            ->keyBy(fn (ProjectLogframe $item) => strtoupper(trim((string) $item->code)));
+
+        $logframeByCode = [];
+        $keptLogframeIds = [];
+        $fallbackLogframeId = null;
+
+        foreach (collect($frameworks)->unique(fn ($item) => strtoupper(trim((string) ($item['code'] ?? ''))))->values() as $framework) {
+            $codeKey = strtoupper(trim((string) ($framework['code'] ?? '')));
+            $existing = $codeKey !== '' ? $existingLogframes->get($codeKey) : null;
+            $attributes = array_merge($framework, [
+                'project_id' => $project->id,
+                'relation_no' => $relationNo,
+                'fiscal_year_id' => $framework['fiscal_year_id'] ?? ($existing?->fiscal_year_id ?? $fiscalYearId),
+            ]);
+
+            if ($existing) {
+                if ($existing->trashed()) {
+                    $existing->restore();
+                }
+                $existing->update($attributes);
+                $savedLogframe = $existing->fresh();
+            } else {
+                $savedLogframe = ProjectLogframe::create($attributes);
+            }
+
+            $keptLogframeIds[] = $savedLogframe->id;
+            if ($codeKey !== '') {
+                $logframeByCode[$codeKey] = $savedLogframe->id;
+            }
+            if ($fallbackLogframeId === null && in_array($savedLogframe->level, ['output', 'activity'], true)) {
+                $fallbackLogframeId = $savedLogframe->id;
+            }
+        }
+
+        ProjectLogframe::withoutGlobalScope('fiscal_year_context')
+            ->where('project_id', $project->id)
+            ->whereNotIn('id', $keptLogframeIds)
+            ->get()
+            ->each->delete();
+
+        $existingWorkplans = ProjectWorkplan::withoutGlobalScope('fiscal_year_context')
+            ->where('project_id', $project->id)
+            ->get();
+        $keptWorkplanIds = [];
+
+        foreach ($workplans as $workplan) {
+            $outputKey = strtoupper(trim((string) ($workplan['output_code'] ?? '')));
+            $activityKey = strtolower(trim((string) ($workplan['activity'] ?? '')));
+            $existingWorkplan = ! empty($workplan['id'])
+                ? $existingWorkplans->firstWhere('id', (int) $workplan['id'])
+                : $existingWorkplans->first(function (ProjectWorkplan $item) use ($outputKey, $activityKey, $keptWorkplanIds) {
+                    return ! in_array($item->id, $keptWorkplanIds, true)
+                        && strtoupper(trim((string) $item->output_code)) === $outputKey
+                        && strtolower(trim((string) $item->activity)) === $activityKey;
+                });
+
+            $attributes = array_merge($workplan, [
+                'project_id' => $project->id,
+                'relation_no' => $relationNo,
+                'grant_agreement_id' => $grant->id,
+                'donor_id' => $donor->id,
+                'fiscal_year_id' => $workplan['fiscal_year_id'] ?? ($existingWorkplan?->fiscal_year_id ?? $fiscalYearId),
+                'logframe_id' => $workplan['logframe_id'] ?? ($logframeByCode[$outputKey] ?? $fallbackLogframeId),
+            ]);
+
+            if ($existingWorkplan) {
+                $existingWorkplan->update($attributes);
+                $keptWorkplanIds[] = $existingWorkplan->id;
+            } else {
+                $createdWorkplan = ProjectWorkplan::create($attributes);
+                $keptWorkplanIds[] = $createdWorkplan->id;
+            }
+        }
+
+        $existingWorkplans->whereNotIn('id', $keptWorkplanIds)->each->delete();
+    }
+
+    private function budgetLineDefaults(array $budget, GrantAgreement $grant, ?int $fiscalYearId = null): array
     {
         // Integrated Donor & Grant writes BudgetLine directly, so keep the same
         // automatic Cost Category -> expense CoA mapping as the normal endpoint.
@@ -182,6 +361,7 @@ class IntegratedDonorGrantController extends Controller
         }
 
         return array_merge($budget, [
+            'fiscal_year_id' => $budget['fiscal_year_id'] ?? $grant->fiscal_year_id ?? $fiscalYearId,
             'currency_id' => $budget['currency_id'] ?? $grant->currency_id,
             'proposal_period' => $budget['proposal_period'] ?? 'annual',
             'unit_price' => $budget['unit_price'] ?? $budget['total_amount'],
@@ -191,9 +371,14 @@ class IntegratedDonorGrantController extends Controller
         ]);
     }
 
-    public function update(Request $request, Donor $donor)
+    public function update(Request $request, int|string $donor)
     {
-        $currentGrant = $donor->grantAgreements()->first();
+        $donor = $this->findDonorAcrossFiscalYears($donor);
+        if ($invalid = $this->mergeMultipartPayload($request)) {
+            return $invalid;
+        }
+
+        $currentGrant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->first();
         $data = $request->validate([
             'relation_no' => ['nullable', 'string', 'max:100', Rule::unique('grant_agreements', 'relation_no')->ignore($currentGrant?->id)],
             'donor' => 'required|array', 'donor.code' => 'required|string|max:30', 'donor.name' => 'required|string|max:150', 'donor.type' => 'required|string|max:50', 'donor.lead_applicant' => 'nullable|string|max:150', 'donor.country' => 'nullable|string|max:100', 'donor.contact_person' => 'nullable|string|max:100', 'donor.email' => 'nullable|email|max:150', 'donor.phone' => 'nullable|string|max:50',
@@ -202,25 +387,40 @@ class IntegratedDonorGrantController extends Controller
             'programme' => 'nullable|array', 'programme.id' => 'nullable|integer|exists:programs,id', 'programme.code' => 'nullable|string|max:50', 'programme.name' => 'nullable|string|max:150', 'programme.objective' => 'nullable|string',
             'frameworks' => 'array', 'frameworks.*.level' => 'required|in:impact,outcome,output,activity', 'frameworks.*.code' => 'required|string|max:50', 'frameworks.*.description' => 'required|string', 'frameworks.*.indicator' => 'nullable|string|max:255', 'frameworks.*.baseline' => 'nullable|string', 'frameworks.*.target' => 'nullable|string',
             'workplans' => 'array', 'workplans.*.activity' => 'required|string|max:255', 'workplans.*.output_code' => 'nullable|string|max:100', 'workplans.*.start_date' => 'nullable|date', 'workplans.*.end_date' => 'nullable|date', 'workplans.*.status' => 'nullable|string|max:50', 'workplans.*.baseline' => 'nullable|string',
-            'budgets' => 'array', 'budgets.*.line_code' => 'required|string|max:50', 'budgets.*.description' => 'required|string|max:255', 'budgets.*.budget_category_id' => 'required|exists:budget_categories,id', 'budgets.*.total_amount' => 'required|numeric|min:0',
+            'budgets' => 'array', 'budgets.*.id' => 'nullable|integer', 'budgets.*.line_code' => 'required|string|max:50', 'budgets.*.description' => 'required|string|max:255', 'budgets.*.budget_category_id' => 'required|exists:budget_categories,id', 'budgets.*.total_amount' => 'required|numeric|min:0',
             'deadlines' => 'array', 'deadlines.*.report_type' => 'required|string|max:100', 'deadlines.*.period_label' => 'nullable|string|max:100', 'deadlines.*.due_date' => 'required|date', 'deadlines.*.status' => 'nullable|string|max:50', 'deadlines.*.notes' => 'nullable|string', 'deadlines.*.reminder_days' => 'nullable|integer',
+            'documents' => 'nullable|array',
+            'documents.agreement_document' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents.proposal' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents.signed_agreement' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents.workplan' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents.detailed_budget' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
+            'documents.amendment' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
         ]);
 
-        $result = DB::transaction(function () use ($data, $donor) {
+        $result = DB::transaction(function () use ($data, $donor, $request) {
             $donor->update(array_merge($data['donor'], ['draft_payload' => null, 'status' => $data['grant']['status'] ?? 'draft']));
-            $grant = $donor->grantAgreements()->first();
+            $grant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->first();
             $relationNo = $this->resolveRelationNo($data, $grant);
+            [$documents, $agreementPath] = $this->storeUploadedDocuments($request, $grant);
             if ($grant) {
-                $grant->update(array_merge($data['grant'], ['donor_id' => $donor->id, 'relation_no' => $relationNo]));
+                $grant->update(array_merge($data['grant'], [
+                    'donor_id' => $donor->id,
+                    'relation_no' => $relationNo,
+                    'agreement_document_path' => $agreementPath,
+                    'supporting_documents' => $documents ?: $grant->supporting_documents,
+                ]));
             } else {
                 $grant = GrantAgreement::create(array_merge($data['grant'], [
                     'donor_id' => $donor->id,
                     'relation_no' => $relationNo,
+                    'agreement_document_path' => $agreementPath,
+                    'supporting_documents' => $documents ?: null,
                     'status' => $data['grant']['status'] ?? 'draft',
                     'is_active' => true,
                 ]));
             }
-            $project = $grant->projects()->first();
+            $project = $grant->projects()->withoutGlobalScope('fiscal_year_context')->first();
             if (!empty($data['programme']['id'])) $data['project']['program_id'] = $data['programme']['id'];
             elseif (!empty($data['programme']['code']) && !empty($data['programme']['name'])) $data['project']['program_id'] = Program::firstOrCreate(['code' => $data['programme']['code']], ['name' => $data['programme']['name'], 'objective' => $data['programme']['objective'] ?? null, 'is_active' => true])->id;
             if ($project) {
@@ -235,21 +435,53 @@ class IntegratedDonorGrantController extends Controller
             }
             $project->partners()->sync(collect($data['project']['partner_ids'] ?? [])->mapWithKeys(fn ($id) => [$id => ['role' => 'implementing_partner']])->all());
             $project->fundingSources()->sync($data['project']['funding_source_ids'] ?? []);
+            $fiscalYearId = $this->syncProjectFiscalYears($project, $grant, $request);
 
-            ProjectLogframe::where('project_id', $project->id)->get()->each->delete();
-            ProjectWorkplan::where('project_id', $project->id)->get()->each->delete();
-            foreach (collect($data['frameworks'] ?? [])->unique('code')->values() as $framework) {
-                ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id, 'relation_no' => $relationNo]));
-            }
-            foreach ($data['workplans'] ?? [] as $workplan) ProjectWorkplan::create(array_merge($workplan, ['project_id' => $project->id, 'relation_no' => $relationNo, 'grant_agreement_id' => $grant->id, 'donor_id' => $donor->id]));
-            // Budget is maintained in the dedicated Project Budget editor.
-            // Only legacy callers that explicitly send budgets may replace
-            // them; normal master-data edits must never delete budget history.
+            $this->syncFrameworksAndWorkplans($project, $grant, $donor, $relationNo, $data['frameworks'] ?? [], $data['workplans'] ?? [], $fiscalYearId);
+
+            // Preserve existing budget line IDs, Journal references, and Project Budget
+            // allocations when updating from the integrated master-data modal.
             if (array_key_exists('budgets', $data)) {
-                BudgetLine::where('project_id', $project->id)->get()->each->delete();
+                $existingLines = BudgetLine::withoutGlobalScope('fiscal_year_context')->where('project_id', $project->id)->get();
+                $keptIds = [];
                 foreach ($data['budgets'] ?? [] as $budget) {
-                    BudgetLine::create($this->budgetLineDefaults(array_merge($budget, ['project_id' => $project->id, 'relation_no' => $relationNo, 'grant_agreement_id' => $grant->id]), $grant));
+                    $existing = ! empty($budget['id'])
+                        ? $existingLines->firstWhere('id', (int) $budget['id'])
+                        : $existingLines->firstWhere('line_code', $budget['line_code']);
+                    if ($existing) {
+                        $updates = $this->budgetLineDefaults([
+                            'line_code' => $budget['line_code'],
+                            'description' => $budget['description'],
+                            'budget_category_id' => $budget['budget_category_id'],
+                            'total_amount' => $budget['total_amount'],
+                            'project_id' => $project->id,
+                            'relation_no' => $relationNo,
+                            'grant_agreement_id' => $grant->id,
+                            'fiscal_year_id' => $existing->fiscal_year_id ?? $fiscalYearId,
+                            'gl_account_id' => $existing->gl_account_id,
+                            'unit_price' => ((float) ($existing->quantity ?: 1) === 1.0) ? $budget['total_amount'] : $existing->unit_price,
+                            'quantity' => $existing->quantity ?: 1,
+                            'period_allocations' => $existing->period_allocations ?: [],
+                        ], $grant, $fiscalYearId);
+                        $existing->update($updates);
+                        $keptIds[] = $existing->id;
+                    } else {
+                        $createdLine = BudgetLine::create($this->budgetLineDefaults(array_merge($budget, [
+                            'project_id' => $project->id,
+                            'relation_no' => $relationNo,
+                            'grant_agreement_id' => $grant->id,
+                            'document_path' => $budget['document_path'] ?? ($documents['detailed_budget'] ?? null),
+                        ]), $grant, $fiscalYearId));
+                        $keptIds[] = $createdLine->id;
+                    }
                 }
+                $existingLines->whereNotIn('id', $keptIds)->each(function (BudgetLine $line) {
+                    $hasTransactions = JournalLine::query()->where('budget_line_id', $line->id)->exists()
+                        || BudgetCommitment::query()->where('budget_line_id', $line->id)->exists();
+                    if (! $hasTransactions) {
+                        $line->delete();
+                    }
+                });
             }
 
             if (isset($data['deadlines'])) {
@@ -268,25 +500,28 @@ class IntegratedDonorGrantController extends Controller
                 }
             }
 
-            return $donor->fresh()->load(['grantAgreements.currency', 'grantAgreements.reportingDeadlines', 'grantAgreements.projects.logframes', 'grantAgreements.projects.workplans', 'grantAgreements.projects.budgetLines']);
+            return $donor->fresh()->load($this->integratedRelations());
         });
         return response()->json(['success' => true, 'message' => 'Integrated Donor & Grant record updated.', 'data' => $result]);
     }
 
-    public function destroy(Donor $donor)
+    public function destroy(int|string $donor)
     {
-        DB::transaction(function () use ($donor) {
-            foreach ($donor->grantAgreements as $grant) {
+        $donorModel = $this->findDonorAcrossFiscalYears($donor);
+        DB::transaction(function () use ($donorModel) {
+            $grants = $donorModel->grantAgreements()->withoutGlobalScope('fiscal_year_context')->get();
+            foreach ($grants as $grant) {
                 GrantReportingDeadline::where('grant_agreement_id', $grant->id)->get()->each->delete();
-                foreach ($grant->projects as $project) {
-                    ProjectLogframe::where('project_id', $project->id)->get()->each->delete();
-                    ProjectWorkplan::where('project_id', $project->id)->get()->each->delete();
-                    BudgetLine::where('project_id', $project->id)->get()->each->delete();
+                $projects = $grant->projects()->withoutGlobalScope('fiscal_year_context')->get();
+                foreach ($projects as $project) {
+                    ProjectLogframe::withoutGlobalScope('fiscal_year_context')->where('project_id', $project->id)->get()->each->delete();
+                    ProjectWorkplan::withoutGlobalScope('fiscal_year_context')->where('project_id', $project->id)->get()->each->delete();
+                    BudgetLine::withoutGlobalScope('fiscal_year_context')->where('project_id', $project->id)->get()->each->delete();
                     $project->delete();
                 }
                 $grant->delete();
             }
-            $donor->delete();
+            $donorModel->delete();
         });
         return response()->json(['success' => true, 'message' => 'Integrated Donor & Grant record deleted.']);
     }
@@ -312,12 +547,8 @@ class IntegratedDonorGrantController extends Controller
 
     public function store(Request $request)
     {
-        if ($request->filled('payload')) {
-            $payload = json_decode((string) $request->input('payload'), true);
-            if (! is_array($payload)) {
-                return response()->json(['message' => 'Payload integrated record tidak valid.'], 422);
-            }
-            $request->merge($payload);
+        if ($invalid = $this->mergeMultipartPayload($request)) {
+            return $invalid;
         }
 
         $data = $request->validate([
@@ -435,21 +666,8 @@ class IntegratedDonorGrantController extends Controller
         }, $data['budgets'] ?? []);
 
         try {
-            $result = DB::transaction(function () use ($data) {
-            $documents = [];
-            foreach (['proposal', 'signed_agreement', 'workplan', 'detailed_budget', 'amendment'] as $documentKey) {
-                $file = request()->file("documents.{$documentKey}");
-                if ($file) {
-                    if (! $file->isValid()) {
-                        throw new \RuntimeException("Upload dokumen {$documentKey} gagal: ".$file->getErrorMessage());
-                    }
-                    $documents[$documentKey] = $file->store('donor-grant-documents', 'public');
-                }
-            }
-            $agreementFile = request()->file('documents.agreement_document');
-            if ($agreementFile && ! $agreementFile->isValid()) {
-                throw new \RuntimeException('Upload Dokumen Agreement gagal: '.$agreementFile->getErrorMessage());
-            }
+            $result = DB::transaction(function () use ($data, $request) {
+            [$documents, $agreementPath] = $this->storeUploadedDocuments($request);
             $donor = !empty($data['donor']['id']) ? Donor::findOrFail($data['donor']['id']) : Donor::create(array_merge($data['donor'], [
                 'status' => $data['donor']['status'] ?? 'active',
                 'is_active' => $data['donor']['is_active'] ?? true,
@@ -460,7 +678,7 @@ class IntegratedDonorGrantController extends Controller
             $grant = GrantAgreement::create(array_merge($data['grant'], [
                 'donor_id' => $donor->id,
                 'relation_no' => $relationNo,
-                'agreement_document_path' => $agreementFile?->store('donor-grant-documents', 'public'),
+                'agreement_document_path' => $agreementPath,
                 'supporting_documents' => $documents ?: null,
                 'status' => $data['grant']['status'] ?? 'draft',
                 'is_active' => true,
@@ -475,18 +693,9 @@ class IntegratedDonorGrantController extends Controller
             ]));
             $project->partners()->sync(collect($data['project']['partner_ids'] ?? [])->mapWithKeys(fn ($id) => [$id => ['role' => 'implementing_partner']])->all());
             $project->fundingSources()->sync($data['project']['funding_source_ids'] ?? []);
+            $fiscalYearId = $this->syncProjectFiscalYears($project, $grant, $request);
 
-            foreach ($data['frameworks'] ?? [] as $framework) {
-                ProjectLogframe::create(array_merge($framework, ['project_id' => $project->id, 'relation_no' => $relationNo]));
-            }
-            foreach ($data['workplans'] ?? [] as $workplan) {
-                ProjectWorkplan::create(array_merge($workplan, [
-                    'project_id' => $project->id,
-                    'relation_no' => $relationNo,
-                    'grant_agreement_id' => $grant->id,
-                    'donor_id' => $donor->id,
-                ]));
-            }
+            $this->syncFrameworksAndWorkplans($project, $grant, $donor, $relationNo, $data['frameworks'] ?? [], $data['workplans'] ?? [], $fiscalYearId);
             foreach ($data['budgets'] ?? [] as $budget) {
                 BudgetLine::create($this->budgetLineDefaults(array_merge($budget, [
                     'project_id' => $project->id,
@@ -494,7 +703,7 @@ class IntegratedDonorGrantController extends Controller
                     'grant_agreement_id' => $grant->id,
                     'proposal_period' => $budget['proposal_period'] ?? 'annual',
                     'document_path' => $budget['document_path'] ?? ($documents['detailed_budget'] ?? null),
-                ]), $grant));
+                ]), $grant, $fiscalYearId));
             }
 
             $today = now()->toDateString();

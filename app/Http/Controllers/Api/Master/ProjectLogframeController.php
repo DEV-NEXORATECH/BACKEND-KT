@@ -26,7 +26,12 @@ class ProjectLogframeController extends Controller
             $this->projectForRelation((int) $filters['project_id'], $relationNo);
         }
 
-        $query = ProjectLogframe::with('project:id,code,relation_no,name')
+        $query = ProjectLogframe::with([
+                'fiscalYear:id,year,name',
+                'project' => fn ($projectQuery) => $projectQuery->withoutGlobalScope('fiscal_year_context')->select(['id', 'code', 'relation_no', 'name', 'grant_agreement_id']),
+                'project.fiscalYears',
+                'project.grantAgreement' => fn ($grantQuery) => $grantQuery->withoutGlobalScope('fiscal_year_context')->select(['id', 'grant_no', 'relation_no', 'agreement_name']),
+            ])
             ->when($filters['project_id'] ?? null, fn ($builder, $projectId) => $builder->where('project_id', $projectId))
             ->when($relationNo !== '', function ($builder) use ($relationNo) {
                 $builder->where(function ($scope) use ($relationNo) {
@@ -34,7 +39,11 @@ class ProjectLogframeController extends Controller
                         ->orWhereHas('project', fn ($project) => $project->where('relation_no', $relationNo));
                 });
             })
-            ->when($filters['fiscal_year_id'] ?? null, fn ($builder, $fiscalYearId) => $builder->where('fiscal_year_id', $fiscalYearId));
+            ->when($filters['fiscal_year_id'] ?? null, function ($builder, $fiscalYearId) {
+                $builder->where(function ($scope) use ($fiscalYearId) {
+                    $scope->whereNull('fiscal_year_id')->orWhere('fiscal_year_id', $fiscalYearId);
+                });
+            });
 
         return response()->json([
             'success' => true,
@@ -181,7 +190,7 @@ class ProjectLogframeController extends Controller
 
     private function projectForRelation(int $projectId, string $relationNo = ''): Project
     {
-        $project = Project::query()->findOrFail($projectId);
+        $project = Project::query()->withoutGlobalScope('fiscal_year_context')->findOrFail($projectId);
         $relationNo = trim($relationNo);
         if ($relationNo !== '' && $project->relation_no && strcasecmp($project->relation_no, $relationNo) !== 0) {
             throw ValidationException::withMessages([

@@ -19,18 +19,32 @@ class ProjectController extends BaseMasterController
     protected array $searchableColumns = ['code', 'name', 'manager_name'];
     protected array $defaultWith = ['program', 'grantAgreement.donor', 'budgetCurrency', 'bankAccount', 'fiscalYears'];
 
+    protected function defaultRelations(): array
+    {
+        return [
+            'program',
+            'grantAgreement' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreement.donor' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'budgetCurrency',
+            'bankAccount',
+            'fiscalYears',
+        ];
+    }
+
     public function index(Request $request): JsonResponse
     {
         // Projects use a many-to-many fiscal-year pivot rather than a direct
         // fiscal_year_id column, so handle the options dropdown explicitly.
         if ($request->boolean('options') && $request->filled('fiscal_year_id')) {
             $projects = Project::query()->withoutGlobalScope('fiscal_year_context')
-                ->with($this->defaultWith)
+                ->with($this->defaultRelations())
                 ->where('is_active', true)
                 ->whereHas('fiscalYears', fn ($query) => $query->whereKey($request->integer('fiscal_year_id')))
+                ->when($request->filled('project_id'), fn ($query) => $query->whereKey($request->integer('project_id')))
+                ->when($request->filled('relation_no'), fn ($query) => $query->where('relation_no', trim((string) $request->query('relation_no'))))
                 ->when($request->filled('grant_agreement_id'), fn ($query) => $query->where('grant_agreement_id', $request->integer('grant_agreement_id')))
                 ->when($request->filled('program_id'), fn ($query) => $query->where('program_id', $request->integer('program_id')))
-                ->when($request->filled('donor_id'), fn ($query) => $query->whereHas('grantAgreement', fn ($grantQuery) => $grantQuery->where('donor_id', $request->integer('donor_id'))))
+                ->when($request->filled('donor_id'), fn ($query) => $query->whereHas('grantAgreement', fn ($grantQuery) => $grantQuery->withoutGlobalScope('fiscal_year_context')->where('donor_id', $request->integer('donor_id'))))
                 ->orderBy('name')
                 ->get();
 
@@ -50,7 +64,7 @@ class ProjectController extends BaseMasterController
         unset($validated['fiscal_year_ids'], $validated['fiscal_year_id']);
         $record = Project::create($validated);
         $record->fiscalYears()->sync($fiscalYearIds);
-        $record->load($this->defaultWith);
+        $record->load($this->defaultRelations());
         return response()->json(['success' => true, 'message' => 'Data berhasil ditambahkan.', 'data' => new ProjectResource($record)], Response::HTTP_CREATED);
     }
 
@@ -63,12 +77,12 @@ class ProjectController extends BaseMasterController
             $fiscalYearIds = [(int) $validated['fiscal_year_id']];
         }
         unset($validated['fiscal_year_ids'], $validated['fiscal_year_id']);
-        $record = Project::findOrFail($id);
+        $record = Project::query()->withoutGlobalScope('fiscal_year_context')->findOrFail($id);
         $record->update($validated);
         if ($hasFiscalYears) {
             $record->fiscalYears()->sync($fiscalYearIds);
         }
-        $record->load($this->defaultWith);
+        $record->load($this->defaultRelations());
         return response()->json(['success' => true, 'message' => 'Data berhasil diperbarui.', 'data' => new ProjectResource($record)]);
     }
 }

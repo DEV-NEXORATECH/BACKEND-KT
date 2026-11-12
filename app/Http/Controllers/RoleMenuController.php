@@ -32,7 +32,16 @@ class RoleMenuController extends Controller
     public function options(): JsonResponse
     {
         return response()->json([
-            'data' => Role::query()->orderBy('name')->get(['id', 'name', 'slug']),
+            'data' => Role::query()
+                ->with('permissions:id,slug')
+                ->orderBy('name')
+                ->get(['id', 'name', 'slug'])
+                ->map(fn (Role $role) => [
+                    'id' => $role->id,
+                    'name' => $role->name,
+                    'slug' => $role->slug,
+                    'can_approve_journal' => $role->slug === 'super-admin' || $role->permissions->contains('slug', 'accounting.journal.post'),
+                ]),
         ]);
     }
 

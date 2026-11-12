@@ -23,6 +23,13 @@ class ApprovalMatrixResource extends JsonResource
         $approverLabel = $personName ? 'User: ' . $personName : ($this->approver_title ?: ($this->role?->name ?: 'Approver'));
         $roleName = $personName ?: ($this->role?->name ?? $this->approver_title ?? 'Approver');
 
+        $roleHasJournalPost = $this->role
+            ? ($this->role->slug === 'super-admin' || $this->role->permissions()->where('slug', 'accounting.journal.post')->exists())
+            : null;
+        $userHasJournalPost = $this->user
+            ? $this->user->hasPermission('accounting.journal.post')
+            : null;
+
         $scopeParts = [];
         if ($this->project) {
             $scopeParts[] = 'Project: ' . ($this->project->code ?: $this->project->name);
@@ -38,6 +45,11 @@ class ApprovalMatrixResource extends JsonResource
         return [
             'id' => $this->id,
             'fiscal_year_id' => $this->fiscal_year_id,
+            'fiscal_year_year' => $this->fiscalYear?->year,
+            'fiscal_year_name' => $this->fiscalYear?->name,
+            'fiscal_year_display' => $this->fiscalYear
+                ? (string) ($this->fiscalYear->year ?: $this->fiscalYear->name)
+                : 'All Fiscal Years (Global)',
             'module' => $this->module,
             'module_display' => ucfirst(str_replace('_', ' ', $this->module)),
             'level' => $this->level,
@@ -47,8 +59,13 @@ class ApprovalMatrixResource extends JsonResource
             'range_display' => $rangeDisplay,
             'role_id' => $this->role_id,
             'role_name' => $this->role?->name,
+            'role_slug' => $this->role?->slug,
+            'role_has_journal_post' => $roleHasJournalPost,
             'user_id' => $this->user_id,
             'user_name' => $this->user?->name,
+            'user_email' => $this->user?->email,
+            'user_employee_id' => $this->user?->employee_id,
+            'user_has_journal_post' => $userHasJournalPost,
             'employee_id' => $this->employee_id,
             'employee_name' => $this->employee?->name,
             'employee_position' => $this->employee?->position,

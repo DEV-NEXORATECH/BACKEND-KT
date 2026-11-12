@@ -25,7 +25,18 @@ class ProjectWorkplanController extends Controller
             $this->validateProjectRelation((int) $filters['project_id'], $relationNo);
         }
 
-        $rows = ProjectWorkplan::with(['project:id,code,relation_no,name,grant_agreement_id', 'project.grantAgreement:id,donor_id,grant_no,relation_no,agreement_name', 'grantAgreement:id,donor_id,grant_no,relation_no,agreement_name', 'donor:id,code,name', 'activity:id,code,name', 'logframe:id,project_id,relation_no,level,code,description'])
+        $workplanRelations = [
+            'fiscalYear:id,year,name',
+            'project' => fn ($projectQuery) => $projectQuery->withoutGlobalScope('fiscal_year_context')->select(['id', 'code', 'relation_no', 'name', 'grant_agreement_id']),
+            'project.fiscalYears',
+            'project.grantAgreement' => fn ($grantQuery) => $grantQuery->withoutGlobalScope('fiscal_year_context')->select(['id', 'donor_id', 'grant_no', 'relation_no', 'agreement_name']),
+            'grantAgreement' => fn ($grantQuery) => $grantQuery->withoutGlobalScope('fiscal_year_context')->select(['id', 'donor_id', 'grant_no', 'relation_no', 'agreement_name']),
+            'donor' => fn ($donorQuery) => $donorQuery->withoutGlobalScope('fiscal_year_context')->select(['id', 'code', 'name']),
+            'activity:id,code,name',
+            'logframe' => fn ($logframeQuery) => $logframeQuery->withoutGlobalScope('fiscal_year_context')->select(['id', 'project_id', 'relation_no', 'level', 'code', 'description']),
+        ];
+
+        $rows = ProjectWorkplan::with($workplanRelations)
             ->when($filters['project_id'] ?? null, fn ($q, $projectId) => $q->where('project_id', $projectId))
             ->when($relationNo !== '', function ($query) use ($relationNo) {
                 $query->where(function ($scope) use ($relationNo) {
@@ -233,7 +244,10 @@ class ProjectWorkplanController extends Controller
 
     private function resolveProjectFunding(int $projectId, $grantId, $donorId): array
     {
-        $project = Project::query()->with('grantAgreement:id,donor_id,grant_no,agreement_name')->findOrFail($projectId);
+        $project = Project::query()
+            ->withoutGlobalScope('fiscal_year_context')
+            ->with(['grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'donor_id', 'grant_no', 'agreement_name'])])
+            ->findOrFail($projectId);
         $projectGrantId = $project->grant_agreement_id;
         $projectDonorId = $project->grantAgreement?->donor_id;
         if (! $projectGrantId) {
@@ -258,7 +272,8 @@ class ProjectWorkplanController extends Controller
     {
         if ($fiscalYearId === null || $fiscalYearId === '') return;
         $project = Project::query()
-            ->with(['fiscalYears:id', 'grantAgreement:id,fiscal_year_id'])
+            ->withoutGlobalScope('fiscal_year_context')
+            ->with(['fiscalYears:id', 'grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'fiscal_year_id'])])
             ->findOrFail($projectId);
         $hasPivotYear = $project->fiscalYears->contains(fn ($year) => (int) $year->id === (int) $fiscalYearId);
         $hasGrantYear = (int) ($project->grantAgreement?->fiscal_year_id ?? 0) === (int) $fiscalYearId;

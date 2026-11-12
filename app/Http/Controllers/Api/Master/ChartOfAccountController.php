@@ -22,7 +22,7 @@ class ChartOfAccountController extends BaseMasterController
 
     public function index(Request $request): JsonResponse
     {
-        if ($request->boolean('options') || $request->query('paginate') === 'false') {
+        if ($request->boolean('options')) {
             return parent::index($request);
         }
 
@@ -38,6 +38,20 @@ class ChartOfAccountController extends BaseMasterController
             $query->where('fiscal_year_id', $request->integer('fiscal_year_id'));
         }
         $query->applyFilters($request, $this->searchableColumns);
+
+        if ($request->query('paginate') === 'false' || $request->boolean('all')) {
+            $rows = $query->orderBy('code')->get();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data berhasil dimuat.',
+                'data' => ChartOfAccountResource::collection($rows),
+                'meta' => [
+                    'total' => $rows->count(),
+                ],
+            ], Response::HTTP_OK);
+        }
+
         $perPage = min(100, max(1, (int) $request->query('per_page', 10)));
         $paginated = $query->paginate($perPage);
 

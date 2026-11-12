@@ -34,6 +34,11 @@ class GrantAgreement extends Model
         return $this->relation_no ?: ($this->id ? 'KT-GRT-'.str_pad((string) $this->id, 4, '0', STR_PAD_LEFT) : 'KT-GRT-0000');
     }
 
+    public function fiscalYear()
+    {
+        return $this->belongsTo(\App\Models\Master\FiscalYear::class, 'fiscal_year_id');
+    }
+
     public function donor()
     {
         return $this->belongsTo(\App\Models\Master\Donor::class, 'donor_id');
