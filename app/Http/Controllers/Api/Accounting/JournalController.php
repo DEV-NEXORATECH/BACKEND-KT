@@ -77,6 +77,7 @@ class JournalController extends Controller
             'budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
             'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
         ]);
+        $fetchAll = $request->boolean('all') || $request->query('per_page') === 'all';
         $perPage = (int) $request->query('per_page', 10);
         $perPage = $perPage < 1 || $perPage > 100 ? 10 : $perPage;
 
@@ -117,9 +118,28 @@ class JournalController extends Controller
             ['accounting.journal.view', 'accounting.journal.review', 'accounting.journal.post']
         );
 
-        $journals = $query->latest('journal_date')
-            ->latest('id')
-            ->paginate($perPage);
+        $ordered = $query->latest('journal_date')->latest('id');
+
+        if ($fetchAll) {
+            $collection = $ordered->get();
+            $total = $collection->count();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Daftar journal berhasil dimuat.',
+                'data' => $collection->map(fn (Journal $journal) => $this->formatJournal($journal)),
+                'meta' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $total,
+                    'total' => $total,
+                    'from' => $total > 0 ? 1 : null,
+                    'to' => $total > 0 ? $total : null,
+                ],
+            ]);
+        }
+
+        $journals = $ordered->paginate($perPage);
 
         return response()->json([
             'success' => true,
