@@ -55,6 +55,7 @@ class JournalController extends Controller
     }
     private array $with = [
         'currency:id,code,name',
+        'fiscalYear:id,year,name,start_date,end_date',
         'lines.account:id,code,name',
         'lines.donor:id,code,name',
         'lines.grantAgreement:id,donor_id,grant_no,relation_no,agreement_name',
@@ -79,7 +80,7 @@ class JournalController extends Controller
         $perPage = (int) $request->query('per_page', 10);
         $perPage = $perPage < 1 || $perPage > 100 ? 10 : $perPage;
 
-        $query = Journal::query()
+        $query = Journal::withoutGlobalScope('fiscal_year_context')
             ->with(['currency:id,code,name', 'lines'])
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->query('status')))
             ->when($request->filled('fiscal_year_id'), fn ($query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
@@ -144,7 +145,7 @@ class JournalController extends Controller
             $lines = $payload['lines'];
             unset($payload['lines']);
 
-            $journal = Journal::query()->create([
+            $journal = Journal::withoutGlobalScope('fiscal_year_context')->create([
                 ...$payload,
                 'journal_number' => $payload['journal_number'] ?? $this->nextJournalNumber(),
                 'status' => 'draft',
@@ -188,6 +189,8 @@ class JournalController extends Controller
                 'account_id' => self::resolveImportId($value($row, $index, ['account_id', 'coa_id', 'coa', 'gl_account_id']), 'chart_of_accounts', ['code', 'name']),
                 // Donor/program/project dimensions are resolved from the project
                 // during validation. Empty CSV cells must stay NULL, not become 0.
+                'grant_agreement_id' => self::nullableInteger($value($row, $index, ['grant_agreement_id'])),
+                'relation_no' => $value($row, $index, ['relation_no']) ?: null,
                 'donor_id' => self::nullableInteger($value($row, $index, ['donor_id', 'sof'])),
                 'program_id' => self::nullableInteger($value($row, $index, ['program_id'])),
                 'project_id' => self::nullableInteger($value($row, $index, ['project_id'])),
@@ -201,7 +204,7 @@ class JournalController extends Controller
         $created = 0; $errors = []; $alreadyExists = [];
         foreach ($grouped as $number => $data) {
             try {
-                if (Journal::query()->where('journal_number', $number)->exists()) {
+                if (Journal::withoutGlobalScope('fiscal_year_context')->withTrashed()->where('journal_number', $number)->exists()) {
                     $alreadyExists[] = $number;
                     continue;
                 }
@@ -230,10 +233,13 @@ class JournalController extends Controller
         $payload = $request->validate([
             'journal_number' => ['nullable', 'string', 'max:40', 'unique:journals,journal_number'],
             'journal_date' => ['required', 'date'],
+            'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
             'reference' => ['nullable', 'string', 'max:100'],
             'description' => ['required', 'string'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.account_id' => ['required', 'integer', 'exists:chart_of_accounts,id'],
+            'lines.*.grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
+            'lines.*.relation_no' => ['nullable', 'string', 'max:100'],
             'lines.*.donor_id' => ['nullable', 'integer', 'exists:donors,id'],
             'lines.*.program_id' => ['nullable', 'integer', 'exists:programs,id'],
             'lines.*.project_id' => ['nullable', 'integer', 'exists:projects,id'],
@@ -254,7 +260,7 @@ class JournalController extends Controller
             $payload['lines'][$index]['credit'] = $credit;
             $payload['lines'][$index]['line_order'] = $index + 1;
         }
-        return $payload;
+        return app(\App\Services\Accounting\JournalFiscalYearService::class)->payload($payload, $request, $journal ?? null);
     }
 
     private static function nullableInteger(mixed $value): ?int
@@ -278,7 +284,7 @@ class JournalController extends Controller
 
     public function show(Request $request, Journal $journal): JsonResponse
     {
-        $query = Journal::whereKey($journal->id);
+        $query = Journal::withoutGlobalScope('fiscal_year_context')->whereKey($journal->id);
         app(\App\Services\Rbac\DataScopeService::class)->applyScope(
             $query,
             $request->user(),
@@ -301,7 +307,7 @@ class JournalController extends Controller
 
     public function update(Request $request, Journal $journal): JsonResponse
     {
-        $query = Journal::whereKey($journal->id);
+        $query = Journal::withoutGlobalScope('fiscal_year_context')->whereKey($journal->id);
         app(\App\Services\Rbac\DataScopeService::class)->applyScope(
             $query,
             $request->user(),
@@ -345,7 +351,7 @@ class JournalController extends Controller
 
     public function destroy(Request $request, Journal $journal): JsonResponse
     {
-        $query = Journal::whereKey($journal->id);
+        $query = Journal::withoutGlobalScope('fiscal_year_context')->whereKey($journal->id);
         app(\App\Services\Rbac\DataScopeService::class)->applyScope(
             $query,
             $request->user(),
@@ -375,14 +381,13 @@ class JournalController extends Controller
 
     public function submit(Request $request, Journal $journal, ApprovalWorkflowService $workflow): JsonResponse
     {
-        $workflow->start('journal', $journal, (float) $journal->lines()->sum('debit'), $request->user()->id);
-        $response = $this->transition($journal, 'draft', 'submitted', [
-            'submitted_by' => $request->user()->id,
-            'submitted_at' => now(),
-        ], 'Journal berhasil disubmit.');
-        return $response;
+        return DB::transaction(function () use ($request, $journal, $workflow) {
+            $journal = Journal::withoutGlobalScope('fiscal_year_context')->lockForUpdate()->findOrFail($journal->id);
+            if ($journal->status !== 'draft') throw ValidationException::withMessages(['status' => 'Journal harus draft sebelum submit.']);
+            $workflow->start('journal', $journal, (float)$journal->lines()->sum('debit'), $request->user()->id);
+            return $this->transition($journal, 'draft', 'submitted', ['submitted_by' => $request->user()->id, 'submitted_at' => now()], 'Journal berhasil disubmit.');
+        });
     }
-
     public function review(Journal $journal): JsonResponse
     {
         return $this->transition($journal, 'submitted', 'reviewed', [
@@ -393,23 +398,26 @@ class JournalController extends Controller
 
     public function post(Request $request, Journal $journal, ApprovalWorkflowService $workflow): JsonResponse
     {
-        $this->guardOpenPeriod($journal->journal_date->toDateString());
-
-        $amount = (float) $journal->lines()->sum('debit');
-        $approval = $workflow->approve('journal', $journal, $request->user(), $request->input('notes'));
-        if (! $approval['managed'] && $workflow->requiresApproval('journal', $journal, $amount)) {
-            throw ValidationException::withMessages(['approval' => 'The journal must be submitted to the Approval Matrix before posting.']);
-        }
-        if ($approval['managed'] && ! $approval['completed']) {
-            return response()->json(['success' => true, 'message' => "Approval journal tahap selesai. Menunggu approver level {$approval['next_level']}.", 'data' => $this->formatJournal($journal->fresh($this->with))]);
-        }
-
-        return $this->transition($journal, 'reviewed', 'posted', [
-            'posted_by' => $request->user()->id,
-            'posted_at' => now(),
-        ], 'Journal berhasil diposting.');
+        return DB::transaction(function () use ($request, $journal, $workflow) {
+            $journal = Journal::withoutGlobalScope('fiscal_year_context')->lockForUpdate()->findOrFail($journal->id);
+            $yearId = app(\App\Services\Accounting\JournalPostingGuard::class)->assertReady($journal, $request->user());
+            $journal->fiscal_year_id = $yearId;
+            $amount = (float) $journal->lines()->sum('debit');
+            $approval = $workflow->approve('journal', $journal, $request->user(), $request->input('notes'));
+            if (!$approval['managed'] && $workflow->requiresApproval('journal', $journal, $amount)) {
+                throw ValidationException::withMessages(['approval' => 'The journal must be submitted to the Approval Matrix before posting.']);
+            }
+            if (!$approval['completed']) {
+                return response()->json(['success' => true, 'message' => "Approval tahap selesai. Menunggu persetujuan tahap {$approval['next_level']}.", 'data' => $this->formatJournal($journal->fresh($this->with))]);
+            }
+            $journal->fiscal_year_id = $yearId;
+            return $this->transition($journal, 'reviewed', 'posted', [
+                'fiscal_year_id' => $yearId,
+                'posted_by' => $request->user()->id,
+                'posted_at' => now(),
+            ], 'Journal berhasil diposting.');
+        });
     }
-
     public function reverse(Request $request, Journal $journal): JsonResponse
     {
         if ($journal->status !== 'posted') {
@@ -418,7 +426,7 @@ class JournalController extends Controller
             ]);
         }
 
-        $query = Journal::whereKey($journal->id);
+        $query = Journal::withoutGlobalScope('fiscal_year_context')->whereKey($journal->id);
         app(\App\Services\Rbac\DataScopeService::class)->applyScope(
             $query,
             $request->user(),
@@ -435,7 +443,7 @@ class JournalController extends Controller
         $this->guardOpenPeriod(now()->toDateString());
 
         $reversal = DB::transaction(function () use ($journal) {
-            $reversal = Journal::query()->create([
+            $reversal = Journal::withoutGlobalScope('fiscal_year_context')->create([
                 'journal_number' => $this->nextJournalNumber('RV'),
                 'journal_date' => now()->toDateString(),
                 'journal_type' => 'reversal',
@@ -488,6 +496,7 @@ class JournalController extends Controller
         $payload = $request->validate([
             'journal_number' => ['nullable', 'string', 'max:40', 'unique:journals,journal_number,'.($journal?->id ?? 'NULL').',id'],
             'journal_date' => ['required', 'date'],
+            'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
             'journal_type' => ['nullable', 'string'],
             'reference' => ['nullable', 'string', 'max:100'],
             'source_type' => ['nullable', 'string', 'max:80'],
@@ -509,9 +518,9 @@ class JournalController extends Controller
             'lines.*.program_id' => ['nullable', 'integer', 'exists:programs,id'],
             // Every journal line is booked to a project so donor reporting can
             // aggregate all projects under one donor without losing the detail.
-            'lines.*.project_id' => ['required', 'integer', 'exists:projects,id'],
+            'lines.*.project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'lines.*.partner_id' => ['nullable', 'integer', 'exists:beneficiary_partners,id'],
-            'lines.*.budget_line_id' => ['required', 'integer', 'exists:budget_lines,id'],
+            'lines.*.budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
             'lines.*.department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'lines.*.line_description' => ['required', 'string', 'max:255'],
             'lines.*.class' => ['nullable', 'string', 'max:120'],
@@ -530,63 +539,8 @@ class JournalController extends Controller
         $totalCredit = 0;
 
         foreach ($payload['lines'] as $index => $line) {
-            $project = Project::with('grantAgreement')->findOrFail($line['project_id']);
-            $budgetLine = BudgetLine::findOrFail($line['budget_line_id']);
-
-            if ((int) $budgetLine->project_id !== (int) $project->id) {
-                throw ValidationException::withMessages([
-                    "lines.{$index}.budget_line_id" => 'Budget Code tidak terdaftar pada project yang dipilih.',
-                ]);
-            }
-
-            $grant = $project->grantAgreement;
-            if (! $grant) {
-                throw ValidationException::withMessages([
-                    "lines.{$index}.project_id" => 'Project harus berasal dari Grant Agreement yang aktif pada Donor & Grant Terintegrasi.',
-                ]);
-            }
-
-            $projectRelationNo = $project->relation_no ?: $grant->relation_no;
-            $budgetRelationNo = $budgetLine->relation_no ?: $projectRelationNo;
-
-            if (! $grant->relation_no || ! $projectRelationNo || strcasecmp($projectRelationNo, $grant->relation_no) !== 0) {
-                throw ValidationException::withMessages([
-                    "lines.{$index}.project_id" => 'Nomor relasi Project tidak sama dengan Grant Agreement.',
-                ]);
-            }
-
-            if (! $projectRelationNo || ! $budgetRelationNo || $budgetRelationNo !== $projectRelationNo) {
-                throw ValidationException::withMessages([
-                    "lines.{$index}.budget_line_id" => 'Nomor relasi Budget Code tidak sesuai dengan project.',
-                ]);
-            }
-
-            if ((int) $budgetLine->grant_agreement_id !== (int) $project->grant_agreement_id) {
-                throw ValidationException::withMessages([
-                    "lines.{$index}.budget_line_id" => 'Grant Agreement Budget Code tidak sesuai dengan project.',
-                ]);
-            }
-
-            foreach ([
-                'grant_agreement_id' => $project->grant_agreement_id,
-                'donor_id' => $grant->donor_id,
-            ] as $field => $expectedId) {
-                if (! empty($line[$field]) && (int) $line[$field] !== (int) $expectedId) {
-                    throw ValidationException::withMessages([
-                        "lines.{$index}.{$field}" => "{$field} tidak sesuai dengan relasi Project dan Grant Agreement.",
-                    ]);
-                }
-            }
-            if (! empty($line['relation_no']) && strcasecmp(trim((string) $line['relation_no']), $projectRelationNo) !== 0) {
-                throw ValidationException::withMessages([
-                    "lines.{$index}.relation_no" => 'Nomor relasi tidak sesuai dengan Project, Grant Agreement, dan Budget Line.',
-                ]);
-            }
-
-            $payload['lines'][$index]['program_id'] = $project->program_id;
-            $payload['lines'][$index]['grant_agreement_id'] = $project->grant_agreement_id;
-            $payload['lines'][$index]['donor_id'] = $grant->donor_id;
-            $payload['lines'][$index]['relation_no'] = $projectRelationNo;
+            $line = app(\App\Services\Accounting\JournalDimensionResolver::class)->resolve($line, $index);
+            $payload['lines'][$index] = $line;
             $debit = round((float) ($line['debit'] ?? 0), 2);
             $credit = round((float) ($line['credit'] ?? 0), 2);
 
@@ -616,7 +570,7 @@ class JournalController extends Controller
             $payload['rate_source'] = $payload['rate_source'] ?? 'transaction_snapshot';
         }
 
-        return $payload;
+        return app(\App\Services\Accounting\JournalFiscalYearService::class)->payload($payload, $request, $journal ?? null);
     }
 
     private function storeAttachment(Request $request, Journal $journal): void
@@ -630,18 +584,7 @@ class JournalController extends Controller
     private function syncLines(Journal $journal, array $lines): void
     {
         foreach ($lines as $line) {
-            if (! empty($line['project_id']) && ! empty($line['budget_line_id'])) {
-                $project = Project::query()->with('grantAgreement')->find($line['project_id']);
-                $budgetLine = BudgetLine::query()->find($line['budget_line_id']);
-                if ($project && $budgetLine && (int) $budgetLine->project_id === (int) $project->id) {
-                    $line['grant_agreement_id'] = $project->grant_agreement_id;
-                    $line['donor_id'] = $project->grantAgreement?->donor_id;
-                    $line['program_id'] = $project->program_id;
-                    $line['relation_no'] = $budgetLine->relation_no
-                        ?: $project->relation_no
-                        ?: $project->grantAgreement?->relation_no;
-                }
-            }
+            $line = app(\App\Services\Accounting\JournalDimensionResolver::class)->resolve($line);
             $journal->lines()->create($line);
         }
     }
@@ -650,7 +593,7 @@ class JournalController extends Controller
     {
         $request = $request ?? request();
 
-        $query = Journal::whereKey($journal->id);
+        $query = Journal::withoutGlobalScope('fiscal_year_context')->whereKey($journal->id);
         app(\App\Services\Rbac\DataScopeService::class)->applyScope(
             $query,
             $request->user(),
@@ -700,6 +643,11 @@ class JournalController extends Controller
             'id' => $journal->id,
             'journal_number' => $journal->journal_number,
             'journal_date' => $journal->journal_date?->toDateString(),
+            'fiscal_year_id' => $journal->fiscal_year_id,
+            'fiscal_year' => $journal->fiscalYear ? [
+                'id' => $journal->fiscalYear->id, 'year' => $journal->fiscalYear->year, 'name' => $journal->fiscalYear->name,
+                'start_date' => $journal->fiscalYear->start_date?->toDateString(), 'end_date' => $journal->fiscalYear->end_date?->toDateString(),
+            ] : null,
             'journal_type' => $journal->journal_type,
             'source_type' => $journal->source_type,
             'reference' => $journal->reference,

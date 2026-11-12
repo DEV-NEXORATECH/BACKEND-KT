@@ -25,15 +25,15 @@ class JournalWorkflowTest extends TestCase
                 'description' => 'Unbalanced journal',
                 'currency_id' => $currency->id,
                 'lines' => [
-                    ['account_id' => $expense->id, 'debit' => 100, 'credit' => 0],
-                    ['account_id' => $cash->id, 'debit' => 0, 'credit' => 90],
+                    ['account_id' => $expense->id, 'line_description' => 'Expense', 'debit' => 100, 'credit' => 0],
+                    ['account_id' => $cash->id, 'line_description' => 'Cash', 'debit' => 0, 'credit' => 90],
                 ],
             ])
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Total debits must equal total credits.');
     }
 
-    public function test_journal_can_move_through_review_and_posting_flow(): void
+    public function test_incomplete_expense_can_be_reviewed_but_cannot_be_posted(): void
     {
         [$user, $cash, $expense, $currency] = $this->journalFixture([
             'accounting.journal.create',
@@ -66,18 +66,19 @@ class JournalWorkflowTest extends TestCase
             ->assertJsonPath('data.status', 'reviewed');
 
         $this->postJson("/api/v1/accounting/journals/{$journalId}/post")
-            ->assertOk()
-            ->assertJsonPath('data.status', 'posted');
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('lines.0.budget_line_id');
 
         $this->assertDatabaseHas('journals', [
             'id' => $journalId,
-            'status' => 'posted',
-            'posted_by' => $user->id,
+            'status' => 'reviewed',
+            'posted_by' => null,
         ]);
     }
 
     private function journalFixture(array $permissions): array
     {
+        \App\Models\Master\FiscalYear::create(['year' => 2026, 'name' => '2026', 'start_date' => '2026-01-01', 'end_date' => '2026-12-31', 'is_active' => true]);
         $role = Role::create(['name' => 'Journal Role', 'slug' => 'journal-role']);
         foreach ($permissions as $permission) {
             $role->permissions()->attach(Permission::create([

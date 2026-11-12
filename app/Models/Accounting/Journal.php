@@ -65,6 +65,12 @@ class Journal extends Model
         });
     }
 
+    // A page filter must not make a transaction in another stored year uneditable/unreadable.
+    public function resolveRouteBindingQuery($query, $value, $field = null)
+    {
+        return parent::resolveRouteBindingQuery($query, $value, $field)->withoutGlobalScope('fiscal_year_context');
+    }
+
     public function lines(): HasMany
     {
         return $this->hasMany(JournalLine::class)->orderBy('line_order');

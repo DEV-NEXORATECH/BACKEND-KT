@@ -12,11 +12,11 @@ class BudgetMonitoringService
 {
     public function summary(array $filters = []): Collection
     {
-        $budgetLines = BudgetLine::query()
+        $budgetLines = BudgetLine::withoutGlobalScope('fiscal_year_context')
             ->with([
-                'grantAgreement:id,grant_no,relation_no,agreement_name,donor_id',
+                'grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
                 'grantAgreement.donor:id,code,name',
-                'project:id,code,relation_no,name,program_id,manager_name',
+                'project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
                 'project.program:id,code,name',
                 'fiscalYear:id,year,name',
                 'budgetCategory:id,code,name',
@@ -25,22 +25,13 @@ class BudgetMonitoringService
             ])
             ->when($filters['budget_line_id'] ?? null, fn (Builder $query, $budgetLineId) => $query->whereKey($budgetLineId))
             ->when($filters['project_id'] ?? null, fn (Builder $query, $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['fiscal_year_id'] ?? null, function (Builder $query, $fiscalYearId) {
-                $query->where(function (Builder $scope) use ($fiscalYearId) {
-                    $scope->where('fiscal_year_id', $fiscalYearId)
-                        ->orWhereHas('project.fiscalYears', fn (Builder $fiscalQuery) => $fiscalQuery->whereKey($fiscalYearId));
-                });
-            })
+            ->when($filters['fiscal_year_id'] ?? null, fn (Builder $query, $id) => $query->where('fiscal_year_id', $id))
             ->when($filters['grant_agreement_id'] ?? null, fn (Builder $query, $grantId) => $query->where('grant_agreement_id', $grantId))
-            ->when($filters['relation_no'] ?? null, function (Builder $query, string $relationNo) {
-                $query->where(function (Builder $scope) use ($relationNo) {
-                    $scope->where('relation_no', $relationNo)
-                        ->orWhereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo))
-                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $relationNo));
-                });
-            })
+            ->when($filters['relation_no'] ?? null, fn (Builder $query, $relationNo) => $query->whereRaw("COALESCE(NULLIF(budget_lines.relation_no, ''),
+                (SELECT NULLIF(relation_no, '') FROM projects WHERE projects.id = budget_lines.project_id AND deleted_at IS NULL),
+                (SELECT relation_no FROM grant_agreements WHERE grant_agreements.id = budget_lines.grant_agreement_id AND deleted_at IS NULL)) = ?", [$relationNo]))
             ->when($filters['budget_category_id'] ?? null, fn (Builder $query, $categoryId) => $query->where('budget_category_id', $categoryId))
-            ->when($filters['budget_line_ids'] ?? null, fn (Builder $query, array $ids) => $query->whereIn('id', $ids))
+            ->when(array_key_exists('budget_line_ids', $filters), fn (Builder $query) => $query->whereIn('id', $filters['budget_line_ids']))
             ->when($filters['search'] ?? null, function (Builder $query, string $search) {
                 $query->where(function (Builder $inner) use ($search) {
                     $inner->where('line_code', 'like', "%{$search}%")
@@ -55,7 +46,15 @@ class BudgetMonitoringService
         $actuals = JournalLine::query()
             ->selectRaw('budget_line_id, COALESCE(SUM(debit - credit), 0) as actual_amount')
             ->whereIn('budget_line_id', $ids)
-            ->whereHas('journal', fn (Builder $query) => $query->where('status', 'posted'))
+            ->whereHas('account', fn (Builder $query) => $query->withoutGlobalScope('fiscal_year_context')->where('account_type', 'expense'))
+            ->whereHas('journal', fn (Builder $query) => $query->withoutGlobalScope('fiscal_year_context')->where('status', 'posted')
+                ->when($filters['fiscal_year_id'] ?? null, fn (Builder $q, $id) => $q->where('fiscal_year_id', $id)))
+            ->when($filters['relation_no'] ?? null, fn (Builder $q, $value) => $q->whereRaw("COALESCE(NULLIF(journal_lines.relation_no, ''),
+                (SELECT NULLIF(relation_no, '') FROM projects WHERE projects.id = journal_lines.project_id AND deleted_at IS NULL),
+                (SELECT NULLIF(relation_no, '') FROM grant_agreements WHERE grant_agreements.id = journal_lines.grant_agreement_id AND deleted_at IS NULL),
+                (SELECT COALESCE(NULLIF(bl.relation_no, ''), p.relation_no, g.relation_no) FROM budget_lines bl LEFT JOIN projects p ON p.id = bl.project_id AND p.deleted_at IS NULL LEFT JOIN grant_agreements g ON g.id = bl.grant_agreement_id AND g.deleted_at IS NULL WHERE bl.id = journal_lines.budget_line_id AND bl.deleted_at IS NULL)) = ?", [$value]))
+            ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where(fn (Builder $scope) => $scope->where('project_id', $id)->orWhereNull('project_id')))
+            ->when($filters['grant_agreement_id'] ?? null, fn (Builder $q, $id) => $q->where(fn (Builder $scope) => $scope->where('grant_agreement_id', $id)->orWhereNull('grant_agreement_id')))
             ->groupBy('budget_line_id')
             ->pluck('actual_amount', 'budget_line_id');
 
@@ -81,6 +80,7 @@ class BudgetMonitoringService
 
             return [
                 'budget_line_id' => $line->id,
+                'fiscal_year_id' => $line->fiscal_year_id,
                 'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: $line->grantAgreement?->relation_no),
                 'line_code' => $line->line_code,
                 'description' => $line->description,
@@ -145,7 +145,7 @@ class BudgetMonitoringService
             ->firstWhere('budget_line_id', $budgetLineId);
 
         if (! $item) {
-            $line = BudgetLine::query()->findOrFail($budgetLineId);
+            $line = BudgetLine::withoutGlobalScope('fiscal_year_context')->findOrFail($budgetLineId);
             $item = $this->summary(['project_id' => $line->project_id])
                 ->firstWhere('budget_line_id', $budgetLineId);
         }

@@ -34,7 +34,7 @@ abstract class BaseMasterController extends Controller
             // AI alert rows are monitoring output only. They must never be
             // exposed as operational Budget Line master data or dropdowns.
             if ($this->modelClass === \App\Models\Master\BudgetLine::class) {
-                $query->where('line_code', 'not like', 'AI%');
+                $query->where('line_code', 'not like', 'AI-ALERT-%');
             }
 
             // An explicitly selected fiscal year must isolate period-specific

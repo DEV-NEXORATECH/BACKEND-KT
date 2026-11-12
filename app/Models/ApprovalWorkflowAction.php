@@ -16,6 +16,6 @@ class ApprovalWorkflowAction extends Model
 
     public function run(): BelongsTo { return $this->belongsTo(ApprovalWorkflowRun::class, 'approval_workflow_run_id'); }
 
-    public function approvalMatrix(): BelongsTo { return $this->belongsTo(ApprovalMatrix::class, 'approval_matrix_id'); }
+    public function approvalMatrix(): BelongsTo { return $this->belongsTo(ApprovalMatrix::class, 'approval_matrix_id')->withoutGlobalScope('fiscal_year_context'); }
     public function actionBy(): BelongsTo { return $this->belongsTo(User::class, 'action_by'); }
 }

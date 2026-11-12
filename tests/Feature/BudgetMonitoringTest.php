@@ -89,6 +89,7 @@ class BudgetMonitoringTest extends TestCase
             'budget_category_id' => $category->id,
             'line_code' => 'BL-001',
             'description' => 'Budget line',
+            'created_by' => $user->id,
             'unit_price' => 100,
             'quantity' => 10,
             'total_amount' => 1000,

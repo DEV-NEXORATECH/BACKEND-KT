@@ -66,7 +66,12 @@ class ApprovalCenterController extends Controller
         ];
         abort_unless(isset($types[$module]), 404, 'Modul approval tidak ditemukan.');
         $model = $types[$module];
-        $entity = $model::query()->findOrFail($id);
+        $entity = ($module === 'journal' ? $model::withoutGlobalScope('fiscal_year_context') : $model::query())->findOrFail($id);
+        if ($module === 'journal') {
+            $scope = Journal::withoutGlobalScope('fiscal_year_context')->whereKey($id);
+            app(\App\Services\Rbac\DataScopeService::class)->applyScope($scope, $request->user(), 'created_by', null, null, ['accounting.journal.view', 'accounting.journal.review', 'accounting.journal.post']);
+            abort_unless($scope->exists(), 403, 'Tidak boleh melihat history journal ini.');
+        }
         $workflowModule = $module === 'pr' ? 'procurement' : $module;
         $run = ApprovalWorkflowRun::query()->with(['actions.actionBy.employee', 'actions.approvalMatrix.role', 'events.actor.employee.positionMaster'])
             ->where(['module' => $workflowModule, 'approvable_type' => $model, 'approvable_id' => $id])->first();
@@ -79,6 +84,11 @@ class ApprovalCenterController extends Controller
             // users see reached stages only, while Super Admin can inspect the
             // complete chain including queued future stages.
             'steps' => $progress['steps'],
+            'approval_progress' => $progress,
+            'document_status' => $entity->getAttribute('status'),
+            'can_approve' => $progress['can_approve'] ?? false,
+            'can_post' => $progress['can_post'] ?? false,
+            'unavailable_reason' => $progress['unavailable_reason'] ?? null,
             'events' => $events->map(fn ($event) => [
                 'event' => $event->event,
                 'version' => $event->version,

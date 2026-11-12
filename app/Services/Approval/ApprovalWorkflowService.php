@@ -79,9 +79,9 @@ class ApprovalWorkflowService
         });
     }
 
-    public function requiresApproval(string $module, Model $entity, float $amount): bool
+    public function requiresApproval(string $module, Model $entity, float $amount, ?User $viewer = null): bool
     {
-        $currentUser = function_exists('request') ? request()->user() : null;
+        $currentUser = $viewer ?? (function_exists('request') ? request()->user() : null);
         if ($currentUser instanceof User && $this->isSuperAdmin($currentUser)) {
             return false;
         }
@@ -100,10 +100,10 @@ class ApprovalWorkflowService
             if ($run->status === 'approved') return ['managed' => true, 'completed' => true, 'next_level' => null];
             if ($run->status !== 'in_progress') throw ValidationException::withMessages(['approval' => 'Workflow approval tidak aktif.']);
             $run->load('actions.approvalMatrix');
-            $this->skipRequesterActions($run, $entity);
-            $run->refresh()->load('actions.approvalMatrix');
+
+
             $actions = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get();
-            $action = $actions->first(fn ($item) => $this->matchesApprover($item, $user, $run->approvable));
+            $action = $actions->first(fn ($item) => $this->matchesApprover($item, $user, $entity));
             if (! $action) throw ValidationException::withMessages(['approval' => 'You are not the approver for the current approval stage.']);
             $action->update(['status' => 'approved', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
             $this->recordEvent($run, 'approved', $run->current_level, $run->current_level, $user->id, $notes);
@@ -131,7 +131,7 @@ class ApprovalWorkflowService
                 ->lockForUpdate()->first();
             if (! $run) return;
             $run->load('actions.approvalMatrix');
-            $action = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get()->first(fn ($item) => $this->matchesApprover($item, $user, $run->approvable));
+            $action = $run->actions()->where('level', $run->current_level)->where('status', 'pending')->get()->first(fn ($item) => $this->matchesApprover($item, $user, $entity));
             if (! $action) throw ValidationException::withMessages(['approval' => 'You are not the approver for the current approval stage.']);
             $action->update(['status' => 'rejected', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
             $run->update(['status' => 'rejected', 'completed_at' => now()]);
@@ -216,7 +216,9 @@ class ApprovalWorkflowService
 
     public function userCanApproveAction(\App\Models\ApprovalWorkflowAction $action, User $user, ?Model $entity = null): bool
     {
-        return $this->matchesApprover($action, $user, $entity);
+        return $action->status === 'pending' && $action->run?->status === 'in_progress'
+            && (int)$action->level === (int)$action->run->current_level
+            && $this->matchesApprover($action, $user, $entity);
     }
 
     /**
@@ -226,6 +228,79 @@ class ApprovalWorkflowService
      * inspect the complete chain.
      */
     public function progressFor(string $module, Model $entity, ?User $viewer = null): array
+    {
+        $run = $this->runFor($module, $entity);
+        if (!$run && $module !== 'journal') return $this->legacyProgressFor($module, $entity, $viewer);
+        $actions = $run?->actions ?? collect();
+        $active = $run?->status === 'in_progress'
+            ? $actions->filter(fn ($a) => $a->status === 'pending' && (int)$a->level === (int)$run->current_level)
+            : collect();
+        $ready = true;
+        $reason = null;
+        if ($module === 'journal') {
+            if (!$viewer) { $ready = false; $reason = 'authentication_required'; }
+            else {
+                try { $entity = clone $entity; $entity->fiscal_year_id = app(\App\Services\Accounting\JournalPostingGuard::class)->assertReady($entity, $viewer); }
+                catch (ValidationException $error) { $ready = false; $reason = $error->validator->errors()->first(); }
+                catch (\Symfony\Component\HttpKernel\Exception\HttpException $error) { $ready = false; $reason = $error->getMessage(); }
+            }
+        }
+        $canApprove = $ready && $viewer && $active->contains(fn ($a) => $this->matchesApprover($a, $viewer, $entity));
+        $amount = $module === 'journal' ? (float)$entity->lines()->sum('debit') : (float)($entity->total_amount ?? $entity->amount ?? 0);
+        $canPost = $module === 'journal' && $ready && $viewer && ($run?->status === 'approved' || (!$run && !$this->requiresApproval($module, $entity, $amount, $viewer)));
+        if (!$canApprove && !$canPost && !$reason) {
+            $reason = $run?->status === 'in_progress' ? 'not_current_approver' : ($run ? 'workflow_not_active' : 'approval_not_started');
+        }
+        $visible = $viewer && $this->isSuperAdmin($viewer) ? $actions : $actions->filter(fn ($a) => in_array($a->status, ['approved', 'pending', 'rejected', 'skipped'], true));
+        return [
+            'status' => $run?->status ?? 'not_started',
+            'document_status' => $entity->getAttribute('status'),
+            'current_level' => $active->isNotEmpty() ? (int)$run->current_level : null,
+            'current_stage' => $active->first()?->approvalMatrix?->approver_title ?: ($active->isNotEmpty() ? 'Approval Level '.$run->current_level : null),
+            'completed_count' => $actions->where('status', 'approved')->count(),
+            'total_count' => $actions->count(),
+            'can_approve' => (bool)$canApprove,
+            'can_post' => (bool)$canPost,
+            'unavailable_reason' => $reason,
+            'can_approve_reason' => $canApprove ? null : ($reason ?: 'no_pending_approval'),
+            'can_post_reason' => $canPost ? null : ($reason ?: 'approval_pending'),
+            'steps' => $visible->map(function ($action) use ($entity, $viewer, $active, $module, $ready) {
+                $approvers = $this->approversFor($action, $entity, $module);
+                $isActive = $active->contains('id', $action->id);
+                return [
+                    'id' => $action->id,
+                    'level' => (int)$action->level,
+                    'label' => $action->approvalMatrix?->approver_title ?: 'Approval Level '.$action->level,
+                    'status' => $action->status,
+                    'user_id' => $action->user_id,
+                    'employee_id' => $action->employee_id,
+                    'role_id' => $action->role_id,
+                    'approvers' => $approvers,
+                    'approver_name' => $action->actionBy?->name ?: (count($approvers) === 1 ? $approvers[0]['name'] : null),
+                    'approver_position' => $action->approvalMatrix?->approver_title,
+                    'approved_at' => $action->action_at?->toISOString(),
+                    'action_by' => $action->action_by,
+                    'signature_url' => $action->actionBy?->employee?->signature_path ? url($action->actionBy->employee->signature_path) : null,
+                    'can_approve' => (bool)($ready && $viewer && $isActive && $this->matchesApprover($action, $viewer, $entity)),
+                ];
+            })->values()->all(),
+        ];
+    }
+
+    private function approversFor($action, Model $entity, string $module): array
+    {
+        $query = User::query()->where('is_active', true);
+        if ($action->user_id) $query->whereKey($action->user_id);
+        elseif (!$action->employee_id) $query->where('role_id', $action->role_id);
+        // Employee links are resolved by the same canonical resolver, including
+        // unique legacy email links. Never substitute a matrix display name.
+        return $query->get()->filter(fn ($user) => $this->matchesApprover($action, $user, $entity)
+                && ($module !== 'journal' || $user->hasPermission('accounting.journal.post')))
+            ->map(fn ($user) => ['user_id' => $user->id, 'employee_id' => app(ApprovalIdentityResolver::class)->employeeId($user), 'name' => $user->name, 'role_id' => $user->role_id])
+            ->values()->all();
+    }
+
+    private function legacyProgressFor(string $module, Model $entity, ?User $viewer = null): array
     {
         $run = $this->runFor($module, $entity);
         if (! $run) {
@@ -352,8 +427,8 @@ class ApprovalWorkflowService
                 ?: $entity->getAttribute('created_at');
             if ($date) {
                 $fiscalYearId = FiscalYear::query()
-                    ->where('year', \Carbon\CarbonImmutable::parse($date)->year)
-                    ->value('id');
+                    ->whereDate('start_date', '<=', $date)->whereDate('end_date', '>=', $date)
+                    ->get()->pipe(fn ($years) => $years->count() === 1 ? $years->first()->id : null);
             }
         }
 
@@ -371,14 +446,14 @@ class ApprovalWorkflowService
                     $scope->orWhere('fiscal_year_id', $fiscalYearId);
                 }
                 })
-                ->where(fn ($q) => $q->whereNull('project_id')->orWhere('project_id', $entity->getAttribute('project_id')))
-                ->where(fn ($q) => $q->whereNull('donor_id')->orWhere('donor_id', $entity->getAttribute('donor_id')))
-                ->where(fn ($q) => $q->whereNull('department_id')->orWhere('department_id', $entity->getAttribute('department_id')));
+                ->where(fn ($q) => $q->whereNull('project_id')->orWhere('project_id', (count($this->dimensionIds($entity, 'project_id')) === 1 ? $this->dimensionIds($entity, 'project_id')[0] : null)))
+                ->where(fn ($q) => $q->whereNull('donor_id')->orWhere('donor_id', (count($this->dimensionIds($entity, 'donor_id')) === 1 ? $this->dimensionIds($entity, 'donor_id')[0] : null)))
+                ->where(fn ($q) => $q->whereNull('department_id')->orWhere('department_id', (count($this->dimensionIds($entity, 'department_id')) === 1 ? $this->dimensionIds($entity, 'department_id')[0] : null)));
             return $query;
         };
 
-        $matrixQuery = $scopeMatrix(ApprovalMatrix::query());
-        $projectId = $entity->getAttribute('project_id');
+        $matrixQuery = $scopeMatrix(ApprovalMatrix::withoutGlobalScope('fiscal_year_context'));
+        $projectId = (count($this->dimensionIds($entity, 'project_id')) === 1 ? $this->dimensionIds($entity, 'project_id')[0] : null);
         $hasProjectSpecificMatrix = $projectId && (clone $matrixQuery)->where('project_id', $projectId)->exists();
         if ($hasProjectSpecificMatrix) {
             // A project-specific chain replaces the generic entity chain.
@@ -400,76 +475,59 @@ class ApprovalWorkflowService
 
         $matrices = $matrices->filter(function ($matrix) use ($amount, $entity) {
             if ((int) $matrix->level !== 1) return true;
-            $title = strtolower((string) $matrix->approver_title);
-            if (! $entity->getAttribute('project_id') && str_contains($title, 'denny')) return $amount <= 267000000;
+
             return (float) $matrix->min_amount <= $amount
                 && ($matrix->max_amount === null || (float) $matrix->max_amount >= $amount);
         })->values();
 
-        if (! $entity->getAttribute('project_id')) {
-            $matrices = $matrices->reject(fn ($matrix) => str_contains(strtolower((string) $matrix->approver_title), 'abil'));
-        }
-
         return $matrices;
+    }
+
+    private function dimensionIds(Model $entity, string $field): array
+    {
+        if ($entity instanceof \App\Models\Accounting\Journal) {
+            return $entity->lines()->whereNotNull($field)->reorder()->distinct()->pluck($field)->map(fn ($id) => (int)$id)->all();
+        }
+        return $entity->getAttribute($field) ? [(int)$entity->getAttribute($field)] : [];
     }
 
     private function matchesApprover($action, User $user, ?Model $entity = null): bool
     {
-        // The requester/preparer must never approve their own expense or settlement,
-        // even when an old workflow action already contains a matching role/user.
-        if ($entity && $this->isRequester($entity, $user)) {
-            return false;
-        }
-        if ($this->isSuperAdmin($user)) {
-            return true;
-        }
-
+        if (!$entity) return false;
+        if ($user->is_active === false || ($entity && $this->isRequester($entity, $user))) return false;
         $matrix = $action->approvalMatrix;
-        if ($matrix?->role && in_array($matrix->role->slug, ['budget-holder', 'budget-holder-project-manager'], true)) {
-            // These named budget holders are part of the organization's
-            // approval policy. The matrix role remains a required filter;
-            // this allowlist prevents another user with the same role from
-            // approving a budget-holder stage.
-            $allowedBudgetHolders = [
-                'denny bhatara',
-                'abil ahmad akbar',
-                'sarah megumi',
-                'sarah rosemery megumi w',
-                'sarah rosemery megumi wouthuyzen',
-                'sandika ariansyah',
-            ];
-            $names = array_map('strtolower', array_filter([$user->name, $user->employee?->name]));
-            $isAllowed = collect($names)->contains(function ($name) use ($allowedBudgetHolders) {
-                $normalized = preg_replace('/\s+/', ' ', trim((string) $name));
-                return in_array($normalized, $allowedBudgetHolders, true)
-                    || str_contains($normalized, 'sandika ariansyah');
-            });
-            if (! $isAllowed) return false;
-        }
-        if ($matrix?->is_conditional_project_manager) {
-            $project = $entity && method_exists($entity, 'project') ? $entity->project : null;
-            $projectManagerName = $project?->manager_name;
-            if ($projectManagerName) {
-                $employee = $user->employee;
-                $names = array_filter([$user->name, $employee?->name]);
-                return collect($names)->contains(fn ($name) => strcasecmp(trim((string) $name), trim((string) $projectManagerName)) === 0);
+        if ($action->approval_matrix_id && !$matrix) return false;
+        // Preserve the configured document scope even for explicit assignments.
+        if ($entity && $matrix) {
+            foreach (['project_id', 'donor_id', 'department_id'] as $field) {
+                if ($matrix->$field && $this->dimensionIds($entity, $field) !== [(int)$matrix->$field]) return false;
             }
+            if ($matrix->fiscal_year_id && (int)$matrix->fiscal_year_id !== (int)$entity->getAttribute('fiscal_year_id')) return false;
         }
-
-        $employeeId = $user->employee()->value('id');
-        return ($action->user_id && (int) $action->user_id === (int) $user->id)
-            || ($action->role_id && (int) $action->role_id === (int) $user->role_id)
-            || ($action->employee_id && (int) $action->employee_id === (int) $employeeId);
+        if ($this->isSuperAdmin($user)) return true;
+        if (!app(ApprovalIdentityResolver::class)->matches($action, $user)) return false;
+        // An explicit workflow person is authoritative; role titles/names do not
+        // override that assignment. The action snapshot, not a mutable matrix,
+        // determines who is assigned to an existing run.
+        if ($action->user_id || $action->employee_id) return true;
+        $roleSlug = \App\Models\Role::find($action->role_id)?->slug;
+        if ($matrix?->is_conditional_project_manager || in_array($roleSlug, ['budget-holder', 'budget-holder-project-manager'], true)) {
+            $projects = $entity ? $this->dimensionIds($entity, 'project_id') : [];
+            if (!$projects) return false;
+            $assigned = \App\Models\ProjectAssignment::query()->where('user_id', $user->id)->where('is_active', true)
+                ->whereIn('project_id', $projects)->whereIn('role', ['project-manager', 'budget-holder', 'budget-holder-project-manager'])
+                ->where(fn ($q) => $q->whereNull('assigned_from')->orWhereDate('assigned_from', '<=', today()))
+                ->where(fn ($q) => $q->whereNull('assigned_to')->orWhereDate('assigned_to', '>=', today()))
+                ->distinct()->pluck('project_id')->all();
+            return count(array_intersect($projects, $assigned)) === count($projects);
+        }
+        return true;
     }
-
     private function matrixBelongsToUser($matrix, User $user): bool
     {
         if (! $matrix) return false;
-        $employeeId = $user->employee_id ?: $user->employee?->id;
-        return ($matrix->user_id && (int) $matrix->user_id === (int) $user->id)
-            || ($matrix->employee_id && $employeeId && (int) $matrix->employee_id === (int) $employeeId);
+        return ($matrix->user_id || $matrix->employee_id) && app(ApprovalIdentityResolver::class)->matches($matrix, $user);
     }
-
     private function matrixPersonKey($matrix): ?string
     {
         if (! $matrix) return null;
@@ -489,19 +547,15 @@ class ApprovalWorkflowService
 
     private function isRequester(Model $entity, User $user): bool
     {
-        $requesterId = $entity->getAttribute('requester_id')
-            ?? $entity->getAttribute('submitted_by')
-            ?? $entity->getAttribute('created_by');
-        if ($requesterId && (int) $requesterId === (int) $user->id) return true;
-
-        $requesterEmployeeId = $entity->getAttribute('requester_employee_id')
-            ?? $entity->getAttribute('submitted_by_employee_id')
-            ?? $entity->getAttribute('employee_id');
-        $employeeId = $user->employee_id ?: $user->employee?->id;
-        return $requesterEmployeeId && $employeeId
-            && (int) $requesterEmployeeId === (int) $employeeId;
+        $requesterIds = array_filter([$entity->getAttribute('requester_id'), $entity->getAttribute('submitted_by'), $entity->getAttribute('created_by')]);
+        if (in_array((int)$user->id, array_map('intval', $requesterIds), true)) return true;
+        $identity = app(ApprovalIdentityResolver::class);
+        $employeeId = $identity->employeeId($user);
+        if (!$employeeId) return false;
+        $requesterEmployeeIds = array_filter([$entity->getAttribute('requester_employee_id'), $entity->getAttribute('submitted_by_employee_id'), $entity->getAttribute('employee_id')]);
+        foreach (User::whereIn('id', $requesterIds)->get() as $requester) $requesterEmployeeIds[] = $identity->employeeId($requester);
+        return in_array($employeeId, array_map('intval', $requesterEmployeeIds), true);
     }
-
     private function skipRequesterActions(ApprovalWorkflowRun $run, Model $entity): void
     {
         $requesterId = $entity->getAttribute('requester_id')
@@ -517,8 +571,8 @@ class ApprovalWorkflowService
         while (true) {
             $current = $run->actions->first(fn ($action) => (int) $action->level === (int) $run->current_level && $action->status === 'pending');
             $isRequesterAction = $requester
-                ? $this->matrixBelongsToUser($current?->approvalMatrix, $requester)
-                : ($current?->approvalMatrix?->employee_id && (int) $current->approvalMatrix->employee_id === (int) $requesterEmployeeId);
+                ? $this->matrixBelongsToUser($current, $requester)
+                : ($current?->employee_id && (int) $current->employee_id === (int) $requesterEmployeeId);
             if (! $current || ! $isRequesterAction) return;
 
             $level = (int) $current->level;

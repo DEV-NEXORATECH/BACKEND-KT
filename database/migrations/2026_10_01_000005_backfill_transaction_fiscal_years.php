@@ -11,7 +11,7 @@ return new class extends Migration
         'grant_agreements' => 'start_date',
         'purchase_requests' => 'request_date',
         'fixed_assets' => 'acquisition_date',
-        'journals' => 'journal_date',
+        // Journal years require a unique period: use journals:backfill-fiscal-years --dry-run.
         'timesheet_entries' => 'entry_date',
         'tax_transactions' => 'transaction_date',
         'payments' => 'payment_date',
