@@ -13,11 +13,12 @@ use Illuminate\Validation\ValidationException;
 
 class ApprovalWorkflowService
 {
-    public function start(string $module, Model $entity, float $amount, ?int $submittedBy = null): ?ApprovalWorkflowRun
+    private function eligibleMatricesFor(string $module, Model $entity, float $amount, ?int $submittedBy = null)
     {
         $matrices = $this->matricesFor($module, $entity, $amount);
-        if ($submittedBy) {
-            $requester = User::with('employee')->find($submittedBy);
+        $requesterId = $submittedBy ?? $entity->getAttribute('submitted_by');
+        if ($requesterId) {
+            $requester = User::with('employee')->find($requesterId);
             if ($requester) {
                 // A role is not a person. Do not remove an entire role stage
                 // just because the requester has the same role; remove only
@@ -29,13 +30,18 @@ class ApprovalWorkflowService
         // matrix row. Keep the first matching row so one person never appears
         // twice in a single approval chain.
         $seenPeople = [];
-        $matrices = $matrices->filter(function ($matrix) use (&$seenPeople) {
+        return $matrices->filter(function ($matrix) use (&$seenPeople) {
             $identity = $this->matrixPersonKey($matrix);
             if ($identity === null) return true;
             if (isset($seenPeople[$identity])) return false;
             $seenPeople[$identity] = true;
             return true;
         })->values();
+    }
+
+    public function start(string $module, Model $entity, float $amount, ?int $submittedBy = null): ?ApprovalWorkflowRun
+    {
+        $matrices = $this->eligibleMatricesFor($module, $entity, $amount, $submittedBy);
         if ($matrices->isEmpty()) return null;
 
         return DB::transaction(function () use ($module, $entity, $matrices, $submittedBy) {
@@ -86,7 +92,7 @@ class ApprovalWorkflowService
             return false;
         }
 
-        return $this->matricesFor($module, $entity, $amount)->isNotEmpty();
+        return $this->eligibleMatricesFor($module, $entity, $amount)->isNotEmpty();
     }
 
     /** @return array{managed: bool, completed: bool, next_level: int|null} */
