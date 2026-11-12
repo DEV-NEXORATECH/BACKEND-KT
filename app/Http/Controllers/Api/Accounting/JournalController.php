@@ -166,7 +166,30 @@ class JournalController extends Controller
 
     public function import(Request $request): JsonResponse
     {
-        $request->validate(['file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:10240']]);
+        $request->validate([
+            'file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:10240'],
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
+            'relation_no' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $defaultProjectId = $request->filled('project_id') ? $request->integer('project_id') : null;
+        $defaultGrantId = $request->filled('grant_agreement_id') ? $request->integer('grant_agreement_id') : null;
+        $defaultRelationNo = trim((string) $request->input('relation_no', '')) ?: null;
+
+        if (! $defaultProjectId && $defaultRelationNo) {
+            $defaultProjectId = DB::table('projects')->where('relation_no', $defaultRelationNo)->value('id');
+            $defaultProjectId = $defaultProjectId ? (int) $defaultProjectId : null;
+        }
+        if (! $defaultGrantId && $defaultProjectId) {
+            $defaultGrantId = DB::table('projects')->where('id', $defaultProjectId)->value('grant_agreement_id');
+            $defaultGrantId = $defaultGrantId ? (int) $defaultGrantId : null;
+        }
+        if (! $defaultGrantId && $defaultRelationNo) {
+            $defaultGrantId = DB::table('grant_agreements')->where('relation_no', $defaultRelationNo)->value('id');
+            $defaultGrantId = $defaultGrantId ? (int) $defaultGrantId : null;
+        }
+
         $sheet = IOFactory::load($request->file('file')->getRealPath())->getActiveSheet();
         $rows = $sheet->toArray(null, true, true, true);
         $headers = array_map(fn ($value) => strtolower(trim((string) $value)), array_shift($rows) ?: []);
@@ -187,24 +210,55 @@ class JournalController extends Controller
                 ->whereDate('start_date', '<=', $journalDate)
                 ->whereDate('end_date', '>=', $journalDate)
                 ->value('id');
+
+            $rowRelationNo = trim((string) ($value($row, $index, ['relation_no', 'nomor_relasi']) ?: '')) ?: $defaultRelationNo;
+            $projectId = self::resolveImportId($value($row, $index, ['project_id', 'project']), 'projects', ['code', 'name', 'relation_no'])
+                ?: $defaultProjectId;
+            if (! $projectId && $rowRelationNo) {
+                $matchedProject = DB::table('projects')->where('relation_no', $rowRelationNo)->value('id');
+                $projectId = $matchedProject ? (int) $matchedProject : null;
+            }
+            $grantId = self::resolveImportId($value($row, $index, ['grant_agreement_id', 'grant_agreement', 'grant_no']), 'grant_agreements', ['grant_no', 'agreement_no', 'agreement_name', 'relation_no'])
+                ?: $defaultGrantId;
+            if (! $grantId && $projectId) {
+                $matchedGrant = DB::table('projects')->where('id', $projectId)->value('grant_agreement_id');
+                $grantId = $matchedGrant ? (int) $matchedGrant : null;
+            }
+            $donorId = self::resolveImportId($value($row, $index, ['donor_id', 'sof', 'donor']), 'donors', ['code', 'name']);
+            if (! $donorId && $grantId) {
+                $matchedDonor = DB::table('grant_agreements')->where('id', $grantId)->value('donor_id');
+                $donorId = $matchedDonor ? (int) $matchedDonor : null;
+            }
+            $programId = self::resolveImportId($value($row, $index, ['program_id', 'program']), 'programs', ['code', 'name']);
+            if (! $programId && $projectId) {
+                $matchedProgram = DB::table('projects')->where('id', $projectId)->value('program_id');
+                $programId = $matchedProgram ? (int) $matchedProgram : null;
+            }
+            if (! $rowRelationNo && $grantId) {
+                $rowRelationNo = DB::table('grant_agreements')->where('id', $grantId)->value('relation_no') ?: null;
+            }
+
+            $classValue = trim((string) ($value($row, $index, ['class']) ?: '')) ?: null;
+            $budgetRaw = $value($row, $index, ['budget_line_id', 'budget_code']);
+            $budgetLineId = self::resolveBudgetLineImportId($budgetRaw, $classValue, $projectId, $grantId, $rowRelationNo, $fiscalYearId);
+
             $groupKey = json_encode([$number, $fiscalYearId ?: 'unknown']);
             $grouped[$groupKey]['journal_number'] = $number;
             $grouped[$groupKey]['journal_date'] ??= $journalDate;
             $grouped[$groupKey]['fiscal_year_id'] ??= $fiscalYearId;
-            $grouped[$groupKey]['reference'] ??= $value($row, $index, ['reference', 'ref']);
-            $grouped[$groupKey]['description'] ??= $value($row, $index, ['description', 'journal_description']) ?: 'Imported journal';
+            $grouped[$groupKey]['reference'] ??= $value($row, $index, ['reference', 'reference_', 'ref']);
+            $grouped[$groupKey]['description'] ??= $value($row, $index, ['purpose', 'journal_description', 'description']) ?: 'Imported journal';
             $grouped[$groupKey]['lines'][] = [
                 'account_id' => self::resolveImportId($value($row, $index, ['account_id', 'coa_id', 'coa', 'gl_account_id']), 'chart_of_accounts', ['code', 'name']),
-                // Donor/program/project dimensions are resolved from the project
-                // during validation. Empty CSV cells must stay NULL, not become 0.
-                'grant_agreement_id' => self::nullableInteger($value($row, $index, ['grant_agreement_id'])),
-                'relation_no' => $value($row, $index, ['relation_no']) ?: null,
-                'donor_id' => self::nullableInteger($value($row, $index, ['donor_id', 'sof'])),
-                'program_id' => self::nullableInteger($value($row, $index, ['program_id'])),
-                'project_id' => self::nullableInteger($value($row, $index, ['project_id'])),
-                'budget_line_id' => self::nullableInteger($value($row, $index, ['budget_line_id', 'budget_code'])),
-                'department_id' => $value($row, $index, ['department_id']) ?: null,
-                'line_description' => $value($row, $index, ['line_description', 'line_note']) ?: 'Imported journal line',
+                'grant_agreement_id' => $grantId,
+                'relation_no' => $rowRelationNo,
+                'donor_id' => $donorId,
+                'program_id' => $programId,
+                'project_id' => $projectId,
+                'budget_line_id' => $budgetLineId,
+                'department_id' => self::resolveImportId($value($row, $index, ['department_id', 'department']), 'departments', ['code', 'name']),
+                'class' => $classValue,
+                'line_description' => $value($row, $index, ['line_description', 'line_note', 'description']) ?: 'Imported journal line',
                 'debit' => (float) ($value($row, $index, ['debit', 'debits']) ?: 0),
                 'credit' => (float) ($value($row, $index, ['credit', 'credits']) ?: 0),
             ];
@@ -260,6 +314,7 @@ class JournalController extends Controller
             'lines.*.project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'lines.*.budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
             'lines.*.department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'lines.*.class' => ['nullable', 'string', 'max:120'],
             'lines.*.line_description' => ['required', 'string', 'max:255'],
             'lines.*.debit' => ['nullable', 'numeric', 'min:0'],
             'lines.*.credit' => ['nullable', 'numeric', 'min:0'],
@@ -296,6 +351,76 @@ class JournalController extends Controller
             $match = DB::table($table)->whereRaw("LOWER(TRIM(`{$column}`)) = ?", [strtolower($text)])->value('id');
             if ($match !== null) return (int) $match;
         }
+        return null;
+    }
+
+    private static function resolveBudgetLineImportId(
+        mixed $budgetRaw,
+        ?string $classValue,
+        ?int $projectId,
+        ?int $grantId,
+        ?string $relationNo,
+        ?int $fiscalYearId
+    ): ?int {
+        $id = self::nullableInteger($budgetRaw);
+        if ($id !== null && DB::table('budget_lines')->where('id', $id)->exists()) {
+            return $id;
+        }
+
+        $candidates = [];
+        $budgetText = trim((string) ($budgetRaw ?? ''));
+        if ($budgetText !== '') {
+            $candidates[] = $budgetText;
+            if (preg_match('/^(\d+(?:\.\d+)+)/', $budgetText, $m)) {
+                $candidates[] = $m[1];
+            }
+        }
+        if ($classValue !== null && $classValue !== '') {
+            if (preg_match('/^(\d+(?:\.\d+)+)\s+(.+)$/', $classValue, $m)) {
+                $candidates[] = trim($m[1]);
+                $candidates[] = trim($m[2]);
+            } elseif (preg_match('/^(\d+(?:\.\d+)+)$/', $classValue, $m)) {
+                $candidates[] = trim($m[1]);
+            }
+        }
+
+        $candidates = array_values(array_unique(array_filter($candidates, fn ($v) => $v !== '')));
+        if ($candidates === []) {
+            return null;
+        }
+
+        $baseQuery = fn () => DB::table('budget_lines')
+            ->whereNull('deleted_at')
+            ->when($projectId, fn ($q) => $q->where('project_id', $projectId))
+            ->when(! $projectId && $grantId, fn ($q) => $q->where('grant_agreement_id', $grantId))
+            ->when(! $projectId && ! $grantId && $relationNo, fn ($q) => $q->where('relation_no', $relationNo))
+            ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId));
+
+        foreach ($candidates as $candidate) {
+            $lower = strtolower($candidate);
+            $match = $baseQuery()->whereRaw('LOWER(TRIM(line_code)) = ?', [$lower])->value('id')
+                ?: $baseQuery()->whereRaw('LOWER(TRIM(description)) = ?', [$lower])->value('id');
+            if ($match !== null) {
+                return (int) $match;
+            }
+        }
+
+        // Fallback without fiscal_year filter in case budget line is in an adjacent fiscal year
+        if ($fiscalYearId) {
+            $unscopedQuery = fn () => DB::table('budget_lines')
+                ->whereNull('deleted_at')
+                ->when($projectId, fn ($q) => $q->where('project_id', $projectId))
+                ->when(! $projectId && $grantId, fn ($q) => $q->where('grant_agreement_id', $grantId))
+                ->when(! $projectId && ! $grantId && $relationNo, fn ($q) => $q->where('relation_no', $relationNo));
+            foreach ($candidates as $candidate) {
+                $lower = strtolower($candidate);
+                $match = $unscopedQuery()->whereRaw('LOWER(TRIM(line_code)) = ?', [$lower])->value('id');
+                if ($match !== null) {
+                    return (int) $match;
+                }
+            }
+        }
+
         return null;
     }
 
@@ -635,6 +760,7 @@ class JournalController extends Controller
             'lines.*.partner_id' => ['nullable', 'integer', 'exists:beneficiary_partners,id'],
             'lines.*.budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
             'lines.*.department_id' => ['nullable', 'integer', 'exists:departments,id'],
+            'lines.*.class' => ['nullable', 'string', 'max:120'],
             'lines.*.line_description' => ['required', 'string', 'max:255'],
             'lines.*.class' => ['nullable', 'string', 'max:120'],
             'lines.*.name' => ['nullable', 'string', 'max:150'],
