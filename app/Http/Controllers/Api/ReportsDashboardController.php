@@ -688,7 +688,7 @@ class ReportsDashboardController extends Controller
             $budgetRows = $budgetRows->filter(fn (array $row) => $projectIds->contains((int) ($row['project']['id'] ?? 0)));
         }
         $postedProjectId = $projectIds->count() === 1 ? (string) $projectIds->first() : null;
-        $postedLines = $this->postedLines($period['start'], $period['end'], $postedProjectId, null, $period['fiscal_year_id']);
+        $postedLines = $this->postedLines($period['start'], $period['end'], $postedProjectId, null, $period['fiscal_year_id'], $relationNo ?: null);
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
         $totals = $this->budgetTotals($budgetRows);
 
@@ -810,16 +810,22 @@ class ReportsDashboardController extends Controller
      */
     public function grantReporting(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
+        $request->validate([
+            'relation_no' => ['nullable', 'string', 'max:100'],
+            'project_id' => ['nullable', 'integer'],
+            'grant_agreement_id' => ['nullable', 'integer'],
+        ]);
         $period = $this->donorPeriod($request);
-        $filters = $request->only(['fiscal_year_id', 'start_date', 'end_date', 'donor_id', 'grant_agreement_id', 'program_id', 'project_id', 'currency_id']);
+        $filters = $request->only(['fiscal_year_id', 'start_date', 'end_date', 'donor_id', 'grant_agreement_id', 'program_id', 'project_id', 'currency_id', 'relation_no']);
         $budgetRows = $budgetService->summary(array_filter($filters));
-        $postedLines = $this->postedLines($period['start'], $period['end'], $request->input('project_id'), null, $period['fiscal_year_id']);
+        $postedLines = $this->postedLines($period['start'], $period['end'], $request->input('project_id'), null, $period['fiscal_year_id'], $request->input('relation_no'), $request->input('grant_agreement_id'));
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
         $totals = $this->budgetTotals($budgetRows);
 
         $deadlines = GrantReportingDeadline::query()
-            ->with('grantAgreement:id,grant_no,agreement_name')
+            ->with('grantAgreement:id,grant_no,relation_no,agreement_name')
             ->when($request->filled('grant_agreement_id'), fn (Builder $q) => $q->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+            ->when($request->filled('relation_no'), fn (Builder $q) => $q->whereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $request->string('relation_no')->trim()->toString())))
             ->orderBy('due_date')
             ->get()
             ->map(fn (GrantReportingDeadline $deadline) => [
@@ -831,10 +837,12 @@ class ReportsDashboardController extends Controller
                 'period' => $deadline->notes,
                 'notes' => $deadline->notes,
                 'grant' => $deadline->grantAgreement?->grant_no ?: $deadline->grantAgreement?->agreement_name,
+                'relation_no' => $deadline->grantAgreement?->relation_no ?: $request->input('relation_no'),
             ])->values()->all();
 
         $bva = collect($budgetRows)->map(fn (array $row) => [
             'budget_line_id' => $row['budget_line_id'] ?? null,
+            'relation_no' => $row['relation_no'] ?? $request->input('relation_no'),
             'project' => $row['project']['name'] ?? 'Unassigned Project',
             'grant' => $row['grant_agreement']['code'] ?? ($row['grant_agreement']['name'] ?? 'Unassigned Grant'),
             'budget' => round((float) ($row['approved_budget'] ?? 0), 2),
@@ -858,6 +866,7 @@ class ReportsDashboardController extends Controller
                 'account' => $line->account?->name,
                 'account_code' => $line->account?->code,
                 'status' => $line->journal?->status,
+                'relation_no' => $line->relation_no ?: $line->project?->relation_no ?: $line->project?->grantAgreement?->relation_no,
             ])->sortByDesc('date')->values()->take(100)->all();
 
         $deadlineOverdue = collect($deadlines)
@@ -870,6 +879,13 @@ class ReportsDashboardController extends Controller
         $linkedBanking = \App\Models\Master\GrantAgreement::query()
             ->with(['bankAccount:id,bank_name,account_number,account_name,currency_id', 'currency:id,code', 'projects:id,grant_agreement_id,code,name,bank_account_id', 'projects.bankAccount:id,bank_name,account_number,account_name,currency_id'])
             ->when($request->filled('grant_agreement_id'), fn (Builder $q) => $q->whereKey($request->integer('grant_agreement_id')))
+            ->when($request->filled('relation_no'), function (Builder $q) use ($request) {
+                $relationNo = $request->string('relation_no')->trim()->toString();
+                $q->where(function (Builder $scope) use ($relationNo) {
+                    $scope->where('relation_no', $relationNo)
+                        ->orWhereHas('projects', fn (Builder $project) => $project->where('relation_no', $relationNo));
+                });
+            })
             ->where(function (Builder $q) {
                 $q->whereNotNull('bank_account_id')->orWhereHas('projects', fn (Builder $project) => $project->whereNotNull('bank_account_id'));
             })
@@ -891,6 +907,13 @@ class ReportsDashboardController extends Controller
             }))->values()->all();
         return response()->json([
             'success' => true,
+            'relation_no' => $request->input('relation_no'),
+            'scope' => [
+                'relation_no' => $request->input('relation_no'),
+                'grant_agreement_id' => $request->input('grant_agreement_id'),
+                'project_id' => $request->input('project_id'),
+                'fiscal_year_id' => $period['fiscal_year_id'],
+            ],
             'period' => $period['label'],
             'donor_fiscal_calendar' => $period['donor_fiscal_calendar'],
             'summary' => [
@@ -1227,7 +1250,19 @@ class ReportsDashboardController extends Controller
 
         $months = max(3, min(12, (int) $request->input('months', 6)));
         $from = CarbonImmutable::now()->startOfMonth()->subMonths($months - 1);
-        $rows = JournalLine::query()->whereHas('journal', fn (Builder $q) => $q->where('status', 'posted')->whereDate('journal_date', '>=', $from)->when($request->filled('fiscal_year_id'), fn (Builder $yearQuery) => $yearQuery->where('fiscal_year_id', $request->integer('fiscal_year_id'))))->with('journal:id,journal_date')->get();
+        $rows = JournalLine::query()->whereHas('journal', fn (Builder $q) => $q->where('status', 'posted')->whereDate('journal_date', '>=', $from)->when($request->filled('fiscal_year_id'), fn (Builder $yearQuery) => $yearQuery->where('fiscal_year_id', $request->integer('fiscal_year_id'))))
+            ->when($request->filled('relation_no'), function (Builder $query) use ($request) {
+                $relationNo = $request->string('relation_no')->trim()->toString();
+                $query->where(function (Builder $scope) use ($relationNo) {
+                    $scope->where('relation_no', $relationNo)
+                        ->orWhereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo))
+                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $relationNo))
+                        ->orWhereHas('budgetLine', fn (Builder $budgetLine) => $budgetLine->where('relation_no', $relationNo));
+                });
+            })
+            ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', $request->integer('project_id')))
+            ->when($request->filled('grant_agreement_id'), fn (Builder $query) => $query->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+            ->with('journal:id,journal_date')->get();
         $monthly = collect(range(0, $months - 1))->mapWithKeys(function ($index) use ($from, $rows) { $month = $from->addMonths($index); $key = $month->format('Y-m'); $value = $rows->filter(fn (JournalLine $line) => $line->journal?->journal_date?->format('Y-m') === $key)->sum(fn (JournalLine $line) => (float) $line->debit - (float) $line->credit); return [$key => round(max(0, $value), 2)]; });
         $average = round($monthly->avg(), 2);
         $quarters = collect($monthly)->groupBy(fn ($value, $key) => CarbonImmutable::parse($key.'-01')->format('Y').' Q'.CarbonImmutable::parse($key.'-01')->quarter)->map(fn ($values, $quarter) => [
@@ -1242,14 +1277,27 @@ class ReportsDashboardController extends Controller
             ? $manualAmount
             : ($manualPercentage !== null ? round($average * (1 + ($manualPercentage / 100)), 2) : $average);
 
-        $entryQuery = ForecastEntry::query()->with(['grantAgreement:id,grant_no,agreement_name', 'project:id,code,name', 'currency:id,code,name'])
+        $entryQuery = ForecastEntry::query()->with(['grantAgreement:id,grant_no,relation_no,agreement_name', 'project:id,code,relation_no,name', 'currency:id,code,name'])
             ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
             ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', $request->integer('project_id')))
             ->when($request->filled('grant_agreement_id'), fn (Builder $query) => $query->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+            ->when($request->filled('relation_no'), function (Builder $query) use ($request) {
+                $relationNo = $request->string('relation_no')->trim()->toString();
+                $query->where(function (Builder $scope) use ($relationNo) {
+                    $scope->whereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $relationNo))
+                        ->orWhereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo));
+                });
+            })
             ->latest('period_date');
         $entries = $entryQuery->limit(500)->get();
 
-        return response()->json(['success' => true, 'data' => [
+        return response()->json(['success' => true, 'relation_no' => $request->input('relation_no'), 'scope' => [
+            'relation_no' => $request->input('relation_no'),
+            'grant_agreement_id' => $request->input('grant_agreement_id'),
+            'project_id' => $request->input('project_id'),
+            'fiscal_year_id' => $request->input('fiscal_year_id'),
+        ], 'data' => [
+            'relation_no' => $request->input('relation_no'),
             'months' => $monthly,
             'quarters' => $quarters,
             'average_monthly_expense' => $average,
@@ -1268,9 +1316,18 @@ class ReportsDashboardController extends Controller
     public function forecastEntries(Request $request): JsonResponse
     {
         $entries = ForecastEntry::query()
-            ->with(['grantAgreement:id,grant_no,agreement_name', 'project:id,code,name', 'currency:id,code,name'])
+            ->with(['grantAgreement:id,grant_no,relation_no,agreement_name', 'project:id,code,relation_no,name', 'currency:id,code,name'])
             ->when($request->filled('fiscal_year_id'), fn (Builder $query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
             ->when($request->filled('entry_type'), fn (Builder $query) => $query->where('entry_type', $request->string('entry_type')))
+            ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', $request->integer('project_id')))
+            ->when($request->filled('grant_agreement_id'), fn (Builder $query) => $query->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+            ->when($request->filled('relation_no'), function (Builder $query) use ($request) {
+                $relationNo = $request->string('relation_no')->trim()->toString();
+                $query->where(function (Builder $scope) use ($relationNo) {
+                    $scope->whereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $relationNo))
+                        ->orWhereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo));
+                });
+            })
             ->latest('period_date')->limit(500)->get();
 
         return response()->json(['success' => true, 'data' => $entries]);
@@ -1290,9 +1347,32 @@ class ReportsDashboardController extends Controller
             'exchange_rate' => 'required|numeric|min:0.000001',
             'status' => 'nullable|in:draft,submitted,approved,received,cancelled',
             'notes' => 'nullable|string|max:2000',
+            'relation_no' => 'nullable|string|max:100',
         ]);
+        $project = ! empty($data['project_id'])
+            ? \App\Models\Master\Project::query()->with('grantAgreement')->findOrFail($data['project_id'])
+            : null;
+        $grant = $project?->grantAgreement
+            ?: (! empty($data['grant_agreement_id']) ? \App\Models\Master\GrantAgreement::query()->findOrFail($data['grant_agreement_id']) : null);
+        if ($project && ! $grant) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['project_id' => 'Project harus terhubung ke Grant Agreement.']);
+        }
+        if ($project && ! empty($data['grant_agreement_id']) && (int) $data['grant_agreement_id'] !== (int) $project->grant_agreement_id) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['grant_agreement_id' => 'Grant Agreement tidak sesuai dengan Project.']);
+        }
+        $expectedRelationNo = $project?->relation_no ?: $grant?->relation_no;
+        if ($project && $grant && $project->relation_no && $grant->relation_no && strcasecmp($project->relation_no, $grant->relation_no) !== 0) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['project_id' => 'Nomor relasi Project tidak sama dengan Grant Agreement.']);
+        }
+        if (! empty($data['relation_no']) && $expectedRelationNo && strcasecmp(trim($data['relation_no']), $expectedRelationNo) !== 0) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['relation_no' => 'Nomor relasi tidak sesuai dengan Project atau Grant Agreement.']);
+        }
+        if ($project) {
+            $data['grant_agreement_id'] = $project->grant_agreement_id;
+        }
+        unset($data['relation_no']);
         $data['created_by'] = $request->user()?->id;
-        $entry = ForecastEntry::create($data)->load(['grantAgreement:id,grant_no,agreement_name', 'project:id,code,name', 'currency:id,code,name']);
+        $entry = ForecastEntry::create($data)->load(['grantAgreement:id,grant_no,relation_no,agreement_name', 'project:id,code,relation_no,name', 'currency:id,code,name']);
 
         return response()->json(['success' => true, 'message' => 'Forecast entry saved.', 'data' => $entry], 201);
     }
@@ -1387,10 +1467,10 @@ class ReportsDashboardController extends Controller
         return "{$start} s.d. {$end}";
     }
 
-    private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null, ?string $budgetLineId = null, ?int $fiscalYearId = null)
+    private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null, ?string $budgetLineId = null, ?int $fiscalYearId = null, ?string $relationNo = null, ?string $grantAgreementId = null)
     {
         return JournalLine::query()
-            ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'project:id,code,name,grant_agreement_id', 'project.grantAgreement:id,grant_no,agreement_name'])
+            ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'project:id,code,relation_no,name,grant_agreement_id', 'project.grantAgreement:id,grant_no,relation_no,agreement_name'])
             ->whereHas('journal', function (Builder $query) use ($start, $end) {
                 $query->where('status', 'posted')
                     ->when($start, fn (Builder $inner) => $inner->whereDate('journal_date', '>=', $start))
@@ -1399,6 +1479,21 @@ class ReportsDashboardController extends Controller
             ->when($fiscalYearId, fn (Builder $query) => $query->whereHas('journal', fn (Builder $journal) => $journal->where('fiscal_year_id', $fiscalYearId)))
             ->when($projectId, fn (Builder $query) => $query->where('project_id', $projectId))
             ->when($budgetLineId, fn (Builder $query) => $query->where('budget_line_id', $budgetLineId))
+            ->when($grantAgreementId, function (Builder $query) use ($grantAgreementId) {
+                $query->where(function (Builder $scope) use ($grantAgreementId) {
+                    $scope->where('grant_agreement_id', $grantAgreementId)
+                        ->orWhereHas('project', fn (Builder $project) => $project->where('grant_agreement_id', $grantAgreementId))
+                        ->orWhereHas('budgetLine', fn (Builder $budgetLine) => $budgetLine->where('grant_agreement_id', $grantAgreementId));
+                });
+            })
+            ->when($relationNo, function (Builder $query) use ($relationNo) {
+                $query->where(function (Builder $scope) use ($relationNo) {
+                    $scope->where('relation_no', $relationNo)
+                        ->orWhereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo))
+                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $relationNo))
+                        ->orWhereHas('budgetLine', fn (Builder $budgetLine) => $budgetLine->where('relation_no', $relationNo));
+                });
+            })
             ->get();
     }
 

@@ -14,9 +14,9 @@ class BudgetMonitoringService
     {
         $budgetLines = BudgetLine::query()
             ->with([
-                'grantAgreement:id,grant_no,agreement_name,donor_id',
+                'grantAgreement:id,grant_no,relation_no,agreement_name,donor_id',
                 'grantAgreement.donor:id,code,name',
-                'project:id,code,name,program_id',
+                'project:id,code,relation_no,name,program_id,manager_name',
                 'project.program:id,code,name',
                 'fiscalYear:id,year,name',
                 'budgetCategory:id,code,name',
@@ -32,6 +32,13 @@ class BudgetMonitoringService
                 });
             })
             ->when($filters['grant_agreement_id'] ?? null, fn (Builder $query, $grantId) => $query->where('grant_agreement_id', $grantId))
+            ->when($filters['relation_no'] ?? null, function (Builder $query, string $relationNo) {
+                $query->where(function (Builder $scope) use ($relationNo) {
+                    $scope->where('relation_no', $relationNo)
+                        ->orWhereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo))
+                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $relationNo));
+                });
+            })
             ->when($filters['budget_category_id'] ?? null, fn (Builder $query, $categoryId) => $query->where('budget_category_id', $categoryId))
             ->when($filters['budget_line_ids'] ?? null, fn (Builder $query, array $ids) => $query->whereIn('id', $ids))
             ->when($filters['search'] ?? null, function (Builder $query, string $search) {
@@ -74,6 +81,7 @@ class BudgetMonitoringService
 
             return [
                 'budget_line_id' => $line->id,
+                'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: $line->grantAgreement?->relation_no),
                 'line_code' => $line->line_code,
                 'description' => $line->description,
                 'activity' => $line->activity ? ['id' => $line->activity->id, 'code' => $line->activity->code, 'name' => $line->activity->name, 'target_output' => $line->activity->target_output] : null,
@@ -103,6 +111,7 @@ class BudgetMonitoringService
                     'id' => $line->grantAgreement->id,
                     'code' => $line->grantAgreement->grant_no,
                     'name' => $line->grantAgreement->agreement_name,
+                    'relation_no' => $line->grantAgreement->relation_no,
                 ] : null,
                 'program' => $line->project?->program ? [
                     'id' => $line->project->program->id,
@@ -113,6 +122,7 @@ class BudgetMonitoringService
                     'id' => $line->project->id,
                     'code' => $line->project->code,
                     'name' => $line->project->name,
+                    'relation_no' => $line->project->relation_no,
                     'budget_holder' => $line->project->manager_name,
                 ] : null,
                 'budget_category' => $line->budgetCategory ? [

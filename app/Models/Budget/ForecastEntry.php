@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class ForecastEntry extends Model
 {
     use SoftDeletes;
+
+    protected $appends = ['relation_no'];
     protected $fillable = [
         'fiscal_year_id', 'grant_agreement_id', 'project_id', 'entry_type',
         'period_date', 'reference', 'amount', 'currency_id', 'exchange_rate',
@@ -28,4 +30,9 @@ class ForecastEntry extends Model
     public function grantAgreement() { return $this->belongsTo(GrantAgreement::class); }
     public function project() { return $this->belongsTo(Project::class); }
     public function currency() { return $this->belongsTo(Currency::class); }
+
+    public function getRelationNoAttribute(): ?string
+    {
+        return $this->project?->relation_no ?: $this->grantAgreement?->relation_no;
+    }
 }

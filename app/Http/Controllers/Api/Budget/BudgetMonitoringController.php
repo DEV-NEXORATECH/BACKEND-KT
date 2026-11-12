@@ -21,16 +21,30 @@ class BudgetMonitoringController extends Controller
             'budget_line_id',
             'project_id',
             'grant_agreement_id',
+            'relation_no',
             'budget_category_id',
             'search',
         ]);
         $filters['fiscal_year_id'] = $request->query('fiscal_year_id');
+
+        $request->validate([
+            'relation_no' => ['nullable', 'string', 'max:100'],
+            'project_id' => ['nullable', 'integer'],
+            'grant_agreement_id' => ['nullable', 'integer'],
+        ]);
 
         $query = BudgetLine::query()
             ->where('line_code', 'not like', 'AI%')
             ->when($filters['budget_line_id'] ?? null, fn (Builder $q, $id) => $q->whereKey($id))
             ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where('project_id', $id))
             ->when($filters['grant_agreement_id'] ?? null, fn (Builder $q, $id) => $q->where('grant_agreement_id', $id))
+            ->when($filters['relation_no'] ?? null, function (Builder $q, string $relationNo) {
+                $q->where(function (Builder $scope) use ($relationNo) {
+                    $scope->where('relation_no', $relationNo)
+                        ->orWhereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo))
+                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $relationNo));
+                });
+            })
             ->when($filters['budget_category_id'] ?? null, fn (Builder $q, $id) => $q->where('budget_category_id', $id));
 
         if ($request->user()) {
@@ -66,6 +80,7 @@ class BudgetMonitoringController extends Controller
                 $first = $group->first();
 
                 return [
+                    'relation_no' => $first['relation_no'] ?? null,
                     'activity_name' => $name,
                     'activity_code' => $first['activity_code'] ?? null,
                     'sub_output_name' => $first['sub_output_name'] ?? null,
@@ -111,6 +126,7 @@ class BudgetMonitoringController extends Controller
         $activities = Activity::query()
             ->with('project:id,code,name')
             ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where('project_id', $id))
+            ->when($filters['relation_no'] ?? null, fn (Builder $q, $relationNo) => $q->whereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo)))
             ->when($filters['fiscal_year_id'] ?? null, fn (Builder $q, $id) => $q->whereHas('project.fiscalYears', fn (Builder $fiscalQuery) => $fiscalQuery->whereKey($id)))
             ->where('is_active', true)
             ->orderBy('start_date')
@@ -131,6 +147,12 @@ class BudgetMonitoringController extends Controller
         $logframes = ProjectLogframe::query()
             ->with('project:id,code,name')
             ->when($filters['project_id'] ?? null, fn (Builder $q, $id) => $q->where('project_id', $id))
+            ->when($filters['relation_no'] ?? null, function (Builder $q, string $relationNo) {
+                $q->where(function (Builder $scope) use ($relationNo) {
+                    $scope->where('relation_no', $relationNo)
+                        ->orWhereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo));
+                });
+            })
             ->when($filters['fiscal_year_id'] ?? null, fn (Builder $q, $id) => $q->whereHas('project.fiscalYears', fn (Builder $fiscalQuery) => $fiscalQuery->whereKey($id)))
             ->where('is_active', true)
             ->latest('id')
@@ -150,7 +172,7 @@ class BudgetMonitoringController extends Controller
             ])->values();
 
         $upcomingEvents = collect($activities)->filter(fn (array $activity) => $activity['start_date'] && $activity['start_date'] >= now()->toDateString())->take(20)->values()
-            ->merge(GrantReportingDeadline::query()->with('grantAgreement:id,grant_no,agreement_name')->when($filters['fiscal_year_id'] ?? null, fn (Builder $q, $id) => $q->whereHas('grantAgreement', fn (Builder $grantQuery) => $grantQuery->where('fiscal_year_id', $id)))->whereDate('due_date', '>=', now()->toDateString())->orderBy('due_date')->limit(20)->get()->map(fn ($deadline) => [
+            ->merge(GrantReportingDeadline::query()->with('grantAgreement:id,grant_no,agreement_name,relation_no')->when($filters['fiscal_year_id'] ?? null, fn (Builder $q, $id) => $q->whereHas('grantAgreement', fn (Builder $grantQuery) => $grantQuery->where('fiscal_year_id', $id)))->when($filters['grant_agreement_id'] ?? null, fn (Builder $q, $id) => $q->where('grant_agreement_id', $id))->when($filters['relation_no'] ?? null, fn (Builder $q, $relationNo) => $q->whereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $relationNo)))->whereDate('due_date', '>=', now()->toDateString())->orderBy('due_date')->limit(20)->get()->map(fn ($deadline) => [
                 'type' => 'grant_reporting', 'code' => $deadline->report_type, 'name' => $deadline->grantAgreement?->grant_no ?: $deadline->grantAgreement?->agreement_name, 'start_date' => $deadline->due_date?->toDateString(), 'status' => $deadline->status,
             ]))->values();
 
@@ -175,6 +197,13 @@ class BudgetMonitoringController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Budget monitoring berhasil dimuat.',
+            'scope' => [
+                'relation_no' => $filters['relation_no'] ?? null,
+                'grant_agreement_id' => $filters['grant_agreement_id'] ?? null,
+                'project_id' => $filters['project_id'] ?? null,
+                'budget_line_id' => $filters['budget_line_id'] ?? null,
+                'fiscal_year_id' => $filters['fiscal_year_id'] ?? null,
+            ],
             'data' => $items->values(),
             'by_line' => $items->values(),
             'by_activity' => $byActivity,

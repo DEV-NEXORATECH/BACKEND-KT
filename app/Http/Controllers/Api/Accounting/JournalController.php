@@ -57,26 +57,46 @@ class JournalController extends Controller
         'currency:id,code,name',
         'lines.account:id,code,name',
         'lines.donor:id,code,name',
-        'lines.grantAgreement:id,donor_id,grant_no,agreement_name',
+        'lines.grantAgreement:id,donor_id,grant_no,relation_no,agreement_name',
         'lines.partner:id,code,name',
         'lines.program:id,code,name',
-        'lines.project:id,code,name,grant_agreement_id',
-        'lines.project.grantAgreement:id,donor_id,grant_no,agreement_name',
+        'lines.project:id,code,relation_no,name,grant_agreement_id,program_id',
+        'lines.project.grantAgreement:id,donor_id,grant_no,relation_no,agreement_name',
         'lines.project.grantAgreement.donor:id,code,name',
-        'lines.budgetLine:id,line_code,description',
+        'lines.budgetLine:id,project_id,grant_agreement_id,relation_no,line_code,description',
         'lines.department:id,code,name',
     ];
 
     public function index(Request $request): JsonResponse
     {
+        $request->validate([
+            'relation_no' => ['nullable', 'string', 'max:100'],
+            'grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
+            'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
+        ]);
         $perPage = (int) $request->query('per_page', 10);
         $perPage = $perPage < 1 || $perPage > 100 ? 10 : $perPage;
 
         $query = Journal::query()
             ->with(['currency:id,code,name', 'lines'])
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->query('status')))
+            ->when($request->filled('fiscal_year_id'), fn ($query) => $query->where('fiscal_year_id', $request->integer('fiscal_year_id')))
             ->when($request->filled('project_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('project_id', $request->integer('project_id'))))
-            ->when($request->filled('relation_no'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('relation_no', $request->query('relation_no'))))
+            ->when($request->filled('grant_agreement_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('grant_agreement_id', $request->integer('grant_agreement_id'))))
+            ->when($request->filled('budget_line_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('budget_line_id', $request->integer('budget_line_id'))))
+            ->when($request->filled('relation_no'), function ($query) use ($request) {
+                $relationNo = trim((string) $request->query('relation_no'));
+                $query->whereHas('lines', function ($line) use ($relationNo) {
+                    $line->where(function ($scope) use ($relationNo) {
+                        $scope->where('relation_no', $relationNo)
+                            ->orWhereHas('project', fn ($project) => $project->where('relation_no', $relationNo))
+                            ->orWhereHas('grantAgreement', fn ($grant) => $grant->where('relation_no', $relationNo))
+                            ->orWhereHas('budgetLine', fn ($budgetLine) => $budgetLine->where('relation_no', $relationNo));
+                    });
+                });
+            })
             ->when($request->filled('donor_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('donor_id', $request->integer('donor_id'))))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->query('search');
@@ -485,6 +505,7 @@ class JournalController extends Controller
             // sent by clients are never trusted as the source of truth.
             'lines.*.donor_id' => ['nullable', 'integer', 'exists:donors,id'],
             'lines.*.grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
+            'lines.*.relation_no' => ['nullable', 'string', 'max:100'],
             'lines.*.program_id' => ['nullable', 'integer', 'exists:programs,id'],
             // Every journal line is booked to a project so donor reporting can
             // aggregate all projects under one donor without losing the detail.
@@ -518,8 +539,21 @@ class JournalController extends Controller
                 ]);
             }
 
-            $projectRelationNo = $project->relation_no ?: $project->grantAgreement?->relation_no;
-            $budgetRelationNo = $budgetLine->relation_no;
+            $grant = $project->grantAgreement;
+            if (! $grant) {
+                throw ValidationException::withMessages([
+                    "lines.{$index}.project_id" => 'Project harus berasal dari Grant Agreement yang aktif pada Donor & Grant Terintegrasi.',
+                ]);
+            }
+
+            $projectRelationNo = $project->relation_no ?: $grant->relation_no;
+            $budgetRelationNo = $budgetLine->relation_no ?: $projectRelationNo;
+
+            if (! $grant->relation_no || ! $projectRelationNo || strcasecmp($projectRelationNo, $grant->relation_no) !== 0) {
+                throw ValidationException::withMessages([
+                    "lines.{$index}.project_id" => 'Nomor relasi Project tidak sama dengan Grant Agreement.',
+                ]);
+            }
 
             if (! $projectRelationNo || ! $budgetRelationNo || $budgetRelationNo !== $projectRelationNo) {
                 throw ValidationException::withMessages([
@@ -527,16 +561,31 @@ class JournalController extends Controller
                 ]);
             }
 
-            if ($budgetLine->grant_agreement_id
-                && (int) $budgetLine->grant_agreement_id !== (int) $project->grant_agreement_id) {
+            if ((int) $budgetLine->grant_agreement_id !== (int) $project->grant_agreement_id) {
                 throw ValidationException::withMessages([
                     "lines.{$index}.budget_line_id" => 'Grant Agreement Budget Code tidak sesuai dengan project.',
                 ]);
             }
 
+            foreach ([
+                'grant_agreement_id' => $project->grant_agreement_id,
+                'donor_id' => $grant->donor_id,
+            ] as $field => $expectedId) {
+                if (! empty($line[$field]) && (int) $line[$field] !== (int) $expectedId) {
+                    throw ValidationException::withMessages([
+                        "lines.{$index}.{$field}" => "{$field} tidak sesuai dengan relasi Project dan Grant Agreement.",
+                    ]);
+                }
+            }
+            if (! empty($line['relation_no']) && strcasecmp(trim((string) $line['relation_no']), $projectRelationNo) !== 0) {
+                throw ValidationException::withMessages([
+                    "lines.{$index}.relation_no" => 'Nomor relasi tidak sesuai dengan Project, Grant Agreement, dan Budget Line.',
+                ]);
+            }
+
             $payload['lines'][$index]['program_id'] = $project->program_id;
             $payload['lines'][$index]['grant_agreement_id'] = $project->grant_agreement_id;
-            $payload['lines'][$index]['donor_id'] = $project->grantAgreement?->donor_id;
+            $payload['lines'][$index]['donor_id'] = $grant->donor_id;
             $payload['lines'][$index]['relation_no'] = $projectRelationNo;
             $debit = round((float) ($line['debit'] ?? 0), 2);
             $credit = round((float) ($line['credit'] ?? 0), 2);
@@ -581,6 +630,18 @@ class JournalController extends Controller
     private function syncLines(Journal $journal, array $lines): void
     {
         foreach ($lines as $line) {
+            if (! empty($line['project_id']) && ! empty($line['budget_line_id'])) {
+                $project = Project::query()->with('grantAgreement')->find($line['project_id']);
+                $budgetLine = BudgetLine::query()->find($line['budget_line_id']);
+                if ($project && $budgetLine && (int) $budgetLine->project_id === (int) $project->id) {
+                    $line['grant_agreement_id'] = $project->grant_agreement_id;
+                    $line['donor_id'] = $project->grantAgreement?->donor_id;
+                    $line['program_id'] = $project->program_id;
+                    $line['relation_no'] = $budgetLine->relation_no
+                        ?: $project->relation_no
+                        ?: $project->grantAgreement?->relation_no;
+                }
+            }
             $journal->lines()->create($line);
         }
     }
@@ -661,7 +722,7 @@ class JournalController extends Controller
                 'program_id' => $line->program_id,
                 'program_code' => $line->program?->code,
                 'program_name' => $line->program?->name,
-                'grant_agreement_id' => $line->grant_agreement_id ?: $line->project?->grant_agreement_id,
+                'grant_agreement_id' => $line->grant_agreement_id ?: $line->project?->grant_agreement_id ?: $line->budgetLine?->grant_agreement_id,
                 'partner_id' => $line->partner_id,
                 'partner_name' => $line->partner?->name,
                 'project_id' => $line->project_id,
@@ -674,7 +735,7 @@ class JournalController extends Controller
                 'grant_donor_name' => $line->project?->grantAgreement?->donor?->name,
                 'budget_line_id' => $line->budget_line_id,
                 'budget_code' => $line->budgetLine?->line_code,
-                'relation_no' => $line->relation_no,
+                'relation_no' => $line->relation_no ?: $line->project?->relation_no ?: $line->grantAgreement?->relation_no ?: $line->budgetLine?->relation_no,
                 'department_id' => $line->department_id,
                 'line_description' => $line->line_description,
                 'class' => $line->class,

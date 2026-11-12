@@ -33,7 +33,7 @@ class GrantReportingDeadlineController extends Controller
             ->update(['status' => 'overdue']);
 
         $query = GrantReportingDeadline::with([
-            'grantAgreement:id,grant_no,agreement_no,agreement_name,donor_id,currency_id,start_date,end_date,reporting_period,status',
+            'grantAgreement:id,grant_no,relation_no,agreement_no,agreement_name,donor_id,currency_id,start_date,end_date,reporting_period,status',
             'grantAgreement.donor:id,code,name,type',
             'grantAgreement.currency:id,code,name',
             'grantAgreement.projects:id,grant_agreement_id,code,name',
@@ -41,6 +41,13 @@ class GrantReportingDeadlineController extends Controller
 
         if ($request->filled('grant_agreement_id')) {
             $query->where('grant_agreement_id', $request->input('grant_agreement_id'));
+        }
+        if ($request->filled('relation_no')) {
+            $relationNo = trim((string) $request->input('relation_no'));
+            $query->whereHas('grantAgreement', function ($grantQuery) use ($relationNo) {
+                $grantQuery->where('relation_no', $relationNo)
+                    ->orWhereHas('projects', fn ($projectQuery) => $projectQuery->where('relation_no', $relationNo));
+            });
         }
 
         if ($request->filled('status') && $request->input('status') !== 'ALL') {
@@ -117,6 +124,13 @@ class GrantReportingDeadlineController extends Controller
         if ($request->filled('grant_agreement_id')) {
             $query->where('grant_agreement_id', $request->input('grant_agreement_id'));
         }
+        if ($request->filled('relation_no')) {
+            $relationNo = trim((string) $request->input('relation_no'));
+            $query->whereHas('grantAgreement', function ($grantQuery) use ($relationNo) {
+                $grantQuery->where('relation_no', $relationNo)
+                    ->orWhereHas('projects', fn ($projectQuery) => $projectQuery->where('relation_no', $relationNo));
+            });
+        }
         if ($request->filled('year')) {
             $query->whereYear('due_date', $request->input('year'));
         }
@@ -165,10 +179,18 @@ class GrantReportingDeadlineController extends Controller
         $year = (int) $request->input('year', date('Y'));
 
         $deadlines = GrantReportingDeadline::with([
-            'grantAgreement:id,grant_no,agreement_name,donor_id,currency_id',
+            'grantAgreement:id,grant_no,relation_no,agreement_name,donor_id,currency_id',
             'grantAgreement.donor:id,code,name',
         ])
         ->whereYear('due_date', $year)
+        ->when($request->filled('grant_agreement_id'), fn ($query) => $query->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+        ->when($request->filled('relation_no'), function ($query) use ($request) {
+            $relationNo = trim((string) $request->input('relation_no'));
+            $query->whereHas('grantAgreement', function ($grantQuery) use ($relationNo) {
+                $grantQuery->where('relation_no', $relationNo)
+                    ->orWhereHas('projects', fn ($projectQuery) => $projectQuery->where('relation_no', $relationNo));
+            });
+        })
         ->when($request->filled('project_id'), fn ($query) => $query->whereHas('grantAgreement.projects', fn ($projectQuery) => $projectQuery->where('projects.id', $request->integer('project_id'))))
         ->orderBy('due_date', 'asc')
         ->get();
