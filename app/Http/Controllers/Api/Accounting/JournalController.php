@@ -389,11 +389,25 @@ class JournalController extends Controller
             return null;
         }
 
-        $baseQuery = fn () => DB::table('budget_lines')
-            ->whereNull('deleted_at')
-            ->when($projectId, fn ($q) => $q->where('project_id', $projectId))
-            ->when(! $projectId && $grantId, fn ($q) => $q->where('grant_agreement_id', $grantId))
-            ->when(! $projectId && ! $grantId && $relationNo, fn ($q) => $q->where('relation_no', $relationNo))
+        $scopeFilter = function ($query) use ($projectId, $grantId, $relationNo) {
+            if (! $projectId && ! $grantId && ! $relationNo) {
+                return $query;
+            }
+
+            return $query->where(function ($scope) use ($projectId, $grantId, $relationNo) {
+                if ($projectId) {
+                    $scope->orWhere('project_id', $projectId);
+                }
+                if ($grantId) {
+                    $scope->orWhere('grant_agreement_id', $grantId);
+                }
+                if ($relationNo) {
+                    $scope->orWhere('relation_no', $relationNo);
+                }
+            });
+        };
+
+        $baseQuery = fn () => $scopeFilter(DB::table('budget_lines')->whereNull('deleted_at'))
             ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId));
 
         foreach ($candidates as $candidate) {
@@ -407,14 +421,11 @@ class JournalController extends Controller
 
         // Fallback without fiscal_year filter in case budget line is in an adjacent fiscal year
         if ($fiscalYearId) {
-            $unscopedQuery = fn () => DB::table('budget_lines')
-                ->whereNull('deleted_at')
-                ->when($projectId, fn ($q) => $q->where('project_id', $projectId))
-                ->when(! $projectId && $grantId, fn ($q) => $q->where('grant_agreement_id', $grantId))
-                ->when(! $projectId && ! $grantId && $relationNo, fn ($q) => $q->where('relation_no', $relationNo));
+            $unscopedQuery = fn () => $scopeFilter(DB::table('budget_lines')->whereNull('deleted_at'));
             foreach ($candidates as $candidate) {
                 $lower = strtolower($candidate);
-                $match = $unscopedQuery()->whereRaw('LOWER(TRIM(line_code)) = ?', [$lower])->value('id');
+                $match = $unscopedQuery()->whereRaw('LOWER(TRIM(line_code)) = ?', [$lower])->value('id')
+                    ?: $unscopedQuery()->whereRaw('LOWER(TRIM(description)) = ?', [$lower])->value('id');
                 if ($match !== null) {
                     return (int) $match;
                 }
