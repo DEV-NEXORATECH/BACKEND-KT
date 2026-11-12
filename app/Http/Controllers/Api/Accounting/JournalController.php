@@ -288,7 +288,6 @@ class JournalController extends Controller
             $number = $data['journal_number'];
             try {
                 $existingQuery = Journal::withoutGlobalScope('fiscal_year_context')
-                    ->withTrashed()
                     ->where('journal_number', $number);
                 if (! empty($data['fiscal_year_id'])) {
                     $existingQuery->where('fiscal_year_id', $data['fiscal_year_id']);
@@ -297,6 +296,15 @@ class JournalController extends Controller
                     $alreadyExists[] = $number;
                     continue;
                 }
+                Journal::withoutGlobalScope('fiscal_year_context')
+                    ->onlyTrashed()
+                    ->where('journal_number', $number)
+                    ->when(! empty($data['fiscal_year_id']), fn ($q) => $q->where('fiscal_year_id', $data['fiscal_year_id']))
+                    ->get()
+                    ->each(function (Journal $trashed) {
+                        $trashed->lines()->delete();
+                        $trashed->forceDelete();
+                    });
                 $payload = new Request($data);
                 $isDraftImport = collect($data['lines'] ?? [])->contains(fn ($line) => empty($line['project_id']) || empty($line['budget_line_id']));
                 $validated = $isDraftImport
@@ -850,7 +858,6 @@ class JournalController extends Controller
         if (! $number) return;
 
         $query = Journal::withoutGlobalScope('fiscal_year_context')
-            ->withTrashed()
             ->where('journal_number', $number)
             ->where('fiscal_year_id', $fiscalYearId);
         if ($ignoreId) $query->whereKeyNot($ignoreId);
