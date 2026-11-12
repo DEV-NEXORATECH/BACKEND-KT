@@ -106,6 +106,25 @@ class JournalBudgetIntegrationTest extends TestCase
         $this->assertDatabaseCount('journals', 1);
     }
 
+    public function test_csv_import_allows_same_journal_number_in_different_fiscal_years(): void
+    {
+        $f = $this->fixture();
+        $csv = "journal_number,journal_date,fiscal_year_id,account_id,debit,credit\n"
+            ."CSV-SAME,2026-11-12,{$f['year']->id},{$f['expense']->id},100,0\n"
+            ."CSV-SAME,2026-11-12,{$f['year']->id},{$f['bank']->id},0,100\n"
+            ."CSV-SAME,2027-01-12,{$f['otherYear']->id},{$f['expense']->id},200,0\n"
+            ."CSV-SAME,2027-01-12,{$f['otherYear']->id},{$f['bank']->id},0,200\n";
+        $upload = fn () => \Illuminate\Http\UploadedFile::fake()->createWithContent('journal.csv', $csv);
+
+        $this->post('/api/v1/accounting/journals/import', ['file' => $upload()], ['Accept' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('created', 2)
+            ->assertJsonPath('already_exists', []);
+
+        $this->assertDatabaseHas('journals', ['journal_number' => 'CSV-SAME', 'fiscal_year_id' => $f['year']->id]);
+        $this->assertDatabaseHas('journals', ['journal_number' => 'CSV-SAME', 'fiscal_year_id' => $f['otherYear']->id]);
+    }
+
     public function test_backfill_dry_run_idempotency_and_conflict_reporting(): void
     {
         $f = $this->fixture();

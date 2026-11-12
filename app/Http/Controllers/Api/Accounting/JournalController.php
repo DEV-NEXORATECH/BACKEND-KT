@@ -181,11 +181,19 @@ class JournalController extends Controller
             if (! array_filter($row, fn ($v) => trim((string) $v) !== '')) continue;
             $number = trim((string) ($value($row, $index, ['journal_number', 'journal_no', 'number']) ?: ''));
             if ($number === '') $number = 'IMPORT-'.now()->format('YmdHis').'-'.($rowNumber + 2);
-            $grouped[$number]['journal_number'] = $number;
-            $grouped[$number]['journal_date'] ??= $value($row, $index, ['journal_date', 'date']) ?: now()->toDateString();
-            $grouped[$number]['reference'] ??= $value($row, $index, ['reference', 'ref']);
-            $grouped[$number]['description'] ??= $value($row, $index, ['description', 'journal_description']) ?: 'Imported journal';
-            $grouped[$number]['lines'][] = [
+            $journalDate = $value($row, $index, ['journal_date', 'date']) ?: now()->toDateString();
+            $fiscalYearId = self::nullableInteger($value($row, $index, ['fiscal_year_id']));
+            $fiscalYearId ??= DB::table('fiscal_years')
+                ->whereDate('start_date', '<=', $journalDate)
+                ->whereDate('end_date', '>=', $journalDate)
+                ->value('id');
+            $groupKey = json_encode([$number, $fiscalYearId ?: 'unknown']);
+            $grouped[$groupKey]['journal_number'] = $number;
+            $grouped[$groupKey]['journal_date'] ??= $journalDate;
+            $grouped[$groupKey]['fiscal_year_id'] ??= $fiscalYearId;
+            $grouped[$groupKey]['reference'] ??= $value($row, $index, ['reference', 'ref']);
+            $grouped[$groupKey]['description'] ??= $value($row, $index, ['description', 'journal_description']) ?: 'Imported journal';
+            $grouped[$groupKey]['lines'][] = [
                 'account_id' => self::resolveImportId($value($row, $index, ['account_id', 'coa_id', 'coa', 'gl_account_id']), 'chart_of_accounts', ['code', 'name']),
                 // Donor/program/project dimensions are resolved from the project
                 // during validation. Empty CSV cells must stay NULL, not become 0.
@@ -202,9 +210,16 @@ class JournalController extends Controller
             ];
         }
         $created = 0; $errors = []; $alreadyExists = [];
-        foreach ($grouped as $number => $data) {
+        foreach ($grouped as $data) {
+            $number = $data['journal_number'];
             try {
-                if (Journal::withoutGlobalScope('fiscal_year_context')->withTrashed()->where('journal_number', $number)->exists()) {
+                $existingQuery = Journal::withoutGlobalScope('fiscal_year_context')
+                    ->withTrashed()
+                    ->where('journal_number', $number);
+                if (! empty($data['fiscal_year_id'])) {
+                    $existingQuery->where('fiscal_year_id', $data['fiscal_year_id']);
+                }
+                if ($existingQuery->exists()) {
                     $alreadyExists[] = $number;
                     continue;
                 }
@@ -231,7 +246,7 @@ class JournalController extends Controller
     private function validateDraftImportPayload(Request $request): array
     {
         $payload = $request->validate([
-            'journal_number' => ['nullable', 'string', 'max:40', 'unique:journals,journal_number'],
+            'journal_number' => ['nullable', 'string', 'max:40'],
             'journal_date' => ['required', 'date'],
             'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
             'reference' => ['nullable', 'string', 'max:100'],
@@ -260,7 +275,9 @@ class JournalController extends Controller
             $payload['lines'][$index]['credit'] = $credit;
             $payload['lines'][$index]['line_order'] = $index + 1;
         }
-        return app(\App\Services\Accounting\JournalFiscalYearService::class)->payload($payload, $request, $journal ?? null);
+        $payload = app(\App\Services\Accounting\JournalFiscalYearService::class)->payload($payload, $request);
+        $this->assertUniqueJournalNumber($payload['journal_number'] ?? null, $payload['fiscal_year_id']);
+        return $payload;
     }
 
     private static function nullableInteger(mixed $value): ?int
@@ -494,7 +511,7 @@ class JournalController extends Controller
             $request->merge(['lines' => json_decode($request->input('lines'), true) ?: []]);
         }
         $payload = $request->validate([
-            'journal_number' => ['nullable', 'string', 'max:40', 'unique:journals,journal_number,'.($journal?->id ?? 'NULL').',id'],
+            'journal_number' => ['nullable', 'string', 'max:40'],
             'journal_date' => ['required', 'date'],
             'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
             'journal_type' => ['nullable', 'string'],
@@ -570,7 +587,26 @@ class JournalController extends Controller
             $payload['rate_source'] = $payload['rate_source'] ?? 'transaction_snapshot';
         }
 
-        return app(\App\Services\Accounting\JournalFiscalYearService::class)->payload($payload, $request, $journal ?? null);
+        $payload = app(\App\Services\Accounting\JournalFiscalYearService::class)->payload($payload, $request, $journal);
+        $this->assertUniqueJournalNumber($payload['journal_number'] ?? null, $payload['fiscal_year_id'], $journal?->id);
+        return $payload;
+    }
+
+    private function assertUniqueJournalNumber(?string $number, int $fiscalYearId, ?int $ignoreId = null): void
+    {
+        if (! $number) return;
+
+        $query = Journal::withoutGlobalScope('fiscal_year_context')
+            ->withTrashed()
+            ->where('journal_number', $number)
+            ->where('fiscal_year_id', $fiscalYearId);
+        if ($ignoreId) $query->whereKeyNot($ignoreId);
+
+        if ($query->exists()) {
+            throw ValidationException::withMessages([
+                'journal_number' => 'Journal number sudah digunakan pada Fiscal Year yang dipilih.',
+            ]);
+        }
     }
 
     private function storeAttachment(Request $request, Journal $journal): void
