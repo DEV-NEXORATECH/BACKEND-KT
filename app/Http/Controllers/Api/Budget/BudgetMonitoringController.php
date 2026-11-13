@@ -46,7 +46,8 @@ class BudgetMonitoringController extends Controller
             ->when($filters['bank_account_id'] ?? null, function (Builder $q, $bankAccountId) {
                 $q->where(function (Builder $scope) use ($bankAccountId) {
                     $scope->whereHas('project', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->where('bank_account_id', $bankAccountId))
-                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('bank_account_id', $bankAccountId));
+                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('bank_account_id', $bankAccountId))
+                        ->orWhereHas('grantAgreement.disbursementRequests', fn (Builder $dr) => $dr->where('received_bank_account_id', $bankAccountId));
                 });
             })
             ->when($filters['relation_no'] ?? null, fn (Builder $query, $relationNo) => $query->whereRaw("COALESCE(NULLIF(budget_lines.relation_no, ''),

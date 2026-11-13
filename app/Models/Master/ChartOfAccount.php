@@ -43,6 +43,11 @@ class ChartOfAccount extends Model
         return $this->hasMany(\App\Models\Accounting\JournalLine::class, 'account_id');
     }
 
+    public function bankAccounts()
+    {
+        return $this->hasMany(BankAccount::class, 'gl_account_id')->withoutGlobalScope('fiscal_year_context');
+    }
+
     public function category() { return $this->belongsTo(AccountCategory::class, 'account_category_id'); }
 
 }

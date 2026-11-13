@@ -345,7 +345,9 @@ class AccountsPayableController extends Controller
             BankTransaction::create([
                 'fiscal_year_id' => $supplierInvoice->fiscal_year_id,
                 'bank_account_id' => $bank->id,
+                'project_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project_id,
                 'payment_id' => $payment->id,
+                'journal_id' => $journal->id,
                 'transaction_date' => $data['payment_date'],
                 'reference' => $payment->payment_number,
                 'description' => 'Payment '.$supplierInvoice->invoice_number,
@@ -375,8 +377,37 @@ class AccountsPayableController extends Controller
 
     public function bankTransactions(Request $request): JsonResponse
     {
-        $query = BankTransaction::with(['bankAccount:id,bank_name,account_number', 'payment:id,payment_number,payment_date,amount,reference,journal_id,bank_account_id', 'payment.journal:id,journal_number,journal_date,status', 'payment.supplierInvoice:id,invoice_number', 'payment.customerInvoice:id,invoice_number', 'payment.expenseRequest:id,request_number']);
+        $query = BankTransaction::with([
+            'bankAccount:id,bank_name,account_number',
+            'project:id,code,name,relation_no,grant_agreement_id',
+            'project.grantAgreement:id,relation_no,grant_no,agreement_name',
+            'payment:id,payment_number,payment_date,amount,reference,journal_id,bank_account_id,expense_request_id,supplier_invoice_id,customer_invoice_id',
+            'payment.journal:id,journal_number,journal_date,status',
+            'payment.journal.lines:id,journal_id,relation_no,project_id,grant_agreement_id',
+            'payment.journal.lines.project:id,code,name,relation_no',
+            'payment.journal.lines.grantAgreement:id,relation_no,grant_no,agreement_name',
+            'journal:id,journal_number,journal_date,status,reference,description',
+            'payment.supplierInvoice:id,invoice_number,purchase_order_id',
+            'payment.supplierInvoice.purchaseOrder:id,po_number,purchase_request_id',
+            'payment.supplierInvoice.purchaseOrder.purchaseRequest:id,pr_number,project_id',
+            'payment.supplierInvoice.purchaseOrder.purchaseRequest.project:id,code,name,relation_no',
+            'payment.supplierInvoice.purchaseOrder.purchaseRequest.project.grantAgreement:id,relation_no,grant_no',
+            'payment.customerInvoice:id,invoice_number',
+            'payment.expenseRequest:id,request_number,project_id,grant_agreement_id',
+            'payment.expenseRequest.grantAgreement:id,relation_no,grant_no,agreement_name',
+            'payment.expenseRequest.project:id,code,name,relation_no',
+        ]);
         if ($request->filled('bank_account_id')) $query->where('bank_account_id', $request->integer('bank_account_id'));
+        if ($request->filled('relation_no')) {
+            $relFilter = trim((string) $request->input('relation_no'));
+            $query->where(function ($q) use ($relFilter) {
+                $q->whereHas('project', fn ($p) => $p->where('relation_no', 'like', "%{$relFilter}%"))
+                    ->orWhereHas('payment.expenseRequest.grantAgreement', fn ($g) => $g->where('relation_no', 'like', "%{$relFilter}%"))
+                    ->orWhereHas('payment.expenseRequest.project', fn ($p) => $p->where('relation_no', 'like', "%{$relFilter}%"))
+                    ->orWhereHas('payment.supplierInvoice.purchaseOrder.purchaseRequest.project', fn ($p) => $p->where('relation_no', 'like', "%{$relFilter}%"))
+                    ->orWhereHas('payment.journal.lines', fn ($l) => $l->where('relation_no', 'like', "%{$relFilter}%"));
+            });
+        }
         if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
             $query->where(function ($scoped) use ($request) {
                 $scoped->where('created_by', $request->user()->id)
@@ -384,27 +415,52 @@ class AccountsPayableController extends Controller
             });
         }
 
-        $rows = $query->latest('transaction_date')->latest('id')->get()->map(function (BankTransaction $transaction) {
+        $transactions = $query->latest('transaction_date')->latest('id')->get();
+        $references = $transactions->pluck('reference')->filter()->unique()->values();
+        $refJournals = $references->isNotEmpty()
+            ? \App\Models\Accounting\Journal::with([
+                'lines:id,journal_id,relation_no,project_id,grant_agreement_id',
+                'lines.project:id,code,name,relation_no',
+                'lines.grantAgreement:id,relation_no,grant_no,agreement_name',
+            ])->whereIn('journal_number', $references)->get()->keyBy('journal_number')
+            : collect();
+
+        $rows = $transactions->map(function (BankTransaction $transaction) use ($refJournals) {
             $payment = $transaction->payment;
+            $relInfo = $this->resolveBankTransactionRelationInfo($transaction, $refJournals);
             return [
                 'id' => $transaction->id,
                 'bank_account' => $transaction->bankAccount ? ['id' => $transaction->bankAccount->id, 'bank_name' => $transaction->bankAccount->bank_name, 'account_number' => $transaction->bankAccount->account_number] : null,
                 'transaction_date' => $transaction->transaction_date?->toDateString(),
                 'reference' => $transaction->reference,
+                'relation_no' => $relInfo['relation_no'] ?? null,
+                'project' => $relInfo ? [
+                    'name' => $relInfo['project_name'] ?? null,
+                    'code' => $relInfo['project_code'] ?? null,
+                    'relation_no' => $relInfo['relation_no'] ?? null,
+                ] : null,
                 'description' => $transaction->description,
                 'debit' => (float) $transaction->debit,
                 'credit' => (float) $transaction->credit,
                 'difference' => $transaction->difference !== null ? (float) $transaction->difference : null,
                 'remarks' => $transaction->remarks,
                 'status' => $transaction->status,
+                'journal_id' => $transaction->journal_id ?: $payment?->journal_id,
+                'journal' => ($transaction->journal ?: $payment?->journal) ? [
+                    'id' => ($transaction->journal ?: $payment?->journal)->id,
+                    'journal_number' => ($transaction->journal ?: $payment?->journal)->journal_number,
+                    'journal_date' => ($transaction->journal ?: $payment?->journal)->journal_date?->toDateString(),
+                    'status' => ($transaction->journal ?: $payment?->journal)->status,
+                ] : null,
                 'payment' => $payment ? [
                     'id' => $payment->id,
                     'payment_number' => $payment->payment_number,
                     'payment_date' => $payment->payment_date?->toDateString(),
                     'amount' => (float) $payment->amount,
                     'reference' => $payment->reference,
+                    'relation_no' => $relInfo['relation_no'] ?? null,
                     'invoice_number' => $payment->supplierInvoice?->invoice_number ?? $payment->customerInvoice?->invoice_number ?? $payment->expenseRequest?->request_number,
-                    'journal' => $payment->journal ? ['journal_number' => $payment->journal->journal_number, 'journal_date' => $payment->journal->journal_date?->toDateString(), 'status' => $payment->journal->status] : null,
+                    'journal' => $payment->journal ? ['id' => $payment->journal->id, 'journal_number' => $payment->journal->journal_number, 'journal_date' => $payment->journal->journal_date?->toDateString(), 'status' => $payment->journal->status] : null,
                 ] : null,
                 'history' => \App\Models\AuditLog::query()
                     ->where('module', 'banking')
@@ -422,7 +478,13 @@ class AccountsPayableController extends Controller
     /** Queue of imported statement lines that still need a finance decision. */
     public function bankExceptions(Request $request): JsonResponse
     {
-        $query = BankTransaction::query()->with('bankAccount:id,bank_name,account_number')->where('status', 'unmatched');
+        $query = BankTransaction::query()
+            ->with([
+                'bankAccount:id,bank_name,account_number',
+                'project:id,code,name,relation_no,grant_agreement_id',
+                'project.grantAgreement:id,relation_no,grant_no,agreement_name',
+            ])
+            ->where('status', 'unmatched');
         if ($request->filled('bank_account_id')) $query->where('bank_account_id', $request->integer('bank_account_id'));
         $this->applyBankTransactionScope($query, $request);
         $user = $request->user();
@@ -430,31 +492,55 @@ class AccountsPayableController extends Controller
         $items = $query->latest('transaction_date')->latest('id')->limit(100)->get()->map(function (BankTransaction $transaction) use ($user, $scope) {
             $amount = round(max((float) $transaction->debit, (float) $transaction->credit), 2);
             $candidates = Payment::query()
+                ->with([
+                    'expenseRequest:id,request_number,project_id,grant_agreement_id',
+                    'expenseRequest.grantAgreement:id,relation_no,grant_no,agreement_name',
+                    'expenseRequest.project:id,code,name,relation_no',
+                    'supplierInvoice:id,invoice_number,purchase_order_id',
+                    'supplierInvoice.purchaseOrder.purchaseRequest.project:id,code,name,relation_no',
+                    'supplierInvoice.purchaseOrder.purchaseRequest.project.grantAgreement:id,relation_no,grant_no',
+                    'journal.lines:id,journal_id,relation_no,project_id,grant_agreement_id',
+                    'journal.lines.project:id,code,name,relation_no',
+                    'journal.lines.grantAgreement:id,relation_no,grant_no',
+                ])
                 ->where('bank_account_id', $transaction->bank_account_id)
                 ->where('status', 'paid')
+                ->whereHas('journal', fn ($journal) => $journal->where('status', 'posted'))
                 ->where('amount', $amount)
                 ->whereBetween('payment_date', [$transaction->transaction_date->copy()->subDays(7)->toDateString(), $transaction->transaction_date->copy()->addDays(7)->toDateString()]);
+            $this->applyPaymentDirectionScope($candidates, $transaction);
             if (! $scope->canAccessAll($user)) {
                 $candidates->where('created_by', $user->id);
             }
             $candidateCount = $candidates->count();
-            $candidateRows = $candidates->orderByDesc('payment_date')->limit(5)->get(['id', 'payment_number', 'payment_date', 'amount', 'reference']);
+            $candidateRows = $candidates->orderByDesc('payment_date')->limit(5)->get();
+            $relInfo = $this->resolveBankTransactionRelationInfo($transaction);
+
             return [
                 'id' => $transaction->id,
                 'transaction_date' => $transaction->transaction_date?->toDateString(),
                 'reference' => $transaction->reference,
+                'relation_no' => $relInfo['relation_no'] ?? null,
+                'project_name' => $relInfo['project_name'] ?? null,
                 'description' => $transaction->description,
                 'debit' => (float) $transaction->debit,
                 'credit' => (float) $transaction->credit,
                 'bank_account' => $transaction->bankAccount,
                 'candidate_count' => $candidateCount,
-                'candidates' => $candidateRows->map(fn (Payment $payment) => [
-                    'id' => $payment->id,
-                    'payment_number' => $payment->payment_number,
-                    'payment_date' => $payment->payment_date?->toDateString(),
-                    'amount' => (float) $payment->amount,
-                    'reference' => $payment->reference,
-                ])->values(),
+                'candidates' => $candidateRows->map(function (Payment $payment) {
+                    $candRel = $this->resolvePaymentRelationInfo($payment);
+                    return [
+                        'id' => $payment->id,
+                        'payment_number' => $payment->payment_number,
+                        'payment_date' => $payment->payment_date?->toDateString(),
+                        'amount' => (float) $payment->amount,
+                        'reference' => $payment->reference,
+                        'journal_id' => $payment->journal_id,
+                        'journal_number' => $payment->journal?->journal_number,
+                        'relation_no' => $candRel['relation_no'] ?? null,
+                        'project_name' => $candRel['project_name'] ?? null,
+                    ];
+                })->values(),
                 'recommended_action' => $candidateCount === 1 ? 'auto_match' : ($candidateCount > 1 ? 'manual_match' : 'review'),
             ];
         })->values();
@@ -471,6 +557,12 @@ class AccountsPayableController extends Controller
         ]);
 
         $previewOnly = filter_var($data['preview'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $bankAccount = BankAccount::withoutGlobalScope('fiscal_year_context')->findOrFail($data['bank_account_id']);
+        if (! $bankAccount->is_active || ! $bankAccount->gl_account_id) {
+            throw ValidationException::withMessages([
+                'bank_account_id' => 'Rekening bank harus aktif dan sudah terhubung ke COA sebelum mutasi diimport.',
+            ]);
+        }
         $extension = strtolower($data['file']->getClientOriginalExtension());
         $rows = $this->readStatementRows($data['file']->getRealPath(), $extension);
 
@@ -494,6 +586,9 @@ class AccountsPayableController extends Controller
                 if ($debit <= 0 && $credit <= 0) {
                     throw new \InvalidArgumentException('Each line must have either a debit or a credit.');
                 }
+                if ($debit > 0 && $credit > 0) {
+                    throw new \InvalidArgumentException('Each line may only contain a debit or a credit, not both.');
+                }
                 $duplicate = BankTransaction::where('bank_account_id', $data['bank_account_id'])
                     ->whereDate('transaction_date', $date)
                     ->where('reference', $reference)
@@ -505,6 +600,7 @@ class AccountsPayableController extends Controller
                     continue;
                 }
                 $inserts[] = [
+                    'fiscal_year_id' => $bankAccount->fiscal_year_id,
                     'bank_account_id' => $data['bank_account_id'],
                     'created_by' => $request->user()->id,
                     'transaction_date' => $date,
@@ -740,11 +836,13 @@ class AccountsPayableController extends Controller
 
         $date = $bankTransaction->transaction_date;
         $payments = Payment::query()
-            ->with(['supplierInvoice:id,invoice_number', 'customerInvoice:id,invoice_number'])
+            ->with(['supplierInvoice:id,invoice_number', 'customerInvoice:id,invoice_number', 'journal:id,journal_number,status'])
             ->where('bank_account_id', $bankTransaction->bank_account_id)
             ->where('status', 'paid')
+            ->whereHas('journal', fn ($journal) => $journal->where('status', 'posted'))
             ->where('amount', $amount)
             ->whereBetween('payment_date', [$date->copy()->subDays(7)->toDateString(), $date->copy()->addDays(7)->toDateString()]);
+        $this->applyPaymentDirectionScope($payments, $bankTransaction);
 
         if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
             $payments->where('created_by', $request->user()->id);
@@ -769,8 +867,9 @@ class AccountsPayableController extends Controller
         }
 
         $payment = $candidates->first();
+        $updates = $this->validatedPaymentMatchUpdates($payment, $bankTransaction);
         $previous = ['payment_id' => $bankTransaction->payment_id, 'status' => $bankTransaction->status];
-        $bankTransaction->update(['payment_id' => $payment->id, 'status' => 'matched']);
+        $bankTransaction->update($updates);
         \App\Models\AuditLog::create([
             'user_id' => $request->user()->id,
             'module' => 'banking',
@@ -779,7 +878,7 @@ class AccountsPayableController extends Controller
             'entity_type' => BankTransaction::class,
             'entity_id' => $bankTransaction->id,
             'previous_values' => $previous,
-            'new_values' => ['payment_id' => $payment->id, 'status' => 'matched'],
+            'new_values' => $updates,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
@@ -796,7 +895,7 @@ class AccountsPayableController extends Controller
         }
 
         $data = $request->validate(['payment_id' => ['required', 'integer', 'exists:payments,id']]);
-        $payment = Payment::findOrFail($data['payment_id']);
+        $payment = Payment::with(['journal.lines', 'bankAccount'])->findOrFail($data['payment_id']);
         if ((int) $payment->bank_account_id !== (int) $bankTransaction->bank_account_id) {
             throw ValidationException::withMessages(['payment_id' => 'The payment must use the same bank account.']);
         }
@@ -804,8 +903,9 @@ class AccountsPayableController extends Controller
             abort(Response::HTTP_FORBIDDEN, 'Tidak boleh mencocokkan payment milik user lain.');
         }
 
+        $updates = $this->validatedPaymentMatchUpdates($payment, $bankTransaction);
         $previous = ['payment_id' => $bankTransaction->payment_id, 'status' => $bankTransaction->status];
-        $bankTransaction->update(['payment_id' => $payment->id, 'status' => 'matched']);
+        $bankTransaction->update($updates);
         \App\Models\AuditLog::create([
             'user_id' => $request->user()->id,
             'module' => 'banking',
@@ -814,7 +914,7 @@ class AccountsPayableController extends Controller
             'entity_type' => BankTransaction::class,
             'entity_id' => $bankTransaction->id,
             'previous_values' => $previous,
-            'new_values' => ['payment_id' => $payment->id, 'status' => 'matched'],
+            'new_values' => $updates,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
@@ -831,6 +931,10 @@ class AccountsPayableController extends Controller
             'difference' => ['nullable', 'numeric'],
             'remarks' => ['nullable', 'string', 'max:5000'],
         ]);
+        $journal = null;
+        if (in_array($data['status'], ['matched', 'reconciled'], true)) {
+            $journal = $this->ensureBankTransactionJournalIntegrity($bankTransaction);
+        }
         $approval = $workflow->approve('bank_reconciliation', $bankTransaction, $request->user(), $request->input('notes'));
         if (! $approval['managed']) {
             $workflow->start('bank_reconciliation', $bankTransaction, (float) $bankTransaction->debit + (float) $bankTransaction->credit, $request->user()->id);
@@ -840,6 +944,7 @@ class AccountsPayableController extends Controller
         $previous = ['status' => $bankTransaction->status];
         $bankTransaction->update([
             'status' => $data['status'],
+            'journal_id' => $journal?->id ?: $bankTransaction->journal_id,
             'difference' => array_key_exists('difference', $data) ? $data['difference'] : $bankTransaction->difference,
             'remarks' => array_key_exists('remarks', $data) ? $data['remarks'] : $bankTransaction->remarks,
         ]);
@@ -918,6 +1023,107 @@ class AccountsPayableController extends Controller
         });
     }
 
+    private function applyPaymentDirectionScope($query, BankTransaction $bankTransaction): void
+    {
+        if ((float) $bankTransaction->debit > 0 && (float) $bankTransaction->credit <= 0) {
+            $query->whereNotNull('customer_invoice_id');
+            return;
+        }
+
+        if ((float) $bankTransaction->credit > 0 && (float) $bankTransaction->debit <= 0) {
+            $query->whereNull('customer_invoice_id');
+        }
+    }
+
+    private function validatedPaymentMatchUpdates(Payment $payment, BankTransaction $bankTransaction): array
+    {
+        $payment->loadMissing([
+            'bankAccount',
+            'journal.lines',
+            'expenseRequest.project',
+            'supplierInvoice.purchaseOrder.purchaseRequest.project',
+            'customerInvoice.project',
+        ]);
+
+        if ($payment->status !== 'paid') {
+            throw ValidationException::withMessages(['payment_id' => 'Only paid payments may be matched to a bank statement.']);
+        }
+        if (! $payment->journal || $payment->journal->status !== 'posted') {
+            throw ValidationException::withMessages(['payment_id' => 'Payment must be linked to a posted journal before bank matching.']);
+        }
+        if (round((float) $payment->amount, 2) !== round(max((float) $bankTransaction->debit, (float) $bankTransaction->credit), 2)) {
+            throw ValidationException::withMessages(['payment_id' => 'Payment amount does not match the bank statement amount.']);
+        }
+
+        $isReceipt = $payment->customer_invoice_id !== null;
+        if ($isReceipt && ((float) $bankTransaction->debit <= 0 || (float) $bankTransaction->credit > 0)) {
+            throw ValidationException::withMessages(['payment_id' => 'An incoming receipt must match a debit bank statement line.']);
+        }
+        if (! $isReceipt && ((float) $bankTransaction->credit <= 0 || (float) $bankTransaction->debit > 0)) {
+            throw ValidationException::withMessages(['payment_id' => 'An outgoing payment must match a credit bank statement line.']);
+        }
+
+        $journalDebit = round((float) $payment->journal->lines->sum('debit'), 2);
+        $journalCredit = round((float) $payment->journal->lines->sum('credit'), 2);
+        if (abs($journalDebit - $journalCredit) >= 0.01) {
+            throw ValidationException::withMessages(['payment_id' => 'Payment journal is not balanced.']);
+        }
+
+        $bankGlAccountId = $payment->bankAccount?->gl_account_id;
+        $bankLine = $payment->journal->lines->first(fn ($line) => (int) $line->account_id === (int) $bankGlAccountId);
+        if (! $bankGlAccountId || ! $bankLine) {
+            throw ValidationException::withMessages(['payment_id' => 'Payment journal is not linked to the selected bank GL account.']);
+        }
+        if ($isReceipt && (float) $bankLine->debit <= 0) {
+            throw ValidationException::withMessages(['payment_id' => 'Receipt journal does not debit the selected bank GL account.']);
+        }
+        if (! $isReceipt && (float) $bankLine->credit <= 0) {
+            throw ValidationException::withMessages(['payment_id' => 'Payment journal does not credit the selected bank GL account.']);
+        }
+
+        $projectId = $payment->expenseRequest?->project_id
+            ?: $payment->supplierInvoice?->purchaseOrder?->purchaseRequest?->project_id
+            ?: $payment->customerInvoice?->project_id
+            ?: $payment->journal->lines->first(fn ($line) => $line->project_id)?->project_id;
+
+        return [
+            'payment_id' => $payment->id,
+            'journal_id' => $payment->journal_id,
+            'project_id' => $projectId,
+            'fiscal_year_id' => $payment->fiscal_year_id ?: $bankTransaction->fiscal_year_id,
+            'status' => 'matched',
+        ];
+    }
+
+    private function ensureBankTransactionJournalIntegrity(BankTransaction $bankTransaction): \App\Models\Accounting\Journal
+    {
+        $bankTransaction->loadMissing(['bankAccount', 'journal.lines', 'payment.journal.lines']);
+        $journal = $bankTransaction->journal ?: $bankTransaction->payment?->journal;
+        if (! $journal || $journal->status !== 'posted') {
+            throw ValidationException::withMessages(['status' => 'A matched or reconciled bank transaction must be linked to a posted journal.']);
+        }
+
+        $journalDebit = round((float) $journal->lines->sum('debit'), 2);
+        $journalCredit = round((float) $journal->lines->sum('credit'), 2);
+        if (abs($journalDebit - $journalCredit) >= 0.01) {
+            throw ValidationException::withMessages(['status' => 'The linked journal must be balanced before reconciliation.']);
+        }
+
+        $bankGlAccountId = $bankTransaction->bankAccount?->gl_account_id;
+        $bankLine = $journal->lines->first(fn ($line) => (int) $line->account_id === (int) $bankGlAccountId);
+        if (! $bankGlAccountId || ! $bankLine) {
+            throw ValidationException::withMessages(['status' => 'The linked journal does not contain the selected bank GL account.']);
+        }
+        if ((float) $bankTransaction->debit > 0 && (float) $bankLine->debit <= 0) {
+            throw ValidationException::withMessages(['status' => 'Incoming bank movement must debit the selected bank GL account.']);
+        }
+        if ((float) $bankTransaction->credit > 0 && (float) $bankLine->credit <= 0) {
+            throw ValidationException::withMessages(['status' => 'Outgoing bank movement must credit the selected bank GL account.']);
+        }
+
+        return $journal;
+    }
+
     private function formatInvoice(SupplierInvoice $invoice): array
     {
         $approval = \App\Models\ApprovalWorkflowRun::query()
@@ -950,5 +1156,96 @@ class AccountsPayableController extends Controller
             'outstanding_amount' => round((float) $invoice->total_amount - (float) $invoice->paid_amount, 2),
             'payment_history' => $invoice->relationLoaded('payments') ? $invoice->payments->map(fn ($payment) => ['id' => $payment->id, 'payment_number' => $payment->payment_number, 'payment_date' => $payment->payment_date?->toDateString(), 'amount' => $payment->amount, 'reference' => $payment->reference])->values()->all() : [],
         ];
+    }
+
+    private function resolveBankTransactionRelationInfo(BankTransaction $transaction, ?\Illuminate\Support\Collection $refJournals = null): ?array
+    {
+        if ($transaction->project) {
+            $rel = $transaction->project->relation_no ?: $transaction->project->grantAgreement?->relation_no;
+            if ($rel) {
+                return [
+                    'relation_no' => $rel,
+                    'project_name' => $transaction->project->name,
+                    'project_code' => $transaction->project->code,
+                ];
+            }
+        }
+
+        if ($transaction->payment) {
+            $rel = $this->resolvePaymentRelationInfo($transaction->payment);
+            if ($rel) {
+                return $rel;
+            }
+        }
+
+        if ($refJournals && $transaction->reference && isset($refJournals[$transaction->reference])) {
+            $journal = $refJournals[$transaction->reference];
+            $lineWithRel = $journal->lines?->first(fn ($l) => !empty($l->relation_no));
+            if ($lineWithRel) {
+                return [
+                    'relation_no' => $lineWithRel->relation_no,
+                    'project_name' => $lineWithRel->project?->name ?? $lineWithRel->grantAgreement?->agreement_name,
+                    'project_code' => $lineWithRel->project?->code,
+                ];
+            }
+            $lineWithPrj = $journal->lines?->first(fn ($l) => !empty($l->project?->relation_no));
+            if ($lineWithPrj) {
+                return [
+                    'relation_no' => $lineWithPrj->project->relation_no,
+                    'project_name' => $lineWithPrj->project->name,
+                    'project_code' => $lineWithPrj->project->code,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    private function resolvePaymentRelationInfo(Payment $payment): ?array
+    {
+        $exp = $payment->expenseRequest;
+        if ($exp) {
+            $rel = $exp->grantAgreement?->relation_no ?: $exp->project?->relation_no;
+            if ($rel) {
+                return [
+                    'relation_no' => $rel,
+                    'project_name' => $exp->project?->name ?? $exp->grantAgreement?->agreement_name,
+                    'project_code' => $exp->project?->code,
+                ];
+            }
+        }
+
+        $poProject = $payment->supplierInvoice?->purchaseOrder?->purchaseRequest?->project;
+        if ($poProject) {
+            $rel = $poProject->relation_no ?: $poProject->grantAgreement?->relation_no;
+            if ($rel) {
+                return [
+                    'relation_no' => $rel,
+                    'project_name' => $poProject->name,
+                    'project_code' => $poProject->code,
+                ];
+            }
+        }
+
+        if ($payment->journal && $payment->journal->lines) {
+            $lineWithRel = $payment->journal->lines->first(fn ($l) => !empty($l->relation_no));
+            if ($lineWithRel) {
+                return [
+                    'relation_no' => $lineWithRel->relation_no,
+                    'project_name' => $lineWithRel->project?->name ?? $lineWithRel->grantAgreement?->agreement_name,
+                    'project_code' => $lineWithRel->project?->code,
+                ];
+            }
+            $lineWithPrj = $payment->journal->lines->first(fn ($l) => !empty($l->project?->relation_no));
+            if ($lineWithPrj) {
+                return [
+                    'relation_no' => $lineWithPrj->project->relation_no,
+                    'project_name' => $lineWithPrj->project->name,
+                    'project_code' => $lineWithPrj->project->code,
+                ];
+            }
+        }
+
+        return null;
     }
 }

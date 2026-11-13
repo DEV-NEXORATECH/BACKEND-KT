@@ -54,6 +54,14 @@ class AccountsPayablePaymentBankingTest extends TestCase
             'credit' => 200,
             'status' => 'matched',
         ]);
+
+        $payment = \App\Models\Finance\Payment::latest('id')->firstOrFail();
+        $bankTransaction = BankTransaction::where('payment_id', $payment->id)->firstOrFail();
+        $this->assertSame($payment->journal_id, $bankTransaction->journal_id);
+        $this->getJson('/api/v1/finance/bank-transactions')
+            ->assertOk()
+            ->assertJsonPath('data.0.journal.id', $payment->journal_id)
+            ->assertJsonPath('data.0.journal.status', 'posted');
     }
 
     public function test_supplier_invoice_uses_approval_matrix_when_configured(): void
@@ -142,7 +150,8 @@ class AccountsPayablePaymentBankingTest extends TestCase
             ->assertJsonPath('matched', true)
             ->assertJsonPath('data.status', 'matched');
 
-        $this->assertDatabaseHas('bank_transactions', ['id' => $statement->id, 'status' => 'matched']);
+        $payment = \App\Models\Finance\Payment::findOrFail($statement->fresh()->payment_id);
+        $this->assertDatabaseHas('bank_transactions', ['id' => $statement->id, 'payment_id' => $payment->id, 'journal_id' => $payment->journal_id, 'status' => 'matched']);
         $this->assertDatabaseHas('audit_logs', ['module' => 'banking', 'action' => 'AUTO_MATCH', 'entity_id' => $statement->id]);
 
         $paymentId = $statement->fresh()->payment_id;
@@ -153,6 +162,50 @@ class AccountsPayablePaymentBankingTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.status', 'matched');
         $this->assertDatabaseHas('audit_logs', ['module' => 'banking', 'action' => 'MATCH', 'entity_id' => $statement->id]);
+    }
+
+    public function test_bank_match_rejects_wrong_direction_and_requires_posted_balanced_bank_journal(): void
+    {
+        [$user, $invoice, $bank] = $this->fixture();
+        $this->actingAs($user, 'sanctum')->postJson("/api/v1/finance/ap/invoices/{$invoice->id}/post")->assertOk();
+        $this->postJson("/api/v1/finance/ap/invoices/{$invoice->id}/payments", [
+            'bank_account_id' => $bank->id,
+            'payment_date' => '2026-09-23',
+            'amount' => 200,
+            'reference' => 'TRF-DIRECTION-001',
+        ])->assertCreated();
+        $payment = \App\Models\Finance\Payment::latest('id')->firstOrFail();
+
+        $incomingStatement = BankTransaction::create([
+            'bank_account_id' => $bank->id,
+            'created_by' => $user->id,
+            'transaction_date' => '2026-09-24',
+            'reference' => 'MUT-INCOMING-WRONG',
+            'debit' => 200,
+            'credit' => 0,
+            'status' => 'unmatched',
+        ]);
+
+        $this->getJson('/api/v1/finance/bank-transactions/exceptions')
+            ->assertOk()
+            ->assertJsonPath('data.0.candidate_count', 0);
+        $this->postJson("/api/v1/finance/bank-transactions/{$incomingStatement->id}/match", ['payment_id' => $payment->id])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('payment_id');
+
+        $payment->journal()->update(['status' => 'draft']);
+        $outgoingStatement = BankTransaction::create([
+            'bank_account_id' => $bank->id,
+            'created_by' => $user->id,
+            'transaction_date' => '2026-09-24',
+            'reference' => 'MUT-DRAFT-JOURNAL',
+            'debit' => 0,
+            'credit' => 200,
+            'status' => 'unmatched',
+        ]);
+        $this->postJson("/api/v1/finance/bank-transactions/{$outgoingStatement->id}/match", ['payment_id' => $payment->id])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('payment_id');
     }
 
     public function test_reconcile_and_excluded_status_transitions_and_audit_logs(): void
@@ -182,6 +235,26 @@ class AccountsPayablePaymentBankingTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.status', 'excluded');
         $this->assertDatabaseHas('audit_logs', ['module' => 'banking', 'action' => 'RECONCILE', 'entity_id' => $transaction->id]);
+    }
+
+    public function test_unmatched_statement_without_journal_cannot_be_marked_reconciled(): void
+    {
+        [$user, , $bank] = $this->fixture();
+        $transaction = BankTransaction::create([
+            'bank_account_id' => $bank->id,
+            'created_by' => $user->id,
+            'transaction_date' => '2026-09-24',
+            'reference' => 'MUT-NO-JOURNAL',
+            'debit' => 0,
+            'credit' => 100,
+            'status' => 'unmatched',
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/v1/finance/bank-transactions/{$transaction->id}/reconcile", ['status' => 'reconciled'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('status');
+        $this->assertDatabaseHas('bank_transactions', ['id' => $transaction->id, 'status' => 'unmatched', 'journal_id' => null]);
     }
 
     public function test_bank_transaction_actions_respect_owner_data_scope(): void
@@ -227,6 +300,23 @@ class AccountsPayablePaymentBankingTest extends TestCase
         $this->assertDatabaseHas('bank_transactions', ['bank_account_id' => $bank->id, 'reference' => 'MUT-001', 'credit' => 500000, 'status' => 'unmatched']);
         $this->assertDatabaseHas('bank_transactions', ['bank_account_id' => $bank->id, 'reference' => null, 'debit' => 250000]);
         $this->assertDatabaseHas('audit_logs', ['module' => 'banking', 'action' => 'IMPORT', 'entity_type' => BankTransaction::class]);
+    }
+
+    public function test_import_requires_an_active_bank_account_linked_to_coa(): void
+    {
+        [$user, , $bank] = $this->fixture();
+        $this->actingAs($user, 'sanctum');
+        $bank->update(['gl_account_id' => null]);
+        $file = \Illuminate\Http\UploadedFile::fake()->createWithContent('statement.csv', "date,reference,description,debit,credit\n2026-09-24,MUT-NO-COA,Transfer,100,0\n");
+
+        $this->postJson('/api/v1/finance/bank-transactions/import', [
+            'bank_account_id' => $bank->id,
+            'file' => $file,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('bank_account_id');
+
+        $this->assertDatabaseMissing('bank_transactions', ['reference' => 'MUT-NO-COA']);
     }
 
     public function test_import_preview_does_not_persist_rows(): void

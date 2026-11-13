@@ -16,7 +16,7 @@ class JournalBudgetIntegrationTest extends TestCase
     private function fixture(): array
     {
         $role = Role::create(['name' => 'Finance', 'slug' => 'finance']);
-        foreach (['budget.view', 'accounting.journal.create', 'accounting.journal.update', 'accounting.journal.post', 'accounting.journal.import'] as $slug) {
+        foreach (['budget.view', 'master-data.view', 'accounting.journal.view', 'accounting.journal.create', 'accounting.journal.update', 'accounting.journal.post', 'accounting.journal.import'] as $slug) {
             $role->permissions()->attach(Permission::create(['name' => $slug, 'slug' => $slug]));
         }
         $user = User::factory()->create(['role_id' => $role->id]);
@@ -30,6 +30,7 @@ class JournalBudgetIntegrationTest extends TestCase
         $category = BudgetCategory::create(['code' => 'B1', 'name' => 'Budget']);
         $budget = BudgetLine::create(['line_code' => 'AI-REAL-1', 'description' => 'Real budget', 'project_id' => $project->id, 'grant_agreement_id' => $grant->id, 'relation_no' => 'REL-1', 'budget_category_id' => $category->id, 'unit_price' => 1000, 'quantity' => 1, 'total_amount' => 1000, 'fiscal_year_id' => $year->id]);
         $expense = ChartOfAccount::create(['code' => '5100', 'name' => 'Expense', 'account_type' => 'expense', 'normal_balance' => 'debit']);
+        $budget->update(['gl_account_id' => $expense->id]);
         $bank = ChartOfAccount::create(['code' => '1100', 'name' => 'Bank', 'account_type' => 'asset', 'normal_balance' => 'debit']);
         $payable = ChartOfAccount::create(['code' => '2100', 'name' => 'Payable', 'account_type' => 'liability', 'normal_balance' => 'credit']);
         $this->actingAs($user, 'sanctum');
@@ -159,6 +160,74 @@ class JournalBudgetIntegrationTest extends TestCase
         $role->permissions()->attach(Permission::where('slug', 'budget.view')->firstOrFail());
         $user = User::factory()->create(['role_id' => $role->id]);
         $this->actingAs($user, 'sanctum')->getJson('/api/v1/budget/monitoring')->assertOk()->assertJsonCount(0, 'by_line')->assertJsonCount(0, 'activities')->assertJsonPath('totals.actual', 0);
+    }
+
+    public function test_posted_journal_connects_coa_bank_transaction_and_bva_in_one_flow(): void
+    {
+        $f = $this->fixture();
+        $bankAccount = \App\Models\Master\BankAccount::create([
+            'fiscal_year_id' => $f['year']->id,
+            'bank_name' => 'Integration Bank',
+            'account_number' => 'INT-BANK-001',
+            'account_name' => 'Project Operating Account',
+            'currency_id' => Currency::firstOrFail()->id,
+            'gl_account_id' => $f['bank']->id,
+            'is_active' => true,
+        ]);
+        $f['project']->update(['bank_account_id' => $bankAccount->id]);
+
+        $journalId = $this->postJson('/api/v1/accounting/journals', $this->payload($f))
+            ->assertCreated()
+            ->assertJsonPath('data.lines.0.account_id', $f['expense']->id)
+            ->assertJsonPath('data.lines.0.budget_line_id', $f['budget']->id)
+            ->json('data.id');
+        Journal::withoutGlobalScope('fiscal_year_context')->findOrFail($journalId)->update(['status' => 'reviewed']);
+        $this->postJson('/api/v1/accounting/journals/'.$journalId.'/post')
+            ->assertOk()
+            ->assertJsonPath('data.status', 'posted')
+            ->assertJsonPath('data.bank_transactions.0.bank_account_id', $bankAccount->id);
+
+        $bankLineId = Journal::withoutGlobalScope('fiscal_year_context')->findOrFail($journalId)
+            ->lines()->where('account_id', $f['bank']->id)->value('id');
+        $this->assertDatabaseHas('bank_transactions', [
+            'journal_id' => $journalId,
+            'journal_line_id' => $bankLineId,
+            'bank_account_id' => $bankAccount->id,
+            'credit' => 100,
+            'status' => 'unmatched',
+        ]);
+
+        $this->getJson('/api/v1/accounting/journals?bank_account_id='.$bankAccount->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $journalId);
+        $this->getJson('/api/v1/budget/monitoring?budget_line_id='.$f['budget']->id.'&fiscal_year_id='.$f['year']->id)
+            ->assertOk()
+            ->assertJsonPath('by_line.0.gl_account.id', $f['expense']->id)
+            ->assertJsonPath('by_line.0.bank_account.id', $bankAccount->id)
+            ->assertJsonPath('by_line.0.actual', 100);
+        $this->getJson('/api/v1/master/chart-of-accounts?search=1100&all=true')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $f['bank']->id)
+            ->assertJsonPath('data.0.is_bank_account', true)
+            ->assertJsonPath('data.0.bank_accounts.0.id', $bankAccount->id)
+            ->assertJsonPath('data.0.balance', -100)
+            ->assertJsonPath('data.0.bank_balance', -100);
+    }
+
+    public function test_journal_rejects_expense_coa_that_differs_from_budget_line_coa(): void
+    {
+        $f = $this->fixture();
+        $otherExpense = ChartOfAccount::create([
+            'code' => '5200', 'name' => 'Other Expense', 'account_type' => 'expense',
+            'normal_balance' => 'debit', 'level' => 1, 'is_header' => false, 'is_active' => true,
+        ]);
+        $payload = $this->payload($f);
+        $payload['lines'][0]['account_id'] = $otherExpense->id;
+
+        $this->postJson('/api/v1/accounting/journals', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('lines.0.account_id');
     }
     public function test_conflicting_source_relations_are_rejected_and_other_budget_is_filtered(): void
     {

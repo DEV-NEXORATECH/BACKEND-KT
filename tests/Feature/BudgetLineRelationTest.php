@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\Master\BankAccount;
 use App\Models\Master\BudgetCategory;
+use App\Models\Master\ChartOfAccount;
 use App\Models\Master\Currency;
 use App\Models\Master\Donor;
 use App\Models\Master\GrantAgreement;
@@ -40,6 +42,16 @@ class BudgetLineRelationTest extends TestCase
             'status' => 'active',
             'is_active' => true,
         ]);
+        $bankCoa = ChartOfAccount::create(['code' => '1101', 'name' => 'Bank IDR', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
+        $expenseCoa = ChartOfAccount::create(['code' => '5101', 'name' => 'Program Expense', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
+        $bank = BankAccount::create([
+            'bank_name' => 'Bank Budget',
+            'account_number' => 'BUD-001',
+            'account_name' => 'Budget Operating Account',
+            'currency_id' => $currency->id,
+            'gl_account_id' => $bankCoa->id,
+            'is_active' => true,
+        ]);
         $grant = GrantAgreement::create([
             'grant_no' => 'GR-BUD-001',
             'relation_no' => 'KT-REL-BUD-A',
@@ -49,6 +61,7 @@ class BudgetLineRelationTest extends TestCase
             'end_date' => '2026-12-31',
             'currency_id' => $currency->id,
             'grant_value' => 1000000,
+            'bank_account_id' => $bank->id,
             'status' => 'active',
             'is_active' => true,
         ]);
@@ -57,6 +70,7 @@ class BudgetLineRelationTest extends TestCase
             'name' => 'Project Budget A',
             'grant_agreement_id' => $grant->id,
             'relation_no' => 'KT-REL-BUD-A',
+            'bank_account_id' => $bank->id,
             'is_active' => true,
         ]);
         $projectB = Project::create([
@@ -76,6 +90,7 @@ class BudgetLineRelationTest extends TestCase
             'grant_agreement_id' => $grant->id,
             'relation_no' => 'KT-REL-BUD-A',
             'budget_category_id' => $category->id,
+            'gl_account_id' => $expenseCoa->id,
             'line_code' => 'BL-REL-001',
             'description' => 'Integrated project budget',
             'unit_price' => 100000,
@@ -87,7 +102,11 @@ class BudgetLineRelationTest extends TestCase
         $this->actingAs($user, 'sanctum')
             ->postJson('/api/v1/master/budget-lines', $payload)
             ->assertCreated()
-            ->assertJsonPath('data.relation_no', 'KT-REL-BUD-A');
+            ->assertJsonPath('data.relation_no', 'KT-REL-BUD-A')
+            ->assertJsonPath('data.gl_account.id', $expenseCoa->id)
+            ->assertJsonPath('data.bank_account.id', $bank->id)
+            ->assertJsonPath('data.bank_gl_account.id', $bankCoa->id)
+            ->assertJsonPath('data.bank_link_status', 'linked');
 
         $this->getJson("/api/v1/master/budget-lines?project_id={$projectA->id}&relation_no=KT-REL-BUD-A")
             ->assertOk()

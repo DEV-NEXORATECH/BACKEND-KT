@@ -8,6 +8,7 @@ use App\Models\Asset\FixedAsset;
 use App\Models\Master\AssetCategory;
 use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
+use App\Models\Master\Project;
 use App\Services\Accounting\AccountingPeriodService;
 use App\Services\Rbac\DataScopeService;
 use App\Services\Approval\ApprovalWorkflowService;
@@ -22,7 +23,7 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class FixedAssetController extends Controller
 {
-    private array $with = ['category:id,code,name,useful_life_months,depreciation_method,is_non_depreciable,asset_gl_account_id,depreciation_gl_account_id,accumulated_gl_account_id', 'category.assetGlAccount:id,code,name', 'category.depreciationGlAccount:id,code,name', 'category.accumulatedGlAccount:id,code,name', 'assetGlAccount:id,code,name', 'depreciationGlAccount:id,code,name', 'accumulatedGlAccount:id,code,name', 'vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'supplierInvoice:id,invoice_number,status,journal_id,total_amount', 'donor:id,code,name', 'program:id,code,name', 'project:id,code,name', 'custodian:id,employee_id_number,name', 'disposalBankAccount:id,bank_name,account_number,gl_account_id', 'depreciations'];
+    private array $with = ['category:id,code,name,useful_life_months,depreciation_method,is_non_depreciable,asset_gl_account_id,depreciation_gl_account_id,accumulated_gl_account_id', 'category.assetGlAccount:id,code,name', 'category.depreciationGlAccount:id,code,name', 'category.accumulatedGlAccount:id,code,name', 'assetGlAccount:id,code,name', 'depreciationGlAccount:id,code,name', 'accumulatedGlAccount:id,code,name', 'vendor:id,code,name', 'purchaseOrder:id,po_number', 'goodsReceipt:id,grn_number', 'supplierInvoice:id,invoice_number,status,journal_id,total_amount', 'donor:id,code,name', 'program:id,code,name', 'project:id,code,relation_no,name,grant_agreement_id,program_id,bank_account_id', 'project.grantAgreementUnscoped:id,donor_id,grant_no,relation_no,agreement_name,bank_account_id', 'project.bankAccount:id,bank_name,account_number,gl_account_id', 'custodian:id,employee_id_number,name', 'disposalBankAccount:id,bank_name,account_number,gl_account_id', 'depreciations'];
 
     public function index(Request $request): JsonResponse
     {
@@ -39,6 +40,7 @@ class FixedAssetController extends Controller
         $assets = $query
             ->when($request->filled('status'), fn (Builder $q) => $q->where('status', $request->string('status')))
             ->when($request->filled('project_id'), fn (Builder $q) => $q->where('project_id', $request->integer('project_id')))
+            ->when($request->filled('relation_no'), fn (Builder $q) => $q->whereHas('project', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->where('relation_no', trim((string) $request->query('relation_no')))))
             ->latest('id')
             ->get();
 
@@ -67,8 +69,8 @@ class FixedAssetController extends Controller
         $filename = 'fixed-assets-'.now()->format('Ymd_His').'.csv';
         return response()->streamDownload(function () use ($assets) {
             $handle = fopen('php://output', 'w');
-            fputcsv($handle, ['Asset Code', 'Asset Name', 'Category ID', 'Acquisition Date', 'Purchase Cost', 'Useful Life (Months)', 'Depreciation Method', 'Status', 'Description']);
-            foreach ($assets as $asset) fputcsv($handle, [$asset->asset_code, $asset->asset_name, $asset->asset_category_id, $asset->acquisition_date?->toDateString(), $asset->acquisition_cost, $asset->useful_life_months, $asset->depreciation_method, $asset->status, $asset->description]);
+            fputcsv($handle, ['Asset Code', 'Asset Name', 'Relation No', 'Project ID', 'Category ID', 'Acquisition Date', 'Purchase Cost', 'Useful Life (Months)', 'Depreciation Method', 'Status', 'Description']);
+            foreach ($assets as $asset) fputcsv($handle, [$asset->asset_code, $asset->asset_name, $asset->project?->relation_no, $asset->project_id, $asset->asset_category_id, $asset->acquisition_date?->toDateString(), $asset->acquisition_cost, $asset->useful_life_months, $asset->depreciation_method, $asset->status, $asset->description]);
             fclose($handle);
         }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
@@ -193,7 +195,8 @@ class FixedAssetController extends Controller
                 'posted_at' => now(),
                 'source_type' => 'fixed_asset', 'source_id' => $fixedAsset->id,
             ]);
-            $journal->lines()->create(['account_id' => $assetAccount->id, 'project_id' => $fixedAsset->project_id, 'donor_id' => $fixedAsset->donor_id, 'program_id' => $fixedAsset->program_id, 'line_description' => 'Capitalized asset', 'debit' => $fixedAsset->acquisition_cost, 'credit' => 0, 'line_order' => 1]);
+            $dimensions = $this->journalDimensions($fixedAsset);
+            $journal->lines()->create(['account_id' => $assetAccount->id, ...$dimensions, 'line_description' => 'Capitalized asset', 'debit' => $fixedAsset->acquisition_cost, 'credit' => 0, 'line_order' => 1]);
 
             if ($sourceJournal && $sourceJournal->lines->sum('debit') > 0) {
                 $sourceDebit = (float) $sourceJournal->lines->sum('debit');
@@ -201,10 +204,10 @@ class FixedAssetController extends Controller
                 foreach ($sourceJournal->lines->where('debit', '>', 0) as $sourceLine) {
                     $credit = round((float) $fixedAsset->acquisition_cost * ((float) $sourceLine->debit / $sourceDebit), 2);
                     if ($credit <= 0) continue;
-                    $journal->lines()->create(['account_id' => $sourceLine->account_id, 'donor_id' => $sourceLine->donor_id, 'program_id' => $sourceLine->program_id, 'project_id' => $sourceLine->project_id, 'budget_line_id' => $sourceLine->budget_line_id, 'department_id' => $sourceLine->department_id, 'line_description' => 'Reclassify AP source expense to fixed asset', 'debit' => 0, 'credit' => $credit, 'line_order' => $lineOrder++]);
+                    $journal->lines()->create(['account_id' => $sourceLine->account_id, 'donor_id' => $sourceLine->donor_id ?: $dimensions['donor_id'], 'program_id' => $sourceLine->program_id ?: $dimensions['program_id'], 'project_id' => $sourceLine->project_id ?: $dimensions['project_id'], 'grant_agreement_id' => $sourceLine->grant_agreement_id ?: $dimensions['grant_agreement_id'], 'relation_no' => $sourceLine->relation_no ?: $dimensions['relation_no'], 'budget_line_id' => $sourceLine->budget_line_id, 'department_id' => $sourceLine->department_id, 'line_description' => 'Reclassify AP source expense to fixed asset', 'debit' => 0, 'credit' => $credit, 'line_order' => $lineOrder++]);
                 }
             } else {
-                $journal->lines()->create(['account_id' => $clearingAccount->id, 'line_description' => 'Asset clearing/source', 'debit' => 0, 'credit' => $fixedAsset->acquisition_cost, 'line_order' => 2]);
+                $journal->lines()->create(['account_id' => $clearingAccount->id, ...$dimensions, 'line_description' => 'Asset clearing/source', 'debit' => 0, 'credit' => $fixedAsset->acquisition_cost, 'line_order' => 2]);
             }
 
             $fixedAsset->update(['status' => 'active', 'journal_id' => $journal->id, 'capitalization_journal_id' => $journal->id, 'capitalized_by' => $request->user()->id, 'capitalized_at' => now(), 'in_service_date' => $fixedAsset->in_service_date ?: $fixedAsset->acquisition_date]);
@@ -258,8 +261,9 @@ class FixedAssetController extends Controller
                 'posted_at' => now(),
                 'source_type' => 'fixed_asset_depreciation', 'source_id' => $fixedAsset->id,
             ]);
-            $journal->lines()->create(['account_id' => $depreciationAccount->id, 'project_id' => $fixedAsset->project_id, 'donor_id' => $fixedAsset->donor_id, 'program_id' => $fixedAsset->program_id, 'line_description' => 'Depreciation expense', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
-            $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Accumulated depreciation', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
+            $dimensions = $this->journalDimensions($fixedAsset);
+            $journal->lines()->create(['account_id' => $depreciationAccount->id, ...$dimensions, 'line_description' => 'Depreciation expense', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
+            $journal->lines()->create(['account_id' => $accumulatedAccount->id, ...$dimensions, 'line_description' => 'Accumulated depreciation', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
 
             $accumulated = round((float) $fixedAsset->accumulated_depreciation + $amount, 2);
             $nbv = max((float) $fixedAsset->residual_value, round((float) $fixedAsset->acquisition_cost - $accumulated - (float) $fixedAsset->impairment_amount, 2));
@@ -295,8 +299,9 @@ class FixedAssetController extends Controller
         if (! $lossAccount || ! $accumulatedAccount) throw ValidationException::withMessages(['account' => 'COA impairment loss dan accumulated asset harus tersedia.']);
         $asset = DB::transaction(function () use ($fixedAsset, $data, $amount, $lossAccount, $accumulatedAccount, $request) {
             $journal = Journal::create(['fiscal_year_id' => $fixedAsset->fiscal_year_id, 'journal_number' => 'IMP-'.now()->format('YmdHis').'-'.random_int(100, 999), 'journal_date' => $data['impairment_date'], 'journal_type' => 'adjustment', 'reference' => $fixedAsset->asset_code, 'description' => 'Impairment '.$fixedAsset->asset_name.' - '.$data['reason'], 'status' => 'posted', 'posted_by' => $request->user()->id, 'posted_at' => now(), 'source_type' => 'fixed_asset_impairment', 'source_id' => $fixedAsset->id]);
-            $journal->lines()->create(['account_id' => $lossAccount->id, 'project_id' => $fixedAsset->project_id, 'donor_id' => $fixedAsset->donor_id, 'program_id' => $fixedAsset->program_id, 'line_description' => 'Impairment loss', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
-            $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Accumulated impairment', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
+            $dimensions = $this->journalDimensions($fixedAsset);
+            $journal->lines()->create(['account_id' => $lossAccount->id, ...$dimensions, 'line_description' => 'Impairment loss', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
+            $journal->lines()->create(['account_id' => $accumulatedAccount->id, ...$dimensions, 'line_description' => 'Accumulated impairment', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
             $fixedAsset->update(['impairment_amount' => round((float) $fixedAsset->impairment_amount + $amount, 2), 'net_book_value' => max((float) $fixedAsset->residual_value, round((float) $fixedAsset->net_book_value - $amount, 2)), 'impairment_journal_id' => $journal->id]);
             return $fixedAsset->fresh($this->with);
         });
@@ -333,12 +338,14 @@ class FixedAssetController extends Controller
             $loss = max(0, round($netBookValue - $proceeds, 2));
             $gain = max(0, round($proceeds - $netBookValue, 2));
             $journal = Journal::create(['fiscal_year_id' => $fixedAsset->fiscal_year_id, 'journal_number' => 'DISP-'.now()->format('YmdHis').'-'.random_int(100, 999), 'journal_date' => $data['disposed_date'], 'journal_type' => 'adjustment', 'reference' => $fixedAsset->asset_code, 'description' => 'Disposal '.$fixedAsset->asset_name, 'status' => 'posted', 'posted_by' => request()->user()->id, 'posted_at' => now(), 'source_type' => 'fixed_asset_disposal', 'source_id' => $fixedAsset->id]);
+            $dimensions = $this->journalDimensions($fixedAsset);
             $line = 1;
-            if ((float) $fixedAsset->accumulated_depreciation > 0) $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Remove accumulated depreciation', 'debit' => $fixedAsset->accumulated_depreciation, 'credit' => 0, 'line_order' => $line++]);
-            if ($proceeds > 0 && $bank?->gl_account_id) $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Disposal proceeds', 'debit' => $proceeds, 'credit' => 0, 'line_order' => $line++]);
-            if ($loss > 0) $journal->lines()->create(['account_id' => $resultAccount->id, 'line_description' => 'Loss on disposal', 'debit' => $loss, 'credit' => 0, 'line_order' => $line++]);
-            if ($gain > 0) $journal->lines()->create(['account_id' => $resultAccount->id, 'line_description' => 'Gain on disposal', 'debit' => 0, 'credit' => $gain, 'line_order' => $line++]);
-            $journal->lines()->create(['account_id' => $assetAccount->id, 'line_description' => 'Remove asset cost', 'debit' => 0, 'credit' => $fixedAsset->acquisition_cost, 'line_order' => $line]);
+            if ((float) $fixedAsset->accumulated_depreciation > 0) $journal->lines()->create(['account_id' => $accumulatedAccount->id, ...$dimensions, 'line_description' => 'Remove accumulated depreciation', 'debit' => $fixedAsset->accumulated_depreciation, 'credit' => 0, 'line_order' => $line++]);
+            if ($proceeds > 0 && $bank?->gl_account_id) $journal->lines()->create(['account_id' => $bank->gl_account_id, ...$dimensions, 'line_description' => 'Disposal proceeds', 'debit' => $proceeds, 'credit' => 0, 'line_order' => $line++]);
+            if ($loss > 0) $journal->lines()->create(['account_id' => $resultAccount->id, ...$dimensions, 'line_description' => 'Loss on disposal', 'debit' => $loss, 'credit' => 0, 'line_order' => $line++]);
+            if ($gain > 0) $journal->lines()->create(['account_id' => $resultAccount->id, ...$dimensions, 'line_description' => 'Gain on disposal', 'debit' => 0, 'credit' => $gain, 'line_order' => $line++]);
+            $journal->lines()->create(['account_id' => $assetAccount->id, ...$dimensions, 'line_description' => 'Remove asset cost', 'debit' => 0, 'credit' => $fixedAsset->acquisition_cost, 'line_order' => $line]);
+            $journal->syncBankTransactions();
             $fixedAsset->update([...$data, 'status' => 'disposed', 'journal_id' => $fixedAsset->journal_id, 'disposal_journal_id' => $journal->id, 'net_book_value' => 0]);
             return $fixedAsset->fresh($this->with);
         });
@@ -414,8 +421,9 @@ class FixedAssetController extends Controller
                         'posted_at' => now(),
                         'source_type' => 'fixed_asset_depreciation', 'source_id' => $asset->id,
                     ]);
-                    $journal->lines()->create(['account_id' => $depreciationAccount->id, 'project_id' => $asset->project_id, 'donor_id' => $asset->donor_id, 'program_id' => $asset->program_id, 'line_description' => 'Bulk Depreciation expense', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
-                    $journal->lines()->create(['account_id' => $accumulatedAccount->id, 'line_description' => 'Accumulated depreciation', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
+                    $dimensions = $this->journalDimensions($asset);
+                    $journal->lines()->create(['account_id' => $depreciationAccount->id, ...$dimensions, 'line_description' => 'Bulk Depreciation expense', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
+                    $journal->lines()->create(['account_id' => $accumulatedAccount->id, ...$dimensions, 'line_description' => 'Accumulated depreciation', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
 
                     $accumulated = round((float) $asset->accumulated_depreciation + $amount, 2);
                     $nbv = max((float) $asset->residual_value, round((float) $asset->acquisition_cost - $accumulated - (float) $asset->impairment_amount, 2));
@@ -473,7 +481,7 @@ class FixedAssetController extends Controller
 
     private function validatePayload(Request $request, bool $updating = false, ?int $assetId = null): array
     {
-        return $request->validate([
+        $payload = $request->validate([
             'asset_code' => ['nullable', 'string', 'max:50', 'unique:fixed_assets,asset_code'.($updating && $assetId ? ','.$assetId : '')],
             'asset_name' => ['required', 'string', 'max:160'],
             'description' => ['nullable', 'string'],
@@ -499,6 +507,32 @@ class FixedAssetController extends Controller
             'accumulated_gl_account_id' => ['nullable', 'integer', 'exists:chart_of_accounts,id'],
             'notes' => ['nullable', 'string'],
         ]);
+
+        if (! empty($payload['project_id'])) {
+            $project = Project::query()
+                ->withoutGlobalScope('fiscal_year_context')
+                ->with(['grantAgreement' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context')])
+                ->findOrFail($payload['project_id']);
+            $payload['program_id'] = $project->program_id ?: ($payload['program_id'] ?? null);
+            $payload['donor_id'] = $project->grantAgreement?->donor_id ?: ($payload['donor_id'] ?? null);
+        }
+
+        return $payload;
+    }
+
+    private function journalDimensions(FixedAsset $asset): array
+    {
+        $asset->loadMissing('project.grantAgreementUnscoped');
+        $project = $asset->project;
+        $grant = $project?->grantAgreementUnscoped;
+
+        return [
+            'project_id' => $asset->project_id,
+            'donor_id' => $grant?->donor_id ?: $asset->donor_id,
+            'program_id' => $project?->program_id ?: $asset->program_id,
+            'grant_agreement_id' => $project?->grant_agreement_id,
+            'relation_no' => $project?->relation_no ?: $grant?->relation_no,
+        ];
     }
 
     private function nextAssetCode(): string
@@ -547,7 +581,11 @@ class FixedAssetController extends Controller
             'custodian_id' => $asset->custodian_id,
             'donor' => $asset->donor ? ['id' => $asset->donor->id, 'code' => $asset->donor->code, 'name' => $asset->donor->name] : null,
             'program' => $asset->program ? ['id' => $asset->program->id, 'code' => $asset->program->code, 'name' => $asset->program->name] : null,
-            'project' => $asset->project ? ['id' => $asset->project->id, 'code' => $asset->project->code, 'name' => $asset->project->name] : null,
+            'project' => $asset->project ? ['id' => $asset->project->id, 'code' => $asset->project->code, 'name' => $asset->project->name, 'relation_no' => $asset->project->relation_no, 'bank_account_id' => $asset->project->bank_account_id] : null,
+            'relation_no' => $asset->project?->relation_no ?: $asset->project?->grantAgreementUnscoped?->relation_no,
+            'grant_agreement_id' => $asset->project?->grant_agreement_id,
+            'grant_agreement' => $asset->project?->grantAgreementUnscoped ? ['id' => $asset->project->grantAgreementUnscoped->id, 'grant_no' => $asset->project->grantAgreementUnscoped->grant_no, 'agreement_name' => $asset->project->grantAgreementUnscoped->agreement_name, 'relation_no' => $asset->project->grantAgreementUnscoped->relation_no] : null,
+            'project_bank_account' => $asset->project?->bankAccount ? ['id' => $asset->project->bankAccount->id, 'bank_name' => $asset->project->bankAccount->bank_name, 'account_number' => $asset->project->bankAccount->account_number] : null,
             'vendor' => $asset->vendor ? ['id' => $asset->vendor->id, 'code' => $asset->vendor->code, 'name' => $asset->vendor->name] : null,
             'purchase_order' => $asset->purchaseOrder ? ['id' => $asset->purchaseOrder->id, 'po_number' => $asset->purchaseOrder->po_number] : null,
             'goods_receipt' => $asset->goodsReceipt ? ['id' => $asset->goodsReceipt->id, 'grn_number' => $asset->goodsReceipt->grn_number] : null,
@@ -558,6 +596,10 @@ class FixedAssetController extends Controller
             'impairment_journal_id' => $asset->impairment_journal_id,
             'disposal_type' => $asset->disposal_type,
             'disposal_proceeds' => $asset->disposal_proceeds,
+            'disposal_bank_account_id' => $asset->disposal_bank_account_id,
+            'disposal_bank_account' => $asset->disposalBankAccount ? ['id' => $asset->disposalBankAccount->id, 'bank_name' => $asset->disposalBankAccount->bank_name, 'account_number' => $asset->disposalBankAccount->account_number] : null,
+            'disposed_date' => $asset->disposed_date?->toDateString(),
+            'disposal_reason' => $asset->disposal_reason,
             'capitalized_at' => $asset->capitalized_at?->toISOString(),
             'status' => $asset->status,
             'notes' => $asset->notes,

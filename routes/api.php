@@ -202,6 +202,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('prepaid-expenses/{prepaidExpense}', [PrepaidExpenseController::class, 'update'])->middleware('permission:accounting.prepaid.update');
         Route::delete('prepaid-expenses/{prepaidExpense}', [PrepaidExpenseController::class, 'destroy'])->middleware('permission:accounting.prepaid.delete');
         Route::get('prepaid-expenses/{prepaidExpense}/schedule', [PrepaidExpenseController::class, 'schedule'])->middleware('permission:accounting.prepaid.view');
+        Route::post('prepaid-expenses/{prepaidExpense}/recognize', [PrepaidExpenseController::class, 'recognize'])->middleware('permission:accounting.prepaid.update');
+        Route::post('prepaid-expenses/{prepaidExpense}/amortize', [PrepaidExpenseController::class, 'amortize'])->middleware('permission:accounting.prepaid.update');
         Route::get('dashboard', [AccountingDashboardController::class, 'index'])->middleware('permission:accounting.view');
         Route::get('general-ledger', [GeneralLedgerController::class, 'index'])->middleware('permission:accounting.view');
         Route::post('recurring-journals/{recurringJournal}/generate', [RecurringJournalController::class, 'generate'])
@@ -491,6 +493,7 @@ Route::middleware('auth:sanctum')->group(function () {
         ];
         Route::post('accounting-periods/{id}/close', [AccountingPeriodController::class, 'close'])->middleware('permission:settings.manage');
         Route::post('accounting-periods/{id}/reopen', [AccountingPeriodController::class, 'reopen'])->middleware('permission:settings.manage');
+        Route::get('accounting-periods/{id}/readiness', [AccountingPeriodController::class, 'readiness'])->middleware('permission:master-data.view');
         Route::get('employees/quality', [EmployeeController::class, 'quality'])->middleware('permission:master-data.view');
         Route::get('chart-of-accounts/{id}/transactions', [ChartOfAccountController::class, 'transactions'])->middleware('permission:master-data.view');
         Route::get('approval-matrices/approvers', [ApprovalMatrixController::class, 'approvers'])->middleware('permission:master-data.view');

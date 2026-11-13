@@ -38,7 +38,7 @@ class FixedAsset extends Model
     public function supplierInvoice(): BelongsTo { return $this->belongsTo(SupplierInvoice::class); }
     public function donor(): BelongsTo { return $this->belongsTo(Donor::class); }
     public function program(): BelongsTo { return $this->belongsTo(Program::class); }
-    public function project(): BelongsTo { return $this->belongsTo(Project::class); }
+    public function project(): BelongsTo { return $this->belongsTo(Project::class)->withoutGlobalScope('fiscal_year_context'); }
     public function custodian(): BelongsTo { return $this->belongsTo(Employee::class, 'custodian_id'); }
     public function journal(): BelongsTo { return $this->belongsTo(Journal::class); }
     public function capitalizationJournal(): BelongsTo { return $this->belongsTo(Journal::class, 'capitalization_journal_id'); }

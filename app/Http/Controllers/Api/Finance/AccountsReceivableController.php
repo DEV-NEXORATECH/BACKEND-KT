@@ -307,7 +307,9 @@ class AccountsReceivableController extends Controller
             BankTransaction::create([
                 'fiscal_year_id' => $customerInvoice->fiscal_year_id,
                 'bank_account_id' => $bank->id,
+                'project_id' => $customerInvoice->project_id,
                 'payment_id' => $payment->id,
+                'journal_id' => $journal->id,
                 'transaction_date' => $data['payment_date'],
                 'reference' => $payment->payment_number,
                 'description' => 'Receipt '.$customerInvoice->invoice_number,

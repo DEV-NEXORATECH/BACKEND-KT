@@ -595,7 +595,9 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             BankTransaction::create([
                 'fiscal_year_id' => $expenseRequest->fiscal_year_id,
                 'bank_account_id' => $bank->id,
+                'project_id' => $expenseRequest->project_id,
                 'payment_id' => $payment->id,
+                'journal_id' => $journal->id,
                 'transaction_date' => $data['payment_date'],
                 'reference' => $payment->payment_number,
                 'description' => 'Expense payment '.$expenseRequest->request_number,
@@ -719,7 +721,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Cash Advance return received', 'debit' => $data['amount'], 'credit' => 0, 'line_order' => 1]);
             $journal->lines()->create(['account_id' => $staffAdvance->id, 'line_description' => 'Clear Staff Advance return', 'debit' => 0, 'credit' => $data['amount'], 'line_order' => 2]);
             $return = CashAdvanceReturn::create(['expense_request_id' => $expenseRequest->id, 'employee_id' => $expenseRequest->requester_id, 'bank_account_id' => $bank->id, 'return_amount' => $data['amount'], 'payment_method' => 'bank_transfer', 'return_date' => $data['return_date'], 'reference_no' => $data['reference'] ?? null, 'status' => 'received', 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
-            $txn = BankTransaction::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'bank_account_id' => $bank->id, 'cash_advance_return_id' => $return->id, 'transaction_date' => $data['return_date'], 'reference' => $data['reference'] ?? $expenseRequest->request_number, 'description' => 'Cash Advance return '.$expenseRequest->request_number, 'debit' => $data['amount'], 'credit' => 0, 'status' => 'matched', 'created_by' => request()->user()->id]);
+            $txn = BankTransaction::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'bank_account_id' => $bank->id, 'project_id' => $expenseRequest->project_id, 'journal_id' => $journal->id, 'cash_advance_return_id' => $return->id, 'transaction_date' => $data['return_date'], 'reference' => $data['reference'] ?? $expenseRequest->request_number, 'description' => 'Cash Advance return '.$expenseRequest->request_number, 'debit' => $data['amount'], 'credit' => 0, 'status' => 'matched', 'created_by' => request()->user()->id]);
             $return->update(['bank_transaction_id' => $txn->id]);
             $totalReturned = (float) $expenseRequest->cashAdvanceReturns()->where('status', 'received')->sum('return_amount') + (float) $data['amount'];
             $state = $totalReturned >= (float) ($expenseRequest->return_amount ?? 0) ? 'settled' : 'awaiting_return';
@@ -744,7 +746,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             $journal->lines()->create(['account_id' => $payable->id, 'line_description' => 'Additional reimbursement payable', 'debit' => $reimbursement->amount, 'credit' => 0, 'line_order' => 1]);
             $journal->lines()->create(['account_id' => $bank->gl_account_id, 'line_description' => 'Additional reimbursement payment', 'debit' => 0, 'credit' => $reimbursement->amount, 'line_order' => 2]);
             $payment = Payment::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'payment_number' => 'CARPAY-'.now()->format('YmdHis').'-'.random_int(100,999), 'expense_request_id' => $expenseRequest->id, 'bank_account_id' => $bank->id, 'payment_date' => $data['payment_date'], 'amount' => $reimbursement->amount, 'reference' => $data['reference'] ?? null, 'status' => 'paid', 'journal_id' => $journal->id, 'created_by' => request()->user()->id]);
-            BankTransaction::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'bank_account_id' => $bank->id, 'payment_id' => $payment->id, 'transaction_date' => $data['payment_date'], 'reference' => $payment->payment_number, 'description' => 'Additional reimbursement '.$expenseRequest->request_number, 'debit' => 0, 'credit' => $reimbursement->amount, 'status' => 'matched', 'created_by' => request()->user()->id]);
+            BankTransaction::create(['fiscal_year_id' => $expenseRequest->fiscal_year_id, 'bank_account_id' => $bank->id, 'project_id' => $expenseRequest->project_id, 'payment_id' => $payment->id, 'journal_id' => $journal->id, 'transaction_date' => $data['payment_date'], 'reference' => $payment->payment_number, 'description' => 'Additional reimbursement '.$expenseRequest->request_number, 'debit' => 0, 'credit' => $reimbursement->amount, 'status' => 'matched', 'created_by' => request()->user()->id]);
             $reimbursement->update(['status' => 'paid', 'payment_id' => $payment->id, 'journal_id' => $journal->id, 'paid_at' => now(), 'updated_by' => request()->user()->id]);
             $expenseRequest->update(['settlement_state' => 'settled', 'settlement_status' => 'settled']);
         });

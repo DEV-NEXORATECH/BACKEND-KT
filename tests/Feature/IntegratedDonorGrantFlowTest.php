@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Master\BudgetCategory;
+use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\Currency;
 use App\Models\Master\FiscalYear;
@@ -57,6 +58,15 @@ class IntegratedDonorGrantFlowTest extends TestCase
             'name' => 'Cash / Bank',
             'account_type' => 'asset',
             'normal_balance' => 'debit',
+            'level' => 1,
+            'is_header' => false,
+            'is_active' => true,
+        ]);
+        ChartOfAccount::create([
+            'code' => '4100',
+            'name' => 'Grant Revenue',
+            'account_type' => 'revenue',
+            'normal_balance' => 'credit',
             'level' => 1,
             'is_header' => false,
             'is_active' => true,
@@ -126,10 +136,46 @@ class IntegratedDonorGrantFlowTest extends TestCase
             ->assertJsonPath('data.0.id', $budgetLineId);
 
         // 4. Forecast Baseline
-        $this->getJson("/api/v1/master/grant-disbursements/baseline?grant_agreement_id={$grantId}&relation_no={$relationNo}&project_id={$projectId}&quarter=Q1")
+        $this->getJson("/api/v1/master/grant-disbursements/baseline?grant_agreement_id={$grantId}&relation_no={$relationNo}&project_id={$projectId}&fiscal_year_id={$fiscalYear->id}&quarter=Q1")
             ->assertOk()
             ->assertJsonPath('grant.relation_no', $relationNo)
+            ->assertJsonPath('items.0.cost_category', '5100 - Program Expense')
+            ->assertJsonPath('items.0.historical_expense', 0)
             ->assertJsonCount(1, 'items');
+
+        // Forecast -> request -> funds received remains connected to fiscal
+        // year, grant, project, COA, journal, and bank transaction.
+        $bank = BankAccount::create([
+            'fiscal_year_id' => $fiscalYear->id,
+            'bank_name' => 'Flow Bank',
+            'account_number' => 'FLOW-001',
+            'account_name' => 'Flow Grant Account',
+            'currency_id' => $currency->id,
+            'gl_account_id' => $bankCoa->id,
+            'is_active' => true,
+        ]);
+        \App\Models\Master\GrantAgreement::withoutGlobalScope('fiscal_year_context')->whereKey($grantId)->update(['bank_account_id' => $bank->id]);
+        $requestId = $this->postJson('/api/v1/master/grant-disbursements', [
+            'grant_agreement_id' => $grantId,
+            'project_id' => $projectId,
+            'relation_no' => $relationNo,
+            'period_label' => 'Q1 2026',
+            'request_date' => '2026-02-01',
+            'requested_amount' => 1500000,
+            'bank_account_id' => $bank->id,
+        ])->assertCreated()
+            ->assertJsonPath('data.fiscal_year_id', $fiscalYear->id)
+            ->json('data.id');
+        $this->postJson("/api/v1/master/grant-disbursements/{$requestId}/receive", [
+            'received_date' => '2026-02-10',
+            'received_amount' => 1500000,
+            'actual_fx_rate' => 1,
+            'received_bank_account_id' => $bank->id,
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'received')
+            ->assertJsonPath('bank_transaction.reference', 'DR-GRTFLW01-Q12026-1');
+        $this->assertDatabaseHas('journals', ['source_type' => 'grant_disbursement_receipt', 'source_id' => $requestId, 'reference' => 'DR-GRTFLW01-Q12026-1']);
+        $this->assertDatabaseHas('bank_transactions', ['bank_account_id' => $bank->id, 'reference' => 'DR-GRTFLW01-Q12026-1']);
 
         // 5. Updating integrated record preserves budgetLineId
         $this->putJson("/api/v1/master/donor-grant-integrated/{$donorId}", $payload)->assertOk();
@@ -147,6 +193,10 @@ class IntegratedDonorGrantFlowTest extends TestCase
         ])->assertCreated()->json('data.id');
         \App\Models\Accounting\Journal::findOrFail($journalId)->update(['status' => 'reviewed']);
         $this->postJson("/api/v1/accounting/journals/{$journalId}/post")->assertOk();
+
+        $this->getJson("/api/v1/master/grant-disbursements/baseline?grant_agreement_id={$grantId}&relation_no={$relationNo}&project_id={$projectId}&fiscal_year_id={$fiscalYear->id}&quarter=Q1")
+            ->assertOk()
+            ->assertJsonPath('items.0.historical_expense', 1000000);
 
         $this->getJson("/api/v1/budget/monitoring?relation_no={$relationNo}&project_id={$projectId}&fiscal_year_id={$fiscalYear->id}")
             ->assertOk()
@@ -179,6 +229,13 @@ class IntegratedDonorGrantFlowTest extends TestCase
         ]);
         \App\Models\Master\Donor::query()->withoutGlobalScope('fiscal_year_context')->whereKey($donorId)->update(['fiscal_year_id' => $fiscalYear->id]);
         \App\Models\Master\GrantAgreement::query()->withoutGlobalScope('fiscal_year_context')->whereKey($grantId)->update(['fiscal_year_id' => $fiscalYear->id]);
+
+        $this->getJson("/api/v1/master/grant-disbursements?fiscal_year_id={$fiscalYear->id}")
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
+        $this->getJson("/api/v1/master/grant-disbursements?fiscal_year_id={$otherYear->id}")
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
 
         $this->withHeader('X-Fiscal-Year-Id', (string) $otherYear->id)
             ->getJson('/api/v1/master/donors')

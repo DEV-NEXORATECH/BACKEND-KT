@@ -70,64 +70,93 @@ class Journal extends Model
             if (! $journal->wasChanged('status') || $journal->status !== 'posted') {
                 return;
             }
-            if (in_array($journal->source_type, ['grant_disbursement_receipt', 'bank_account_opening_balance'], true)) {
-                return;
-            }
-            if (str_starts_with((string) $journal->journal_number, 'PAY-')) {
-                return;
-            }
-
-            $lines = $journal->lines()->get();
-            $accountIds = $lines->pluck('account_id')->filter()->unique()->values();
-            if ($accountIds->isEmpty()) {
-                return;
-            }
-
-            $banksByGl = BankAccount::withoutGlobalScope('fiscal_year_context')
-                ->whereIn('gl_account_id', $accountIds)
-                ->get()
-                ->keyBy('gl_account_id');
-
-            if ($banksByGl->isEmpty()) {
-                return;
-            }
-
-            foreach ($lines as $line) {
-                $bank = $banksByGl->get($line->account_id);
-                if (! $bank) {
-                    continue;
-                }
-                $debit = round((float) $line->debit, 2);
-                $credit = round((float) $line->credit, 2);
-                if ($debit <= 0 && $credit <= 0) {
-                    continue;
-                }
-
-                $exists = BankTransaction::withoutGlobalScope('fiscal_year_context')
-                    ->where('bank_account_id', $bank->id)
-                    ->where('reference', $journal->journal_number)
-                    ->where('debit', $debit)
-                    ->where('credit', $credit)
-                    ->exists();
-
-                if ($exists) {
-                    continue;
-                }
-
-                BankTransaction::create([
-                    'fiscal_year_id' => $journal->fiscal_year_id,
-                    'bank_account_id' => $bank->id,
-                    'project_id' => $line->project_id,
-                    'transaction_date' => $journal->journal_date,
-                    'reference' => $journal->journal_number,
-                    'description' => $line->line_description ?: $journal->description,
-                    'debit' => $debit,
-                    'credit' => $credit,
-                    'status' => 'unmatched',
-                    'created_by' => $journal->posted_by ?: $journal->created_by,
-                ]);
-            }
+            $journal->syncBankTransactions();
         });
+    }
+
+    public function syncBankTransactions(): void
+    {
+        if ($this->status !== 'posted') {
+            return;
+        }
+        if (in_array($this->source_type, ['grant_disbursement_receipt', 'bank_account_opening_balance'], true)) {
+            return;
+        }
+        if (str_starts_with((string) $this->journal_number, 'PAY-')) {
+            return;
+        }
+
+        $lines = $this->lines()->get();
+        $accountIds = $lines->pluck('account_id')->filter()->unique()->values();
+        if ($accountIds->isEmpty()) {
+            return;
+        }
+
+        $banksByGl = BankAccount::withoutGlobalScope('fiscal_year_context')
+            ->whereIn('gl_account_id', $accountIds)
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('gl_account_id');
+
+        if ($banksByGl->isEmpty()) {
+            return;
+        }
+
+        foreach ($lines as $line) {
+            $bank = $banksByGl->get($line->account_id);
+            if (! $bank) {
+                continue;
+            }
+            $debit = round((float) $line->debit, 2);
+            $credit = round((float) $line->credit, 2);
+            if ($debit <= 0 && $credit <= 0) {
+                continue;
+            }
+
+            $existing = BankTransaction::withoutGlobalScope('fiscal_year_context')
+                ->where('bank_account_id', $bank->id)
+                ->where(function ($query) use ($line) {
+                    $query->where('journal_line_id', $line->id)
+                        ->orWhere(function ($legacy) {
+                            $legacy->whereNull('journal_line_id')
+                                ->where(function ($journalMatch) {
+                                    $journalMatch->where('journal_id', $this->id)
+                                        ->orWhere(function ($referenceMatch) {
+                                            $referenceMatch->whereNull('journal_id')
+                                    ->where('reference', $this->journal_number);
+                                        });
+                                });
+                        });
+                })
+                ->where('debit', $debit)
+                ->where('credit', $credit)
+                ->first();
+
+            if ($existing) {
+                if (! $existing->journal_id || ! $existing->journal_line_id) {
+                    $existing->update([
+                        'journal_id' => $this->id,
+                        'journal_line_id' => $line->id,
+                    ]);
+                }
+                continue;
+            }
+
+            BankTransaction::create([
+                'fiscal_year_id' => $this->fiscal_year_id,
+                'bank_account_id' => $bank->id,
+                'journal_id' => $this->id,
+                'journal_line_id' => $line->id,
+                'project_id' => $line->project_id,
+                'transaction_date' => $this->journal_date,
+                'reference' => $this->journal_number,
+                'description' => $line->line_description ?: $this->description,
+                'debit' => $debit,
+                'credit' => $credit,
+                'status' => 'unmatched',
+                'created_by' => $this->posted_by ?: $this->created_by,
+            ]);
+        }
     }
 
     // A page filter must not make a transaction in another stored year uneditable/unreadable.
@@ -139,6 +168,11 @@ class Journal extends Model
     public function lines(): HasMany
     {
         return $this->hasMany(JournalLine::class)->orderBy('line_order');
+    }
+
+    public function bankTransactions(): HasMany
+    {
+        return $this->hasMany(BankTransaction::class);
     }
 
     public function currency(): BelongsTo

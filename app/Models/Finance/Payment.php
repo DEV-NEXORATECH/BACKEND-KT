@@ -13,6 +13,7 @@ use App\Traits\AuditTrailTrait;
 use App\Traits\FiscalYearScopedTrait;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Payment extends Model
@@ -30,4 +31,5 @@ class Payment extends Model
     public function bankAccount(): BelongsTo { return $this->belongsTo(BankAccount::class)->withoutGlobalScope('fiscal_year_context'); }
     public function paymentMethod(): BelongsTo { return $this->belongsTo(PaymentMethod::class); }
     public function journal(): BelongsTo { return $this->belongsTo(Journal::class); }
+    public function bankTransactions(): HasMany { return $this->hasMany(BankTransaction::class); }
 }

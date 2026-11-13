@@ -3,8 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\Master\AssetCategory;
+use App\Models\Master\BankAccount;
 use App\Models\Master\ChartOfAccount;
+use App\Models\Master\Currency;
+use App\Models\Master\Donor;
 use App\Models\Master\Employee;
+use App\Models\Master\GrantAgreement;
+use App\Models\Master\Program;
+use App\Models\Master\Project;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -17,7 +23,7 @@ class FixedAssetWorkflowTest extends TestCase
 
     public function test_fixed_asset_lifecycle_posts_capitalization_and_depreciation(): void
     {
-        [$user, $category, $custodian] = $this->fixture();
+        [$user, $category, $custodian, $project, $bank] = $this->fixture();
 
         $create = $this->actingAs($user, 'sanctum')
             ->postJson('/api/v1/assets/fixed-assets', [
@@ -27,10 +33,13 @@ class FixedAssetWorkflowTest extends TestCase
                 'acquisition_date' => '2026-09-20',
                 'acquisition_cost' => 1200,
                 'custodian_id' => $custodian->id,
+                'project_id' => $project->id,
                 'location' => 'Bogor Office',
             ])
             ->assertCreated()
             ->assertJsonPath('data.status', 'draft')
+            ->assertJsonPath('data.relation_no', 'REL-ASSET-001')
+            ->assertJsonPath('data.grant_agreement.grant_no', 'GRANT-ASSET-001')
             ->assertJsonPath('data.net_book_value', '1200.00');
 
         $assetId = $create->json('data.id');
@@ -40,6 +49,7 @@ class FixedAssetWorkflowTest extends TestCase
             ->assertJsonPath('data.status', 'active');
 
         $this->assertDatabaseHas('journals', ['reference' => 'FA-001', 'status' => 'posted']);
+        $this->assertDatabaseHas('journal_lines', ['project_id' => $project->id, 'grant_agreement_id' => $project->grant_agreement_id, 'relation_no' => 'REL-ASSET-001']);
 
         $this->postJson("/api/v1/assets/fixed-assets/{$assetId}/depreciate", [
             'depreciation_date' => '2026-09-30',
@@ -49,6 +59,7 @@ class FixedAssetWorkflowTest extends TestCase
             ->assertJsonPath('data.net_book_value', '1100.00');
 
         $this->assertDatabaseHas('asset_depreciations', ['fixed_asset_id' => $assetId, 'amount' => 100]);
+        $this->assertDatabaseHas('journal_lines', ['project_id' => $project->id, 'relation_no' => 'REL-ASSET-001', 'line_description' => 'Depreciation expense']);
 
         $this->postJson('/api/v1/assets/fixed-assets/bulk-depreciate', [
             'depreciation_date' => '2026-09-30',
@@ -68,10 +79,20 @@ class FixedAssetWorkflowTest extends TestCase
 
         $this->postJson("/api/v1/assets/fixed-assets/{$assetId}/dispose", [
             'disposed_date' => '2026-10-31',
-            'disposal_reason' => 'Damaged beyond repair',
+            'disposal_reason' => 'Sold after replacement',
+            'disposal_type' => 'sale',
+            'disposal_proceeds' => 600,
+            'disposal_bank_account_id' => $bank->id,
         ])
             ->assertOk()
             ->assertJsonPath('data.status', 'disposed');
+
+        $this->assertDatabaseHas('bank_transactions', [
+            'bank_account_id' => $bank->id,
+            'project_id' => $project->id,
+            'debit' => 600,
+            'status' => 'unmatched',
+        ]);
     }
 
     private function fixture(): array
@@ -85,7 +106,15 @@ class FixedAssetWorkflowTest extends TestCase
         $assetAccount = ChartOfAccount::create(['code' => '1210', 'name' => 'Fixed Asset', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
         $accumulatedAccount = ChartOfAccount::create(['code' => '1290', 'name' => 'Accumulated Depreciation', 'account_type' => 'asset', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
         $depreciationAccount = ChartOfAccount::create(['code' => '5500', 'name' => 'Depreciation Expense', 'account_type' => 'expense', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
+        $bankAccountGl = ChartOfAccount::create(['code' => '1110', 'name' => 'Grant Bank', 'account_type' => 'asset', 'normal_balance' => 'debit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
         ChartOfAccount::create(['code' => '2100', 'name' => 'Asset Clearing', 'account_type' => 'liability', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
+
+        $currency = Currency::create(['code' => 'IDR', 'name' => 'Indonesian Rupiah', 'symbol' => 'Rp', 'is_base_currency' => true, 'is_active' => true]);
+        $bank = BankAccount::create(['bank_name' => 'Grant Bank', 'account_number' => 'ASSET-001', 'account_name' => 'Asset Grant', 'currency_id' => $currency->id, 'gl_account_id' => $bankAccountGl->id, 'is_active' => true]);
+        $donor = Donor::create(['code' => 'DNR-ASSET', 'name' => 'Asset Donor', 'type' => 'institution', 'is_active' => true]);
+        $grant = GrantAgreement::create(['grant_no' => 'GRANT-ASSET-001', 'relation_no' => 'REL-ASSET-001', 'donor_id' => $donor->id, 'agreement_name' => 'Asset Grant', 'start_date' => '2026-01-01', 'end_date' => '2026-12-31', 'currency_id' => $currency->id, 'grant_value' => 100000, 'bank_account_id' => $bank->id, 'status' => 'active', 'is_active' => true]);
+        $program = Program::create(['code' => 'PRG-ASSET', 'name' => 'Asset Program', 'is_active' => true]);
+        $project = Project::create(['code' => 'PRJ-ASSET', 'relation_no' => 'REL-ASSET-001', 'program_id' => $program->id, 'grant_agreement_id' => $grant->id, 'bank_account_id' => $bank->id, 'name' => 'Asset Project', 'is_active' => true]);
 
         $category = AssetCategory::create([
             'code' => 'IT',
@@ -99,6 +128,6 @@ class FixedAssetWorkflowTest extends TestCase
         ]);
         $custodian = Employee::create(['employee_id_number' => 'EMP-ASSET', 'name' => 'Asset Custodian', 'is_active' => true]);
 
-        return [$user, $category, $custodian];
+        return [$user, $category, $custodian, $project, $bank];
     }
 }

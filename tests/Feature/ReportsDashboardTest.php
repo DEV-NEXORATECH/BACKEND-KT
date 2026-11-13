@@ -8,6 +8,7 @@ use App\Models\Master\BudgetCategory;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\Currency;
+use App\Models\Master\Project;
 use App\Models\Permission;
 use App\Models\Procurement\SupplierInvoice;
 use App\Models\Role;
@@ -109,6 +110,91 @@ class ReportsDashboardTest extends TestCase
         $pdf = $this->get('/api/v1/reports/export/profit-loss/pdf'.$query)->assertOk();
         $this->assertStringContainsString('pdf', strtolower((string) $pdf->headers->get('content-type'))); $this->assertNotEmpty($pdf->getContent());
         $this->assertGreaterThan(0, $previewDebit);
+    }
+
+    public function test_project_filter_scopes_financial_statement_balance_sheet_and_drilldown_consistently(): void
+    {
+        [$user] = $this->fixture();
+        $cashAccount = ChartOfAccount::query()->where('code', '1000')->firstOrFail();
+        $cashAccount->update(['opening_balance' => 500]);
+        $equityAccount = ChartOfAccount::create(['code' => '3000', 'name' => 'Net Assets', 'account_type' => 'equity', 'normal_balance' => 'credit', 'level' => 1, 'is_header' => false, 'is_active' => true]);
+        $projectA = Project::create(['code' => 'PRJ-A', 'name' => 'Project A', 'is_active' => true]);
+        $projectB = Project::create(['code' => 'PRJ-B', 'name' => 'Project B', 'is_active' => true]);
+
+        foreach ([[$projectA, 100, 'JV-PRJ-A'], [$projectB, 200, 'JV-PRJ-B']] as [$project, $amount, $number]) {
+            $journal = Journal::create([
+                'journal_number' => $number,
+                'journal_date' => '2026-09-20',
+                'journal_type' => 'manual',
+                'description' => $project->name.' funding',
+                'status' => 'posted',
+                'posted_by' => $user->id,
+                'posted_at' => now(),
+            ]);
+            $journal->lines()->create(['account_id' => $cashAccount->id, 'project_id' => $project->id, 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
+            $journal->lines()->create(['account_id' => $equityAccount->id, 'project_id' => $project->id, 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
+        }
+
+        $query = '?start_date=2026-09-01&end_date=2026-09-30&project_id='.$projectA->id;
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/v1/reports/financial'.$query)->assertOk();
+
+        $this->assertSame(100.0, (float) collect($response->json('financial_statement.rows'))->firstWhere('account_id', $cashAccount->id)['balance']);
+        $response->assertJsonPath('balance_sheet.totals.assets', 100)
+            ->assertJsonPath('balance_sheet.totals.equity', 100)
+            ->assertJsonPath('balance_sheet.totals.balanced', true);
+
+        $this->getJson('/api/v1/reports/drilldown'.$query.'&account_id='.$cashAccount->id)
+            ->assertOk()
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('rows.0.project_name', 'Project A')
+            ->assertJsonPath('rows.0.debit', 100);
+    }
+
+    public function test_budget_report_relation_number_scopes_budget_rows_and_transactions(): void
+    {
+        [$user, $budgetLine, $expenseAccount, $liabilityAccount] = $this->fixture();
+        $projectA = Project::create(['code' => 'REL-A', 'relation_no' => 'KT-REL-A', 'name' => 'Project Relation A', 'is_active' => true]);
+        $projectB = Project::create(['code' => 'REL-B', 'relation_no' => 'KT-REL-B', 'name' => 'Project Relation B', 'is_active' => true]);
+        $budgetLine->update(['project_id' => $projectA->id, 'relation_no' => 'KT-REL-A']);
+        $otherBudgetLine = BudgetLine::create([
+            'budget_category_id' => $budgetLine->budget_category_id,
+            'project_id' => $projectB->id,
+            'relation_no' => 'KT-REL-B',
+            'line_code' => 'OPS-002',
+            'description' => 'Other project budget',
+            'total_amount' => 2000,
+            'gl_account_id' => $expenseAccount->id,
+            'is_active' => true,
+        ]);
+
+        foreach ([[$projectA, $budgetLine, 100, 'JV-REL-A'], [$projectB, $otherBudgetLine, 250, 'JV-REL-B']] as [$project, $line, $amount, $number]) {
+            $journal = Journal::create([
+                'journal_number' => $number,
+                'journal_date' => '2026-09-20',
+                'journal_type' => 'manual',
+                'reference' => $number,
+                'description' => $project->name,
+                'status' => 'posted',
+                'posted_by' => $user->id,
+                'posted_at' => now(),
+            ]);
+            $journal->lines()->create(['account_id' => $expenseAccount->id, 'budget_line_id' => $line->id, 'project_id' => $project->id, 'relation_no' => $project->relation_no, 'line_description' => 'Scoped expense', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
+            $journal->lines()->create(['account_id' => $liabilityAccount->id, 'project_id' => $project->id, 'relation_no' => $project->relation_no, 'line_description' => 'Liability', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
+        }
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/reports/budget?relation_no=KT-REL-A&start_date=2026-09-01&end_date=2026-09-30')
+            ->assertOk()
+            ->assertJsonPath('scope.relation_no', 'KT-REL-A')
+            ->assertJsonPath('budget_vs_actual.totals.approved_budget', 1000)
+            ->assertJsonPath('budget_vs_actual.totals.actual', 100)
+            ->assertJsonCount(1, 'budget_vs_actual.rows')
+            ->assertJsonPath('budget_vs_actual.rows.0.relation_no', 'KT-REL-A')
+            ->assertJsonPath('budget_vs_actual.rows.0.project', 'Project Relation A')
+            ->assertJsonCount(1, 'recent_transactions')
+            ->assertJsonPath('recent_transactions.0.reference', 'JV-REL-A')
+            ->assertJsonPath('recent_transactions.0.relation_no', 'KT-REL-A')
+            ->assertJsonPath('recent_transactions.0.line_code', 'OPS-001');
     }
 
     private function fixture(): array

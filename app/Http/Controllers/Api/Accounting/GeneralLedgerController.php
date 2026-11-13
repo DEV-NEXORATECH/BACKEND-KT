@@ -34,7 +34,7 @@ class GeneralLedgerController extends Controller
                 // Legacy/demo journal lines can reference a deleted COA. Keep
                 // the ledger readable instead of failing the entire endpoint.
                 'account_code' => $line->account?->code ?? '-',
-                'account_name' => $line->account?->name ?? 'Unassigned account',
+                'account_name' => $line->account?->name ?? 'Akun Lainnya / Non-COA',
                 'description' => $line->line_description,
                 'debit' => $line->debit,
                 'credit' => $line->credit,

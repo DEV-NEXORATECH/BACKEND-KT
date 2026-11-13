@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Master;
 
 use App\Models\Master\ChartOfAccount;
+use App\Models\Finance\BankTransaction;
 use App\Http\Requests\Master\StoreChartOfAccountRequest;
 use App\Http\Requests\Master\UpdateChartOfAccountRequest;
 use App\Http\Resources\Master\ChartOfAccountResource;
@@ -26,7 +27,16 @@ class ChartOfAccountController extends BaseMasterController
             return parent::index($request);
         }
 
-        $query = ChartOfAccount::withoutGlobalScope('fiscal_year_context')->with($this->defaultWith)
+        $query = ChartOfAccount::withoutGlobalScope('fiscal_year_context')
+            ->with([...$this->defaultWith, 'bankAccounts:id,gl_account_id,bank_name,account_number,account_name,is_active,opening_balance'])
+            ->withSum(['bankAccounts as bank_opening_balance'], 'opening_balance')
+            ->addSelect([
+                'bank_transaction_movement' => BankTransaction::withoutGlobalScope('fiscal_year_context')
+                    ->selectRaw('COALESCE(SUM(bank_transactions.debit - bank_transactions.credit), 0)')
+                    ->join('bank_accounts', 'bank_accounts.id', '=', 'bank_transactions.bank_account_id')
+                    ->whereColumn('bank_accounts.gl_account_id', 'chart_of_accounts.id')
+                    ->whereNull('bank_accounts.deleted_at'),
+            ])
             ->withSum(['journalLines as posted_debit_total' => function ($query) {
                 $query->whereHas('journal', fn ($journal) => $journal->where('status', 'posted'));
             }], 'debit')

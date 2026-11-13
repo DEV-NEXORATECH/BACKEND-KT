@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Accounting;
 use App\Http\Controllers\Controller;
 use App\Models\Accounting\Journal;
 use App\Models\Master\BankAccount;
+use App\Models\Master\ChartOfAccount;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\Project;
 use App\Models\Procurement\SupplierInvoice;
@@ -67,6 +68,7 @@ class JournalController extends Controller
         'lines.project.grantAgreement.donor:id,code,name',
         'lines.budgetLine:id,project_id,grant_agreement_id,relation_no,line_code,description',
         'lines.department:id,code,name',
+        'bankTransactions.bankAccount:id,account_name,bank_name,account_number,gl_account_id',
     ];
 
     public function index(Request $request): JsonResponse
@@ -780,6 +782,8 @@ class JournalController extends Controller
                 ]);
             }
 
+            $reversal->syncBankTransactions();
+
             $journal->update([
                 'status' => 'reversed',
                 'reversed_by' => request()->user()->id,
@@ -840,6 +844,23 @@ class JournalController extends Controller
             'attachment' => ['nullable', 'file', 'max:5120', 'mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx'],
         ]);
         unset($payload['attachment']);
+
+        $accountIds = collect($payload['lines'])->pluck('account_id')->unique()->values();
+        $postableAccountIds = ChartOfAccount::withoutGlobalScope('fiscal_year_context')
+            ->whereIn('id', $accountIds)
+            ->where('is_active', true)
+            ->where('is_header', false)
+            ->pluck('id');
+        $invalidAccountIds = $accountIds->diff($postableAccountIds);
+        if ($invalidAccountIds->isNotEmpty()) {
+            $errors = [];
+            foreach ($payload['lines'] as $index => $line) {
+                if ($invalidAccountIds->contains($line['account_id'])) {
+                    $errors["lines.{$index}.account_id"] = 'Akun COA harus aktif dan bukan akun header.';
+                }
+            }
+            throw ValidationException::withMessages($errors);
+        }
 
         // Manual journal entry is the only type exposed by the journal form.
         $payload['journal_type'] = 'manual';
@@ -986,6 +1007,18 @@ class JournalController extends Controller
             'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('journal', $journal, request()->user()),
             'total_debit' => $journal->total_debit,
             'total_credit' => $journal->total_credit,
+            'bank_transactions' => $journal->bankTransactions->map(fn ($transaction) => [
+                'id' => $transaction->id,
+                'bank_account_id' => $transaction->bank_account_id,
+                'bank_account_name' => $transaction->bankAccount?->account_name,
+                'bank_name' => $transaction->bankAccount?->bank_name,
+                'account_number' => $transaction->bankAccount?->account_number,
+                'transaction_date' => $transaction->transaction_date?->toDateString(),
+                'reference' => $transaction->reference,
+                'debit' => $transaction->debit,
+                'credit' => $transaction->credit,
+                'status' => $transaction->status,
+            ])->values(),
             'lines' => $journal->lines->map(fn ($line) => [
                 'id' => $line->id,
                 'account_id' => $line->account_id,

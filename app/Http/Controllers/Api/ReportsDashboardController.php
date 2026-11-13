@@ -509,7 +509,7 @@ class ReportsDashboardController extends Controller
     private function projectUtilization(array $rows): array
     {
         return collect($rows)
-            ->groupBy(fn (array $row) => $row['project']['name'] ?? 'Unassigned Project')
+            ->groupBy(fn (array $row) => $row['project']['name'] ?? 'Operasional / Non-Project')
             ->map(function ($items, string $project) {
                 $approved = (float) $items->sum('approved_budget');
                 $used = (float) $items->sum(fn (array $row) => $row['actual'] + $row['committed']);
@@ -857,8 +857,8 @@ class ReportsDashboardController extends Controller
         $bva = collect($budgetRows)->map(fn (array $row) => [
             'budget_line_id' => $row['budget_line_id'] ?? null,
             'relation_no' => $row['relation_no'] ?? $request->input('relation_no'),
-            'project' => $row['project']['name'] ?? 'Unassigned Project',
-            'grant' => $row['grant_agreement']['code'] ?? ($row['grant_agreement']['name'] ?? 'Unassigned Grant'),
+            'project' => $row['project']['name'] ?? 'Operasional / Non-Project',
+            'grant' => $row['grant_agreement']['code'] ?? ($row['grant_agreement']['name'] ?? 'Dana Operasional / Non-Grant'),
             'budget' => round((float) ($row['approved_budget'] ?? 0), 2),
             'actual' => round((float) ($row['actual'] ?? 0), 2),
             'committed' => round((float) ($row['committed'] ?? 0), 2),
@@ -965,6 +965,13 @@ class ReportsDashboardController extends Controller
 
     public function reports(Request $request, BudgetMonitoringService $budgetService): JsonResponse
     {
+        $request->validate([
+            'relation_no' => ['nullable', 'string', 'max:100'],
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
+            'budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
+            'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
+        ]);
         $period = $this->period($request);
         if (! app(DataScopeService::class)->canAccessAll($request->user())) {
             return $this->personalReports($request, $period);
@@ -972,25 +979,66 @@ class ReportsDashboardController extends Controller
 
         $projectId = $request->input('project_id');
         $budgetLineId = $request->input('budget_line_id');
-        $budgetRows = $budgetService->summary($request->only(['project_id', 'grant_agreement_id', 'budget_category_id', 'budget_line_id']));
-        $postedLines = $this->postedLines($period['start'], $period['end'], $projectId, $budgetLineId, $period['fiscal_year_id']);
+        $relationNo = trim((string) $request->input('relation_no')) ?: null;
+        $grantAgreementId = $request->input('grant_agreement_id');
+        $budgetRows = $budgetService->summary([
+            ...$request->only(['project_id', 'grant_agreement_id', 'budget_category_id', 'budget_line_id', 'fiscal_year_id']),
+            'relation_no' => $relationNo,
+        ]);
+        $postedLines = $this->postedLines($period['start'], $period['end'], $projectId, $budgetLineId, $period['fiscal_year_id'], $relationNo, $grantAgreementId);
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
+        $financialStatement = $this->financialStatement($postedLines, ! $projectId);
+        $isScoped = $relationNo || $projectId || $grantAgreementId || $budgetLineId;
+        $scopedTransactions = $postedLines
+            ->filter(fn (JournalLine $line) => $line->account?->account_type === 'expense')
+            ->sortByDesc(fn (JournalLine $line) => $line->journal?->journal_date)
+            ->take(100)
+            ->map(fn (JournalLine $line) => [
+                'date' => $line->journal?->journal_date?->toDateString(),
+                'reference' => $line->journal?->reference ?: $line->journal?->journal_number,
+                'description' => $line->line_description ?: $line->journal?->description,
+                'status' => $line->journal?->status,
+                'amount' => round((float) $line->debit - (float) $line->credit, 2),
+                'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: ($line->grantAgreement?->relation_no ?: $line->budgetLine?->relation_no)),
+                'project_id' => $line->project_id,
+                'project' => $line->project?->name,
+                'budget_line_id' => $line->budget_line_id,
+                'line_code' => $line->budgetLine?->line_code,
+            ])
+            ->values()
+            ->all();
 
         return response()->json([
             'success' => true,
             'period' => $period['label'],
-            'financial_statement' => $this->financialStatement($postedLines),
-            'profit_loss' => ['rows' => collect($this->financialStatement($postedLines)['rows'])->filter(fn (array $row) => in_array(strtolower((string) ($row['account_type'] ?? '')), ['revenue', 'income', 'expense'], true))->values()->all()],
-            'balance_sheet' => $this->balanceSheetData($request->input('as_of', $period['end']?->toDateString()), $period['fiscal_year_id']),
+            'scope' => [
+                'relation_no' => $relationNo,
+                'project_id' => $projectId ? (int) $projectId : null,
+                'grant_agreement_id' => $grantAgreementId ? (int) $grantAgreementId : null,
+                'budget_line_id' => $budgetLineId ? (int) $budgetLineId : null,
+                'fiscal_year_id' => $period['fiscal_year_id'],
+            ],
+            'financial_statement' => $financialStatement,
+            'profit_loss' => ['rows' => collect($financialStatement['rows'])->filter(fn (array $row) => in_array(strtolower((string) ($row['account_type'] ?? '')), ['revenue', 'income', 'expense'], true))->values()->all()],
+            'balance_sheet' => $this->balanceSheetData(
+                $request->input('as_of', $period['end']?->toDateString()),
+                $period['fiscal_year_id'],
+                $request->integer('project_id') ?: null,
+            ),
             'budget_vs_actual' => [
                 'totals' => $this->budgetTotals($budgetRows),
                 'rows' => array_values(collect($budgetRows)->map(fn (array $row) => [
                     'budget_line_id' => $row['budget_line_id'],
+                    'relation_no' => $row['relation_no'],
                     'line_code' => $row['line_code'],
                     'description' => $row['description'],
                     'donor' => $row['donor']['name'] ?? '-',
                     'program' => $row['program']['name'] ?? '-',
                     'project' => $row['project']['name'] ?? '-',
+                    'project_id' => $row['project']['id'] ?? null,
+                    'project_code' => $row['project']['code'] ?? null,
+                    'grant_agreement_id' => $row['grant_agreement']['id'] ?? null,
+                    'grant_agreement' => $row['grant_agreement']['name'] ?? '-',
                     'approved_budget' => $row['approved_budget'],
                     'actual' => $row['actual'],
                     'committed' => $row['committed'],
@@ -1007,8 +1055,8 @@ class ReportsDashboardController extends Controller
             'my_requests' => $this->expenseReportWorkspace($request, $period),
             'historical_expenses' => $this->historicalExpenseReport($request, $period),
             'cash_advance_settlement' => $this->cashAdvanceSettlementReport($request, $period),
-            'recent_transactions' => $budgetLineId
-                ? $postedLines->sortByDesc(fn (JournalLine $line) => $line->journal?->journal_date)->take(100)->map(fn (JournalLine $line) => ['date' => $line->journal?->journal_date?->toDateString(), 'reference' => $line->journal?->reference ?: $line->journal?->journal_number, 'description' => $line->line_description ?: $line->journal?->description, 'status' => $line->journal?->status, 'amount' => round((float) $line->debit - (float) $line->credit, 2)])->values()->all()
+            'recent_transactions' => $isScoped
+                ? $scopedTransactions
                 : $this->recentTransactions($period['start'], $period['end']),
         ]);
     }
@@ -1182,7 +1230,11 @@ class ReportsDashboardController extends Controller
         return response()->json([
             'success' => true,
             'as_of' => $asOf->toDateString(),
-            'data' => $this->balanceSheetData($asOf->toDateString(), $request->input('fiscal_year_id')),
+            'data' => $this->balanceSheetData(
+                $asOf->toDateString(),
+                $request->integer('fiscal_year_id') ?: null,
+                $request->integer('project_id') ?: null,
+            ),
         ]);
     }
 
@@ -1195,14 +1247,19 @@ class ReportsDashboardController extends Controller
 
         if ($report === 'profit-loss') {
             $period = $this->period($request);
-            $rows = collect($this->financialStatement($this->postedLines($period['start'], $period['end'], $request->input('project_id'), null, $period['fiscal_year_id']))['rows'])
+            $projectId = $request->input('project_id');
+            $rows = collect($this->financialStatement($this->postedLines($period['start'], $period['end'], $projectId, null, $period['fiscal_year_id']), ! $projectId)['rows'])
                 ->filter(fn (array $row) => in_array(strtolower((string) ($row['account_type'] ?? '')), ['revenue', 'income', 'expense'], true))->values()->all();
             $title = 'Profit & Loss';
             $filename = 'laporan-laba-rugi-'.now()->format('Ymd_His');
             $pdfData = ['rows' => collect($rows), 'period_label' => $this->periodLabel($period)];
         } elseif ($report === 'balance-sheet') {
             $asOf = $request->filled('as_of') ? CarbonImmutable::parse($request->string('as_of'))->toDateString() : CarbonImmutable::now()->toDateString();
-            $data = $this->balanceSheetData($asOf, $request->input('fiscal_year_id'));
+            $data = $this->balanceSheetData(
+                $asOf,
+                $request->integer('fiscal_year_id') ?: null,
+                $request->integer('project_id') ?: null,
+            );
             $rows = $data['accounts'];
             $title = 'Balance Sheet';
             $filename = 'neraca-'.$asOf.'-'.now()->format('His');
@@ -1493,7 +1550,7 @@ class ReportsDashboardController extends Controller
     private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null, ?string $budgetLineId = null, ?int $fiscalYearId = null, ?string $relationNo = null, ?string $grantAgreementId = null)
     {
         return JournalLine::query()
-            ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'project:id,code,relation_no,name,grant_agreement_id', 'project.grantAgreement:id,grant_no,relation_no,agreement_name'])
+            ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'grantAgreement:id,grant_no,relation_no,agreement_name', 'budgetLine:id,line_code,relation_no', 'project:id,code,relation_no,name,grant_agreement_id', 'project.grantAgreement:id,grant_no,relation_no,agreement_name'])
             ->whereHas('journal', function (Builder $query) use ($start, $end) {
                 $query->where('status', 'posted')
                     ->when($start, fn (Builder $inner) => $inner->whereDate('journal_date', '>=', $start))
@@ -1612,7 +1669,7 @@ class ReportsDashboardController extends Controller
     private function donorUtilization(array $rows): array
     {
         return collect($rows)
-            ->groupBy(fn (array $row) => $row['donor']['name'] ?? 'Unassigned')
+            ->groupBy(fn (array $row) => $row['donor']['name'] ?? 'Dana Internal / Non-Grant')
             ->map(function ($items, string $donor) {
                 $approved = (float) $items->sum('approved_budget');
                 $used = (float) $items->sum(fn (array $row) => $row['actual'] + $row['committed']);
@@ -1644,7 +1701,7 @@ class ReportsDashboardController extends Controller
     private function recentTransactions(?CarbonInterface $start, ?CarbonInterface $end): array
     {
         return Journal::query()
-            ->with('lines.account:id,code,name,account_type')
+            ->with(['lines.account:id,code,name,account_type', 'lines.project:id,relation_no', 'lines.grantAgreement:id,relation_no', 'lines.budgetLine:id,relation_no'])
             // The dashboard's Recent Transactions list is an activity feed,
             // so it must also show journals waiting for approval/posting.
             // Exclude only terminal invalidated records.
@@ -1660,6 +1717,11 @@ class ReportsDashboardController extends Controller
                 $expense = (float) $journal->lines
                     ->filter(fn (JournalLine $line) => $line->account?->account_type === 'expense')
                     ->sum(fn (JournalLine $line) => (float) $line->debit - (float) $line->credit);
+                $relations = $journal->lines
+                    ->map(fn (JournalLine $line) => $line->relation_no ?: ($line->project?->relation_no ?: ($line->grantAgreement?->relation_no ?: $line->budgetLine?->relation_no)))
+                    ->filter()
+                    ->unique()
+                    ->values();
 
                 return [
                     'date' => $journal->journal_date?->toDateString(),
@@ -1668,21 +1730,23 @@ class ReportsDashboardController extends Controller
                     'status' => $journal->status,
                     'amount' => round($expense ?: $debit, 2),
                     'direction' => $expense > 0 ? 'out' : 'neutral',
+                    'relation_no' => $relations->count() === 1 ? $relations->first() : null,
+                    'relation_nos' => $relations->all(),
                 ];
             })
             ->all();
     }
 
-    private function financialStatement($postedLines): array
+    private function financialStatement($postedLines, bool $includeOpeningBalances = true): array
     {
         $types = ['asset', 'liability', 'equity', 'revenue', 'expense'];
         $accounts = ChartOfAccount::query()->whereIn('account_type', $types)->orderBy('code')->get();
 
-        $rows = $accounts->map(function (ChartOfAccount $account) use ($postedLines) {
+        $rows = $accounts->map(function (ChartOfAccount $account) use ($postedLines, $includeOpeningBalances) {
             $debit = (float) $postedLines->where('account_id', $account->id)->sum('debit');
             $credit = (float) $postedLines->where('account_id', $account->id)->sum('credit');
             $normalCredit = in_array($account->normal_balance, ['credit'], true);
-            $opening = (float) ($account->opening_balance ?? 0);
+            $opening = $includeOpeningBalances ? (float) ($account->opening_balance ?? 0) : 0.0;
             $balance = $opening + ($normalCredit ? $credit - $debit : $debit - $credit);
 
             return [
@@ -1739,25 +1803,28 @@ class ReportsDashboardController extends Controller
         ];
     }
 
-    private function balanceSheetData(?string $asOf, ?int $fiscalYearId = null): array
+    private function balanceSheetData(?string $asOf, ?int $fiscalYearId = null, ?int $projectId = null): array
     {
         $date = $asOf ? CarbonImmutable::parse($asOf)->endOfDay() : CarbonImmutable::now()->endOfDay();
         $lines = JournalLine::query()
             ->whereHas('journal', fn (Builder $query) => $query->where('status', 'posted')->whereDate('journal_date', '<=', $date)->when($fiscalYearId, fn (Builder $yearQuery) => $yearQuery->where('fiscal_year_id', $fiscalYearId)))
+            ->when($projectId, fn (Builder $query) => $query->where('project_id', $projectId))
             ->get();
 
         $accounts = ChartOfAccount::query()
             ->whereIn('account_type', ['asset', 'liability', 'equity', 'revenue', 'expense'])
             ->orderBy('code')
             ->get()
-            ->map(function (ChartOfAccount $account) use ($lines) {
+            ->map(function (ChartOfAccount $account) use ($lines, $projectId) {
             $items = $lines->where('account_id', $account->id);
             if (! $account || ! in_array($account->account_type, ['asset', 'liability', 'equity', 'revenue', 'expense'], true)) {
                 return null;
             }
             $debit = (float) $items->sum('debit');
             $credit = (float) $items->sum('credit');
-            $opening = (float) ($account->opening_balance ?? 0);
+            // Opening balances belong to the organisation unless they have an
+            // explicit project dimension. They must not leak into a project-only report.
+            $opening = $projectId ? 0.0 : (float) ($account->opening_balance ?? 0);
             $balance = $opening + ($account->normal_balance === 'credit' ? $credit - $debit : $debit - $credit);
             return [
                 'account_id' => $account->id,
@@ -1780,6 +1847,7 @@ class ReportsDashboardController extends Controller
         $fixedAssets = FixedAsset::query()
             ->whereDate('acquisition_date', '<=', $date)
             ->whereIn('status', ['active', 'transferred', 'disposed'])
+            ->when($projectId, fn (Builder $query) => $query->where('project_id', $projectId))
             ->get();
         $fixedAssetSummary = [
             'acquisition_cost' => round((float) $fixedAssets->sum('acquisition_cost'), 2),
@@ -1965,7 +2033,7 @@ class ReportsDashboardController extends Controller
                 if ($outstanding <= 0) return null;
                 $due = $expense->settlement_due_date ? CarbonImmutable::parse($expense->settlement_due_date) : null;
                 $days = $due ? max(0, $due->diffInDays($asOf, false)) : 0;
-                return ['id' => $expense->id, 'reference' => $expense->request_number, 'staff' => $expense->requester?->name ?? 'Unassigned', 'project' => $expense->project?->name, 'due_date' => $due?->toDateString(), 'outstanding' => round($outstanding, 2), 'days' => $days, 'bucket' => $days <= 0 ? 'current' : ($days <= 30 ? '1_30' : ($days <= 60 ? '31_60' : ($days <= 90 ? '61_90' : 'over_90'))), 'source' => 'cash_advance_settlement'];
+                return ['id' => $expense->id, 'reference' => $expense->request_number, 'staff' => $expense->requester?->name ?? 'Staff Umum', 'project' => $expense->project?->name ?? 'Operasional / Non-Project', 'due_date' => $due?->toDateString(), 'outstanding' => round($outstanding, 2), 'days' => $days, 'bucket' => $days <= 0 ? 'current' : ($days <= 30 ? '1_30' : ($days <= 60 ? '31_60' : ($days <= 90 ? '61_90' : 'over_90'))), 'source' => 'cash_advance_settlement'];
             })->filter()->values()->all();
     }
 

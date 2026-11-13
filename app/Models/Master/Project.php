@@ -55,6 +55,12 @@ class Project extends Model
         return $this->belongsTo(\App\Models\Master\GrantAgreement::class, 'grant_agreement_id');
     }
 
+    public function grantAgreementUnscoped()
+    {
+        return $this->belongsTo(\App\Models\Master\GrantAgreement::class, 'grant_agreement_id')
+            ->withoutGlobalScope('fiscal_year_context');
+    }
+
     public function budgetCurrency()
     {
         return $this->belongsTo(\App\Models\Master\Currency::class, 'budget_currency_id');

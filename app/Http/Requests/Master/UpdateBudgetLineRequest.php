@@ -43,7 +43,7 @@ class UpdateBudgetLineRequest extends FormRequest
             'period_allocations' => 'nullable|array',
             'period_allocations.*.period' => 'required_with:period_allocations|string|max:20',
             'period_allocations.*.amount' => 'required_with:period_allocations|numeric|min:0',
-            'gl_account_id' => 'nullable|integer|exists:chart_of_accounts,id',
+            'gl_account_id' => 'required|integer|exists:chart_of_accounts,id',
             'cost_type' => 'nullable|string|max:50',
             'is_active' => 'boolean',
         ];
@@ -91,9 +91,9 @@ class UpdateBudgetLineRequest extends FormRequest
                 }
             }
             if ($this->filled('gl_account_id')) {
-                $account = ChartOfAccount::query()->find($this->integer('gl_account_id'));
-                if ($account && strtolower((string) $account->account_type) !== 'expense') {
-                    $validator->errors()->add('gl_account_id', 'Budget lines can only use an expense CoA.');
+                $account = ChartOfAccount::withoutGlobalScope('fiscal_year_context')->find($this->integer('gl_account_id'));
+                if ($account && (strtolower((string) $account->account_type) !== 'expense' || $account->is_header || ! $account->is_active)) {
+                    $validator->errors()->add('gl_account_id', 'Budget lines can only use an active, non-header expense CoA.');
                 }
             }
             if ($this->filled('activity_id') && $this->filled('project_id')) {

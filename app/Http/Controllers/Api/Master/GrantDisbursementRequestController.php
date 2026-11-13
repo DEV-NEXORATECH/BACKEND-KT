@@ -17,6 +17,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class GrantDisbursementRequestController extends Controller
 {
@@ -49,6 +50,16 @@ class GrantDisbursementRequestController extends Controller
         }
         if ($request->filled('project_id')) {
             $query->whereHas('grantAgreement.projects', fn ($projectQuery) => $projectQuery->where('projects.id', $request->integer('project_id')));
+        }
+        if ($request->filled('fiscal_year_id')) {
+            $fiscalYearId = $request->integer('fiscal_year_id');
+            $query->where(function ($scope) use ($fiscalYearId) {
+                $scope->where('fiscal_year_id', $fiscalYearId)
+                    ->orWhere(function ($legacy) use ($fiscalYearId) {
+                        $legacy->whereNull('fiscal_year_id')
+                            ->whereHas('grantAgreement', fn ($grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('fiscal_year_id', $fiscalYearId));
+                    });
+            });
         }
 
         if ($request->filled('status') && $request->input('status') !== 'ALL') {
@@ -117,15 +128,15 @@ class GrantDisbursementRequestController extends Controller
      */
     public function baseline(Request $request)
     {
-        $grantId = $request->input('grant_agreement_id');
-        $quarter = $request->input('quarter', 'Q1'); // Q1, Q2, Q3, Q4
-
-        if (!$grantId) {
-            return response()->json([
-                'success' => false,
-                'message' => 'grant_agreement_id wajib diisi.',
-            ], 422);
-        }
+        $validated = $request->validate([
+            'grant_agreement_id' => ['required', 'integer', 'exists:grant_agreements,id'],
+            'quarter' => ['nullable', 'in:Q1,Q2,Q3,Q4'],
+            'relation_no' => ['nullable', 'string', 'max:100'],
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
+        ]);
+        $grantId = (int) $validated['grant_agreement_id'];
+        $quarter = $validated['quarter'] ?? 'Q1';
 
         $grant = GrantAgreement::query()
             ->withoutGlobalScope('fiscal_year_context')
@@ -137,6 +148,11 @@ class GrantDisbursementRequestController extends Controller
                 'projects' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
             ])
             ->findOrFail($grantId);
+        if ($request->filled('fiscal_year_id') && (int) $grant->fiscal_year_id !== $request->integer('fiscal_year_id')) {
+            throw ValidationException::withMessages([
+                'grant_agreement_id' => 'Grant Agreement tidak termasuk dalam tahun fiskal yang dipilih.',
+            ]);
+        }
         if ($request->filled('relation_no')) {
             $relationNo = trim((string) $request->input('relation_no'));
             $matchesRelation = ($grant->relation_no && strcasecmp($grant->relation_no, $relationNo) === 0)
@@ -157,9 +173,17 @@ class GrantDisbursementRequestController extends Controller
             ->orderBy('id')
             ->get();
 
+        $historicalActuals = JournalLine::query()
+            ->selectRaw('budget_line_id, COALESCE(SUM(debit - credit), 0) as actual_amount')
+            ->whereIn('budget_line_id', $budgetLines->pluck('id'))
+            ->whereHas('account', fn ($query) => $query->withoutGlobalScope('fiscal_year_context')->where('account_type', 'expense'))
+            ->whereHas('journal', fn ($query) => $query->withoutGlobalScope('fiscal_year_context')->where('status', 'posted'))
+            ->groupBy('budget_line_id')
+            ->pluck('actual_amount', 'budget_line_id');
+
         $contractRate = (float) ($grant->exchange_rate_contract ?: 1);
 
-        $items = $budgetLines->map(function ($line) use ($quarter, $contractRate, $grant) {
+        $items = $budgetLines->map(function ($line) use ($quarter, $contractRate, $grant, $historicalActuals) {
             $allocations = is_array($line->period_allocations) ? $line->period_allocations : [];
 
             // Extract quarterly budget allocation if specified, otherwise 1/4 of total
@@ -170,16 +194,9 @@ class GrantDisbursementRequestController extends Controller
                 $proposalBudget = round((float) ($line->total_amount ?: 0) / 4, 2);
             }
 
-            // Estimate historical expense (baseline trend)
-            // If expense lines exist for this budget line or activity, aggregate here:
-            $historicalExpense = 0;
-            try {
-                $historicalExpense = (float) DB::table('expense_request_lines')
-                    ->where('budget_line_id', $line->id)
-                    ->sum('amount');
-            } catch (\Throwable $e) {
-                $historicalExpense = 0;
-            }
+            // Historical expense must follow the accounting ledger. Draft or
+            // unposted expense requests are intentionally excluded.
+            $historicalExpense = (float) ($historicalActuals[$line->id] ?? 0);
 
             return [
                 'budget_line_id' => $line->id,
@@ -190,7 +207,7 @@ class GrantDisbursementRequestController extends Controller
                 'sub_output_name' => $line->sub_output_name ?: 'Sub-Output Project',
                 'activity_code' => $line->activity_code ?: ($line->activity->code ?? null),
                 'activity_name' => $line->activity_name ?: ($line->activity->name ?? 'Aktivitas Terkait'),
-                'cost_category' => $line->glAccount ? "{$line->glAccount->account_code} - {$line->glAccount->account_name}" : 'General Program Costs',
+                'cost_category' => $line->glAccount ? "{$line->glAccount->code} - {$line->glAccount->name}" : 'General Program Costs',
                 'gl_account_id' => $line->gl_account_id,
                 'currency_code' => $line->currency->code ?? 'IDR',
                 'proposal_budget' => round($proposalBudget, 2),
@@ -248,9 +265,21 @@ class GrantDisbursementRequestController extends Controller
             'notes' => 'nullable|string',
             'attachment' => 'nullable|file|max:10240',
             'items' => 'nullable|array',
+            'relation_no' => 'nullable|string|max:100',
+            'project_id' => 'nullable|integer|exists:projects,id',
         ]);
 
-        $grant = GrantAgreement::findOrFail($validated['grant_agreement_id']);
+        $grant = GrantAgreement::withoutGlobalScope('fiscal_year_context')->with('projects')->findOrFail($validated['grant_agreement_id']);
+        if ($request->filled('relation_no')) {
+            $relationNo = trim((string) $request->input('relation_no'));
+            $matchesRelation = $grant->relation_no === $relationNo || $grant->projects->contains(fn ($project) => $project->relation_no === $relationNo);
+            if (! $matchesRelation) {
+                throw ValidationException::withMessages(['grant_agreement_id' => 'Grant Agreement tidak sesuai dengan Nomor Relasi yang aktif.']);
+            }
+        }
+        if ($request->filled('project_id') && ! $grant->projects->contains('id', $request->integer('project_id'))) {
+            throw ValidationException::withMessages(['project_id' => 'Project tidak terhubung ke Grant Agreement yang dipilih.']);
+        }
         $contractRate = (float) ($validated['contract_fx_rate'] ?? ($grant->exchange_rate_contract ?: 1));
         $requestedAmount = (float) $validated['requested_amount'];
         $requestedAmountIdr = round($requestedAmount * $contractRate, 2);
@@ -270,6 +299,7 @@ class GrantDisbursementRequestController extends Controller
 
         return DB::transaction(function () use ($validated, $grant, $requestNo, $contractRate, $requestedAmount, $requestedAmountIdr, $attachmentPath, $request) {
             $disbursement = GrantDisbursementRequest::create([
+                'fiscal_year_id' => $grant->fiscal_year_id,
                 'grant_agreement_id' => $grant->id,
                 'bank_account_id' => $validated['bank_account_id'] ?? $grant->bank_account_id,
                 'request_no' => $requestNo,
@@ -456,6 +486,11 @@ class GrantDisbursementRequestController extends Controller
 
         $disbursement->loadMissing(['grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')]);
         $bank = BankAccount::withoutGlobalScope('fiscal_year_context')->findOrFail($validated['received_bank_account_id']);
+        if (! $bank->is_active || ! $bank->gl_account_id) {
+            throw ValidationException::withMessages([
+                'received_bank_account_id' => 'Rekening penerimaan harus aktif dan sudah terhubung ke COA bank.',
+            ]);
+        }
 
         $journal = null;
         $bankTransaction = null;
@@ -501,10 +536,10 @@ class GrantDisbursementRequestController extends Controller
                         'journal_number' => 'GDR-'.$disbursement->id.'-'.now()->format('YmdHis'),
                         'journal_date' => $validated['received_date'],
                         'journal_type' => 'manual',
-                        'reference' => $disbursement->request_number,
+                        'reference' => $disbursement->request_no,
                         'source_type' => 'grant_disbursement_receipt',
                         'source_id' => $disbursement->id,
-                        'description' => 'Penerimaan dana hibah '.($disbursement->grantAgreement?->grant_no ?: $disbursement->request_number),
+                        'description' => 'Penerimaan dana hibah '.($disbursement->grantAgreement?->grant_no ?: $disbursement->request_no),
                         'currency_id' => $disbursement->currency_id,
                         'exchange_rate' => $actualRate,
                         'original_amount' => $receivedAmount,
@@ -527,7 +562,7 @@ class GrantDisbursementRequestController extends Controller
                     JournalLine::create(array_merge([
                         'journal_id' => $journal->id,
                         'account_id' => $bank->gl_account_id,
-                        'line_description' => 'Bank receipt grant disbursement '.$disbursement->request_number,
+                        'line_description' => 'Bank receipt grant disbursement '.$disbursement->request_no,
                         'debit' => $receivedAmountIdr,
                         'credit' => 0,
                         'line_order' => 1,
@@ -536,7 +571,7 @@ class GrantDisbursementRequestController extends Controller
                     JournalLine::create(array_merge([
                         'journal_id' => $journal->id,
                         'account_id' => $creditAccountId,
-                        'line_description' => 'Grant revenue receipt '.$disbursement->request_number,
+                        'line_description' => 'Grant revenue receipt '.$disbursement->request_no,
                         'debit' => 0,
                         'credit' => $receivedAmountIdr,
                         'line_order' => 2,
@@ -548,7 +583,7 @@ class GrantDisbursementRequestController extends Controller
 
             $existingBankTx = BankTransaction::withoutGlobalScope('fiscal_year_context')
                 ->where('bank_account_id', $bank->id)
-                ->where('reference', $disbursement->request_number)
+                ->where('reference', $disbursement->request_no)
                 ->first();
 
             if (! $existingBankTx) {
@@ -556,8 +591,8 @@ class GrantDisbursementRequestController extends Controller
                     'fiscal_year_id' => $fiscalYearId,
                     'bank_account_id' => $bank->id,
                     'transaction_date' => $validated['received_date'],
-                    'reference' => $disbursement->request_number,
-                    'description' => 'Penerimaan dana hibah '.($disbursement->grantAgreement?->grant_no ?: $disbursement->request_number),
+                    'reference' => $disbursement->request_no,
+                    'description' => 'Penerimaan dana hibah '.($disbursement->grantAgreement?->grant_no ?: $disbursement->request_no),
                     'debit' => $receivedAmountIdr,
                     'credit' => 0,
                     'status' => 'unmatched',

@@ -57,6 +57,9 @@ class JournalDimensionResolver
         }
         $account = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')->find($line['account_id']);
         if (!$account) $fail('account_id', 'Akun COA tidak tersedia atau sudah dihapus.');
+        if ($account->account_type === 'expense' && $budget?->gl_account_id && (int) $budget->gl_account_id !== (int) $account->id) {
+            $fail('account_id', 'COA Expense pada Journal harus sama dengan COA yang terhubung ke Budget Line.');
+        }
         if ($posting && $account?->account_type === 'expense' && (!$budget || !$project || empty($line['donor_id']) || empty($line['relation_no']))) {
             $fail('budget_line_id', 'Lengkapi dimensi budget pengeluaran sebelum posting.');
         }

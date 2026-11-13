@@ -17,9 +17,17 @@ class BudgetMonitoringService
                 'grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
                 'grantAgreement.donor:id,code,name',
                 'grantAgreement.bankAccount:id,bank_name,account_number,account_name',
+                'grantAgreement.disbursementRequests' => fn ($q) => $q->whereNotNull('received_bank_account_id')->latest('received_date')->latest('id'),
+                'grantAgreement.disbursementRequests.receivedBankAccount:id,bank_name,account_number,account_name',
+                'grantAgreement.fiscalYear:id,year,name',
                 'project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
                 'project.program:id,code,name',
                 'project.bankAccount:id,bank_name,account_number,account_name',
+                'project.grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
+                'project.grantAgreement.bankAccount:id,bank_name,account_number,account_name',
+                'project.grantAgreement.disbursementRequests' => fn ($q) => $q->whereNotNull('received_bank_account_id')->latest('received_date')->latest('id'),
+                'project.grantAgreement.disbursementRequests.receivedBankAccount:id,bank_name,account_number,account_name',
+                'project.fiscalYears:id,year,name',
                 'fiscalYear:id,year,name',
                 'budgetCategory:id,code,name',
                 'glAccount:id,code,name',
@@ -27,12 +35,24 @@ class BudgetMonitoringService
             ])
             ->when($filters['budget_line_id'] ?? null, fn (Builder $query, $budgetLineId) => $query->whereKey($budgetLineId))
             ->when($filters['project_id'] ?? null, fn (Builder $query, $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['fiscal_year_id'] ?? null, fn (Builder $query, $id) => $query->where('fiscal_year_id', $id))
+            ->when($filters['fiscal_year_id'] ?? null, function (Builder $query, $id) {
+                $query->where(function (Builder $sub) use ($id) {
+                    $sub->where('fiscal_year_id', $id)
+                        ->orWhere(function (Builder $q) use ($id) {
+                            $q->whereNull('fiscal_year_id')
+                                ->where(function (Builder $nested) use ($id) {
+                                    $nested->whereHas('project.fiscalYears', fn (Builder $year) => $year->whereKey($id))
+                                        ->orWhereHas('grantAgreement', fn (Builder $g) => $g->withoutGlobalScope('fiscal_year_context')->where('fiscal_year_id', $id));
+                                });
+                        });
+                });
+            })
             ->when($filters['grant_agreement_id'] ?? null, fn (Builder $query, $grantId) => $query->where('grant_agreement_id', $grantId))
             ->when($filters['bank_account_id'] ?? null, function (Builder $query, $bankAccountId) {
                 $query->where(function (Builder $scope) use ($bankAccountId) {
                     $scope->whereHas('project', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->where('bank_account_id', $bankAccountId))
-                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('bank_account_id', $bankAccountId));
+                        ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('bank_account_id', $bankAccountId))
+                        ->orWhereHas('grantAgreement.disbursementRequests', fn (Builder $dr) => $dr->where('received_bank_account_id', $bankAccountId));
                 });
             })
             ->when($filters['relation_no'] ?? null, fn (Builder $query, $relationNo) => $query->whereRaw("COALESCE(NULLIF(budget_lines.relation_no, ''),
@@ -86,10 +106,19 @@ class BudgetMonitoringService
             $utilization = $approved > 0 ? round(($totalSpent / $approved) * 100, 2) : 0;
             $variancePercent = $approved > 0 ? round(($variance / $approved) * 100, 2) : 0;
 
+            $fiscalYearId = $line->fiscal_year_id ?: ($line->project?->fiscalYears?->first()?->id ?: $line->grantAgreement?->fiscal_year_id);
+            $fiscalYearYear = $line->fiscalYear?->year ?: ($line->project?->fiscalYears?->first()?->year ?: ($line->grantAgreement?->fiscalYear?->year ?: null));
+            if (! $fiscalYearYear && ! empty($filters['fiscal_year_id'])) {
+                $fiscalYearYear = \App\Models\Master\FiscalYear::where('id', $filters['fiscal_year_id'])->value('year');
+            }
+            if (! $fiscalYearYear) {
+                $fiscalYearYear = \App\Models\Master\FiscalYear::where('is_active', true)->value('year');
+            }
+
             return [
                 'budget_line_id' => $line->id,
-                'fiscal_year_id' => $line->fiscal_year_id,
-                'fiscal_year_year' => $line->fiscalYear?->year,
+                'fiscal_year_id' => $fiscalYearId ?: ($filters['fiscal_year_id'] ?? null),
+                'fiscal_year_year' => $fiscalYearYear,
                 'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: $line->grantAgreement?->relation_no),
                 'line_code' => $line->line_code,
                 'description' => $line->description,
@@ -144,7 +173,12 @@ class BudgetMonitoringService
                     'code' => $line->glAccount->code,
                     'name' => $line->glAccount->name,
                 ] : null,
-                'bank_account' => ($bank = $line->project?->bankAccount ?: $line->grantAgreement?->bankAccount) ? [
+                'bank_account' => ($bank = $line->project?->bankAccount
+                    ?: $line->grantAgreement?->bankAccount
+                    ?: $line->project?->grantAgreement?->bankAccount
+                    ?: $line->grantAgreement?->disbursementRequests?->first()?->receivedBankAccount
+                    ?: $line->project?->grantAgreement?->disbursementRequests?->first()?->receivedBankAccount
+                ) ? [
                     'id' => $bank->id,
                     'bank_name' => $bank->bank_name,
                     'account_number' => $bank->account_number,
