@@ -267,6 +267,22 @@ abstract class BaseMasterController extends Controller
         $query = $this->modelClass::query()->withoutGlobalScope('fiscal_year_context')->with($this->defaultWith)->applyFilters($request, $this->searchableColumns);
         $data = $query->get();
 
+        // Keep COA exports round-trippable: the database accepts canonical
+        // account types only, so never export legacy labels such as `income`
+        // that would fail on a subsequent import.
+        if ($this->modelClass === \App\Models\Master\ChartOfAccount::class) {
+            $data->each(function ($account) {
+                $type = strtolower(trim((string) $account->account_type));
+                $aliases = [
+                    'income' => str_starts_with((string) $account->code, '6') ? 'other_income' : 'revenue',
+                    'revenues' => 'revenue', 'sales' => 'revenue',
+                    'assets' => 'asset', 'bank' => 'asset', 'cash' => 'asset',
+                    'expenses' => 'expense', 'cost' => 'expense', 'cogs' => 'expense',
+                ];
+                if (isset($aliases[$type])) $account->setAttribute('account_type', $aliases[$type]);
+            });
+        }
+
         return $exportService->export(class_basename($this->modelClass), $data, $format);
     }
 
