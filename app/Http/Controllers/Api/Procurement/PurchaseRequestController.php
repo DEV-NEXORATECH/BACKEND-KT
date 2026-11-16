@@ -369,7 +369,7 @@ class PurchaseRequestController extends Controller
             'department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
-            'justification' => ['required', 'string'],
+            'justification' => ['nullable', 'string'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.budget_line_id' => ['required', 'integer', 'exists:budget_lines,id'],
             'lines.*.procurement_item_id' => ['nullable', 'integer', 'exists:procurement_items,id'],
@@ -417,6 +417,21 @@ class PurchaseRequestController extends Controller
             $payload['lines'][$index]['currency'] = strtoupper(trim((string) ($line['currency'] ?? '')) ?: ($budgetLine->currency?->code ?: 'IDR'));
             $payload['lines'][$index]['total_amount'] = round($quantity * $unitPrice, 2);
             $payload['lines'][$index]['line_order'] = $index + 1;
+        }
+
+        // The Business Justification input is intentionally no longer shown
+        // on the PR form. Keep the legacy non-null database column populated
+        // with a concise summary derived from the requested goods/services.
+        if (blank($payload['justification'] ?? null)) {
+            $descriptions = collect($payload['lines'])
+                ->pluck('item_description')
+                ->filter()
+                ->unique()
+                ->take(3)
+                ->implode(', ');
+            $payload['justification'] = $descriptions !== ''
+                ? 'Purchase request: '.$descriptions
+                : 'Purchase request';
         }
 
         return $payload;
