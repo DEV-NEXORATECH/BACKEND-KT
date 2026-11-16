@@ -834,6 +834,19 @@ abstract class BaseMasterController extends Controller
                         ->orWhereKey($fiscalYearValue)
                         ->value('id');
                 }
+                // Templates commonly contain the calendar year directly in
+                // `fiscal_year_id` (e.g. 2026), while the FK requires the
+                // fiscal_years.id (e.g. 3). Resolve year values before insert.
+                if (! empty($payload['fiscal_year_id'])) {
+                    $fiscalYearValue = (int) $payload['fiscal_year_id'];
+                    $resolvedFiscalYearId = \App\Models\Master\FiscalYear::query()
+                        ->where('year', $fiscalYearValue)
+                        ->orWhereKey($fiscalYearValue)
+                        ->value('id');
+                    if ($resolvedFiscalYearId) {
+                        $payload['fiscal_year_id'] = $resolvedFiscalYearId;
+                    }
+                }
                 unset($payload['organization_code'], $payload['coa_code'], $payload['fiscal_year']);
                 if (empty($payload['currency_id'])) {
                     $payload['currency_id'] = \App\Models\Master\Currency::query()

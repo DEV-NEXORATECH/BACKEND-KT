@@ -383,10 +383,13 @@ class IntegratedDonorGrantController extends Controller
             $created = DB::transaction(function () use ($records) {
                 $count = 0;
                 foreach ($records as $record) {
-                    $donor = Donor::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
-                        ['code' => $record['donor']['code']],
-                        array_merge($record['donor'], ['is_active' => true, 'status' => 'active'])
-                    );
+                    // Include soft-deleted donors when resolving by unique code;
+                    // otherwise a re-import attempts to insert the same code and
+                    // fails on donors_code_unique.
+                    $donor = Donor::withoutGlobalScope('fiscal_year_context')->withTrashed()->firstOrNew(['code' => $record['donor']['code']]);
+                    $donor->fill(array_merge($record['donor'], ['is_active' => true, 'status' => 'active']));
+                    if ($donor->trashed()) $donor->restore();
+                    $donor->save();
                     $existingGrant = GrantAgreement::withoutGlobalScope('fiscal_year_context')
                         ->where('donor_id', $donor->id)
                         ->where('grant_no', $record['grant']['grant_no'])
