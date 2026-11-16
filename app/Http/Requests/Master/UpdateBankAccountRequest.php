@@ -29,7 +29,20 @@ class UpdateBankAccountRequest extends FormRequest
             'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
             'organization_id' => 'nullable|integer|exists:organizations,id',
             'bank_name' => 'required|string|max:100',
-            'account_number' => 'required|string|max:50|unique:bank_accounts,account_number,' . $this->route('id') . ',id',
+            'account_number' => [
+                'required',
+                'string',
+                'max:50',
+                \Illuminate\Validation\Rule::unique('bank_accounts')->where(function ($query) {
+                    $q = $query->where('account_name', $this->input('account_name'))
+                        ->where('id', '!=', $this->route('id'))
+                        ->whereNull('deleted_at');
+                    if ($this->filled('gl_account_id')) {
+                        $q->where('gl_account_id', $this->input('gl_account_id'));
+                    }
+                    return $q;
+                }),
+            ],
             'account_name' => 'required|string|max:150',
             'swift_code' => 'nullable|string|max:30',
             'description' => 'nullable|string|max:255',

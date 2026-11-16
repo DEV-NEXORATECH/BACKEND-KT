@@ -144,4 +144,105 @@ class PurchaseRequestWorkflowTest extends TestCase
 
         return [$user, $budgetLine];
     }
+
+    public function test_requester_cannot_assign_or_change_vendor_in_pr(): void
+    {
+        [$requester, $budgetLine] = $this->fixture([
+            'procurement.pr.create',
+            'procurement.pr.update',
+            'procurement.pr.view',
+        ]);
+
+        $vendor = \App\Models\Master\Vendor::create([
+            'name' => 'PT Test Vendor Mandiri',
+            'type' => 'company',
+        ]);
+
+        // 1. Requester creates PR with vendor_id sent -> backend must ignore/clear vendor_id
+        $response = $this->actingAs($requester, 'sanctum')
+            ->postJson('/api/v1/procurement/purchase-requests', [
+                'request_date' => '2026-09-20',
+                'vendor_id' => $vendor->id,
+                'lines' => [[
+                    'budget_line_id' => $budgetLine->id,
+                    'item_description' => 'ATK dan supplies',
+                    'quantity' => 1,
+                    'unit_price' => 50000,
+                ]],
+            ])
+            ->assertCreated();
+
+        $prId = $response->json('data.id');
+        $this->assertNull($response->json('data.vendor_id'), 'Requester PR cannot set vendor_id upon PR creation.');
+
+        // 2. Requester tries to update PR and supply vendor_id -> backend must retain null
+        $updateResponse = $this->actingAs($requester, 'sanctum')
+            ->putJson("/api/v1/procurement/purchase-requests/{$prId}", [
+                'request_date' => '2026-09-21',
+                'vendor_id' => $vendor->id,
+                'lines' => [[
+                    'budget_line_id' => $budgetLine->id,
+                    'item_description' => 'ATK dan supplies updated',
+                    'quantity' => 2,
+                    'unit_price' => 50000,
+                ]],
+            ])
+            ->assertOk();
+
+        $this->assertNull($updateResponse->json('data.vendor_id'), 'Requester PR cannot modify vendor_id upon PR update.');
+    }
+
+    public function test_procurement_staff_can_assign_and_change_vendor_in_pr(): void
+    {
+        [$procurementStaff, $budgetLine] = $this->fixture([
+            'procurement.pr.create',
+            'procurement.pr.update',
+            'procurement.pr.view',
+            'procurement.po.create',
+            'procurement.rfq.create',
+        ]);
+
+        $vendor1 = \App\Models\Master\Vendor::create([
+            'name' => 'PT Vendor Rekanan A',
+            'type' => 'company',
+        ]);
+
+        $vendor2 = \App\Models\Master\Vendor::create([
+            'name' => 'PT Vendor Rekanan B',
+            'type' => 'company',
+        ]);
+
+        // 1. Procurement staff creates PR with vendor_id -> allowed
+        $response = $this->actingAs($procurementStaff, 'sanctum')
+            ->postJson('/api/v1/procurement/purchase-requests', [
+                'request_date' => '2026-09-20',
+                'vendor_id' => $vendor1->id,
+                'lines' => [[
+                    'budget_line_id' => $budgetLine->id,
+                    'item_description' => 'Hardware Server',
+                    'quantity' => 1,
+                    'unit_price' => 10000000,
+                ]],
+            ])
+            ->assertCreated();
+
+        $prId = $response->json('data.id');
+        $this->assertEquals($vendor1->id, $response->json('data.vendor_id'));
+
+        // 2. Procurement staff updates vendor_id to vendor2 -> allowed
+        $updateResponse = $this->actingAs($procurementStaff, 'sanctum')
+            ->putJson("/api/v1/procurement/purchase-requests/{$prId}", [
+                'request_date' => '2026-09-20',
+                'vendor_id' => $vendor2->id,
+                'lines' => [[
+                    'budget_line_id' => $budgetLine->id,
+                    'item_description' => 'Hardware Server',
+                    'quantity' => 1,
+                    'unit_price' => 10000000,
+                ]],
+            ])
+            ->assertOk();
+
+        $this->assertEquals($vendor2->id, $updateResponse->json('data.vendor_id'));
+    }
 }

@@ -738,46 +738,41 @@ abstract class BaseMasterController extends Controller
                         ->where('account_number', $accNumber)
                         ->first();
 
-                if ($existingBank) {
-                    // Satu nomor rekening bank fisik dapat digunakan oleh beberapa project dengan COA berbeda.
-                    // Nomor rekening berikutnya tidak dianggap duplikat, melainkan menambahkan relasi Project-COA.
-                    if ($bankProjectCode !== '' && $bankCoaCode !== '') {
-                        $project = \App\Models\Master\Project::withoutGlobalScope('fiscal_year_context')
-                            ->where(function ($query) use ($bankProjectCode) {
-                                $query->where('code', $bankProjectCode)
-                                    ->orWhere('relation_no', $bankProjectCode)
-                                    ->orWhere('name', $bankProjectCode);
-                            })->first();
-                        $coa = \App\Models\Master\ChartOfAccount::query()->where('code', $bankCoaCode)->first();
-                        if ($project && $coa) {
-                            \App\Models\Master\BankAccountProjectCoa::updateOrCreate(
-                                [
-                                    'bank_account_id' => $existingBank->id,
-                                    'project_id' => $project->id,
-                                ],
-                                [
-                                    'gl_account_id' => $coa->id,
-                                    'fiscal_year_id' => $payload['fiscal_year_id'] ?? $existingBank->fiscal_year_id,
-                                    'relation_no' => $payload['relation_no'] ?? ($project->relation_no ?: $project->grantAgreement?->relation_no),
-                                    'account_name' => $mappingAccountName ?: ($project->name ? "{$existingBank->bank_name} - {$project->name}" : null),
-                                    'start_date' => $mappingStartDate ?: $project->start_date,
-                                    'end_date' => $mappingEndDate ?: $project->end_date,
-                                    'opening_balance' => $mappingOpeningBalance,
-                                    'is_active' => true,
-                                ]
-                            );
-                            $created++;
-                            continue;
-                        } else {
-                            $missingEntity = ! $project ? "Project '{$bankProjectCode}'" : "COA '{$bankCoaCode}'";
-                            $errors[] = ['row' => $rowNumber, 'message' => "{$missingEntity} tidak ditemukan untuk mapping rekening {$accNumber}."];
-                            $skipped++;
-                            continue;
-                        }
+                // Satu nomor rekening bank fisik dapat digunakan oleh beberapa project dengan COA berbeda.
+                // Jika baris menyertakan project_code & coa_code, baris ini dipetakan ke relasi BankAccountProjectCoa.
+                // Jika tanpa project_code (misal format QuickBooks yang memisahkan baris akun bank per project/COA),
+                // alur dilanjutkan ke pembuatan record BankAccount tersendiri selama nama akun atau COA-nya berbeda.
+                if ($existingBank && $bankProjectCode !== '' && $bankCoaCode !== '') {
+                    $project = \App\Models\Master\Project::withoutGlobalScope('fiscal_year_context')
+                        ->where(function ($query) use ($bankProjectCode) {
+                            $query->where('code', $bankProjectCode)
+                                ->orWhere('relation_no', $bankProjectCode)
+                                ->orWhere('name', $bankProjectCode);
+                        })->first();
+                    $coa = \App\Models\Master\ChartOfAccount::query()->where('code', $bankCoaCode)->first();
+                    if ($project && $coa) {
+                        \App\Models\Master\BankAccountProjectCoa::updateOrCreate(
+                            [
+                                'bank_account_id' => $existingBank->id,
+                                'project_id' => $project->id,
+                            ],
+                            [
+                                'gl_account_id' => $coa->id,
+                                'fiscal_year_id' => $payload['fiscal_year_id'] ?? $existingBank->fiscal_year_id,
+                                'relation_no' => $payload['relation_no'] ?? ($project->relation_no ?: $project->grantAgreement?->relation_no),
+                                'account_name' => $mappingAccountName ?: ($project->name ? "{$existingBank->bank_name} - {$project->name}" : null),
+                                'start_date' => $mappingStartDate ?: $project->start_date,
+                                'end_date' => $mappingEndDate ?: $project->end_date,
+                                'opening_balance' => $mappingOpeningBalance,
+                                'is_active' => true,
+                            ]
+                        );
+                        $created++;
+                        continue;
                     } else {
+                        $missingEntity = ! $project ? "Project '{$bankProjectCode}'" : "COA '{$bankCoaCode}'";
+                        $errors[] = ['row' => $rowNumber, 'message' => "{$missingEntity} tidak ditemukan untuk mapping rekening {$accNumber}."];
                         $skipped++;
-                        $seen["account_number|{$accNumber}"] = true;
-                        $errors[] = ['row' => $rowNumber, 'message' => "Duplikat nomor rekening: {$accNumber} (tanpa mapping Project/COA baru)."];
                         continue;
                     }
                 }
@@ -908,23 +903,48 @@ abstract class BaseMasterController extends Controller
                 unset($payload['coa_code'], $payload['co_a_code']);
             }
 
-            $identityColumn = null;
-            $identityValue = null;
-            foreach ($identityColumns as $column) {
-                if (isset($payload[$column]) && $payload[$column] !== '') {
-                    $identityColumn = $column;
-                    $identityValue = (string) $payload[$column];
-                    break;
+            if ($this->modelClass === \App\Models\Master\BankAccount::class) {
+                $accNumber = trim((string) ($payload['account_number'] ?? ''));
+                $accName = trim((string) ($payload['account_name'] ?? ''));
+                $bankGlId = $payload['gl_account_id'] ?? null;
+                $fingerprint = 'bank_account|'.mb_strtolower($accNumber).'|'.mb_strtolower($accName).($bankGlId ? '|'.$bankGlId : '');
+
+                // For BankAccount, allow the same account_number if account_name or COA is different (QuickBooks compatibility).
+                // Only treat as duplicate if both account_number AND account_name (or account_number AND same COA) already exist.
+                $isExactDuplicate = \App\Models\Master\BankAccount::withoutGlobalScope('fiscal_year_context')
+                    ->where('account_number', $accNumber)
+                    ->where(function ($q) use ($accName, $bankGlId) {
+                        $q->where('account_name', $accName);
+                        if ($bankGlId) {
+                            $q->orWhere('gl_account_id', $bankGlId);
+                        }
+                    })->exists();
+
+                if (isset($seen[$fingerprint]) || $isExactDuplicate) {
+                    $skipped++;
+                    $seen[$fingerprint] = true;
+                    $errors[] = ['row' => $rowNumber, 'message' => "Duplikat rekening: {$accNumber} - {$accName} sudah terdaftar."];
+                    continue;
                 }
-            }
-            $fingerprint = $identityColumn
-                ? $identityColumn.'|'.mb_strtolower($identityValue)
-                : md5(json_encode($payload));
-            if (isset($seen[$fingerprint]) || ($identityColumn && ($this->modelClass)::query()->where($identityColumn, $identityValue)->exists())) {
-                $skipped++;
-                $seen[$fingerprint] = true;
-                $errors[] = ['row' => $rowNumber, 'message' => $identityColumn ? "Duplikat {$identityColumn}: {$identityValue}." : 'Data duplikat.'];
-                continue;
+            } else {
+                $identityColumn = null;
+                $identityValue = null;
+                foreach ($identityColumns as $column) {
+                    if (isset($payload[$column]) && $payload[$column] !== '') {
+                        $identityColumn = $column;
+                        $identityValue = (string) $payload[$column];
+                        break;
+                    }
+                }
+                $fingerprint = $identityColumn
+                    ? $identityColumn.'|'.mb_strtolower($identityValue)
+                    : md5(json_encode($payload));
+                if (isset($seen[$fingerprint]) || ($identityColumn && ($this->modelClass)::query()->where($identityColumn, $identityValue)->exists())) {
+                    $skipped++;
+                    $seen[$fingerprint] = true;
+                    $errors[] = ['row' => $rowNumber, 'message' => $identityColumn ? "Duplikat {$identityColumn}: {$identityValue}." : 'Data duplikat.'];
+                    continue;
+                }
             }
 
             try {

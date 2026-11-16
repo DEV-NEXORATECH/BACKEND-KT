@@ -250,86 +250,175 @@ class IntegratedDonorGrantController extends Controller
     public function import(Request $request)
     {
         $request->validate(['file' => 'required|file|mimes:csv,txt,xlsx,xls|max:20480']);
-        $sheet = IOFactory::load($request->file('file')->getRealPath())->getActiveSheet()->toArray(null, true, true, true);
-        $headers = array_map(fn ($value) => strtolower(trim((string) $value)), array_shift($sheet) ?: []);
-        $records = [];
-        foreach ($sheet as $row) {
-            $values = array_combine($headers, array_values($row));
-            if (!$values || empty($values['donor_code']) || empty($values['grant_no']) || empty($values['project_code'])) continue;
-            $currencyValue = trim((string) ($values['currency_code'] ?? $values['currency_id'] ?? ''));
-            $currencyId = is_numeric($currencyValue)
-                ? (int) $currencyValue
-                : DB::table('currencies')->where('code', strtoupper($currencyValue ?: 'IDR'))->value('id');
-            $records[] = [
-                'relation_no' => $values['relation_no'] ?? null,
-                'donor' => [
-                    'code' => $values['donor_code'],
-                    'name' => $values['donor_name'] ?? $values['donor_code'],
-                    'type' => $values['donor_type'] ?? 'Other',
-                    'lead_applicant' => $values['lead_applicant'] ?? $values['lead_applicant_intermediary'] ?? null,
-                    'country' => $values['donor_country'] ?? null,
-                    'contact_person' => $values['donor_contact_person'] ?? null,
-                    'email' => $values['donor_email'] ?? null,
-                    'phone' => $values['donor_phone'] ?? null,
-                ],
-                'grant' => [
-                    'grant_no' => $values['grant_no'],
-                    'agreement_no' => $values['agreement_no'] ?? null,
-                    'agreement_date' => $values['agreement_date'] ?? null,
-                    'agreement_name' => $values['grant_name'] ?? $values['grant_no'],
-                    'terms_conditions' => $values['terms_conditions'] ?? null,
-                    'reporting_period' => $values['reporting_period'] ?? null,
-                    'donor_fiscal_calendar' => $values['donor_fiscal_calendar'] ?? 'JAN_DEC',
-                    'grant_value' => $values['grant_value'] ?? 0,
-                    'currency_id' => $currencyId ?: DB::table('currencies')->value('id'),
-                    'status' => $values['grant_status'] ?? 'draft',
-                    'start_date' => $values['grant_start_date'] ?? now()->toDateString(),
-                    'end_date' => $values['grant_end_date'] ?? now()->addYear()->toDateString(),
-                ],
-                'programme' => ['code' => $values['programme_code'] ?? null, 'name' => $values['programme_name'] ?? null],
-                'project' => [
-                    'code' => $values['project_code'],
-                    'name' => $values['project_name'] ?? $values['project_code'],
-                    'theme' => $values['project_theme'] ?? null,
-                    'manager_name' => $values['project_manager_pic'] ?? null,
-                    'start_date' => $values['project_start_date'] ?? ($values['grant_start_date'] ?? null),
-                    'end_date' => $values['project_end_date'] ?? ($values['grant_end_date'] ?? null),
-                    'total_budget' => $values['project_budget'] ?? 0,
-                    'status' => $values['project_status'] ?? 'draft',
-                ],
-                'frameworks' => [], 'workplans' => [], 'deadlines' => [],
-            ];
-        }
-        if (!$records) return response()->json(['message' => 'Template CSV/Excel Donor & Grant Terintegrasi tidak valid atau kosong.'], 422);
-        $created = DB::transaction(function () use ($records) {
-            $count = 0;
-            foreach ($records as $record) {
-                $donor = Donor::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
-                    ['code' => $record['donor']['code']],
-                    array_merge($record['donor'], ['is_active' => true, 'status' => 'active'])
-                );
-                $relationNo = $this->resolveRelationNo($record);
-                $grant = GrantAgreement::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
-                    ['donor_id' => $donor->id, 'grant_no' => $record['grant']['grant_no']],
-                    array_merge($record['grant'], ['relation_no' => $relationNo, 'is_active' => true])
-                );
-                $programId = null;
-                if (! empty($record['programme']['code'])) {
-                    $programId = Program::updateOrCreate(
-                        ['code' => $record['programme']['code']],
-                        ['name' => $record['programme']['name'] ?: $record['programme']['code'], 'is_active' => true]
-                    )->id;
+
+        try {
+            $sheet = IOFactory::load($request->file('file')->getRealPath())->getActiveSheet()->toArray(null, true, true, true);
+            $headers = array_map(fn ($value) => strtolower(trim((string) $value)), array_shift($sheet) ?: []);
+            $records = [];
+
+            $cleanNumber = static function ($val): float {
+                if (is_numeric($val)) return (float) $val;
+                if (empty($val)) return 0.0;
+                $str = preg_replace('/[^0-9,.-]/', '', (string) $val);
+                if (str_contains($str, ',') && str_contains($str, '.')) {
+                    if (strrpos($str, '.') > strrpos($str, ',')) {
+                        $str = str_replace(',', '', $str);
+                    } else {
+                        $str = str_replace('.', '', $str);
+                        $str = str_replace(',', '.', $str);
+                    }
+                } elseif (str_contains($str, ',')) {
+                    $str = str_replace(',', '.', $str);
                 }
-                $project = Project::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
-                    ['grant_agreement_id' => $grant->id, 'code' => $record['project']['code']],
-                    array_merge($record['project'], ['program_id' => $programId, 'relation_no' => $relationNo, 'budget_currency_id' => $grant->currency_id, 'is_active' => true])
-                );
-                $this->syncProjectFiscalYears($project, $grant);
-                $count++;
+                return is_numeric($str) ? (float) $str : 0.0;
+            };
+
+            $cleanDate = static function ($val, $default = null): ?string {
+                if (empty($val)) return $default;
+                $val = trim((string) $val);
+                if (in_array(strtolower($val), ['', 'null', 'none', '-', 'contoh', 'wajib'], true)) return $default;
+                try {
+                    return \Illuminate\Support\Carbon::parse($val)->toDateString();
+                } catch (\Throwable $e) {
+                    return $default;
+                }
+            };
+
+            $ignoredDonorCodes = [
+                'donor_code', 'field', 'contoh', 'urutan', 'tambah project', 'tambah grant',
+                'tambah donor', 'catatan', 'document type', 'no', 'keterangan', 'wajib'
+            ];
+
+            foreach ($sheet as $rowIndex => $row) {
+                $values = array_combine($headers, array_values($row));
+                if (!$values) continue;
+
+                $donorCode = trim((string) ($values['donor_code'] ?? ''));
+                $grantNo = trim((string) ($values['grant_no'] ?? ''));
+                $projectCode = trim((string) ($values['project_code'] ?? ''));
+
+                if ($donorCode === '' || $grantNo === '' || $projectCode === '') continue;
+                if (in_array(strtolower($donorCode), $ignoredDonorCodes, true)) continue;
+                if (in_array(strtolower($grantNo), ['grant_no', 'contoh', 'wajib'], true)) continue;
+                if (in_array(strtolower($projectCode), ['project_code', 'contoh', 'wajib'], true)) continue;
+                if (str_starts_with($donorCode, '#') || str_starts_with($donorCode, '//')) continue;
+
+                $currencyValue = trim((string) ($values['currency_code'] ?? $values['currency_id'] ?? ''));
+                $currencyCodeUpper = strtoupper($currencyValue ?: 'IDR');
+                $currencyId = is_numeric($currencyValue)
+                    ? (int) $currencyValue
+                    : DB::table('currencies')->where('code', $currencyCodeUpper)->value('id');
+
+                if (!$currencyId && $currencyCodeUpper !== '') {
+                    $currencyId = DB::table('currencies')->insertGetId([
+                        'code' => $currencyCodeUpper,
+                        'name' => $currencyCodeUpper,
+                        'symbol' => $currencyCodeUpper === 'GBP' ? '£' : ($currencyCodeUpper === 'USD' ? '$' : ($currencyCodeUpper === 'EUR' ? '€' : $currencyCodeUpper)),
+                        'is_base_currency' => false,
+                        'is_active' => true,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                if (!$currencyId) {
+                    $currencyId = DB::table('currencies')->value('id');
+                }
+
+                $grantStartDate = $cleanDate($values['grant_start_date'] ?? null, now()->toDateString());
+                $grantEndDate = $cleanDate($values['grant_end_date'] ?? null, now()->addYear()->toDateString());
+                $agreementDate = $cleanDate($values['agreement_date'] ?? null, null);
+                $projectStartDate = $cleanDate($values['project_start_date'] ?? null, $grantStartDate);
+                $projectEndDate = $cleanDate($values['project_end_date'] ?? null, $grantEndDate);
+
+                $records[] = [
+                    'relation_no' => !empty($values['relation_no']) ? trim((string) $values['relation_no']) : null,
+                    'donor' => [
+                        'code' => $donorCode,
+                        'name' => !empty($values['donor_name']) ? trim((string) $values['donor_name']) : $donorCode,
+                        'type' => !empty($values['donor_type']) ? trim((string) $values['donor_type']) : 'Other',
+                        'lead_applicant' => !empty($values['lead_applicant']) ? trim((string) $values['lead_applicant']) : (!empty($values['lead_applicant_intermediary']) ? trim((string) $values['lead_applicant_intermediary']) : null),
+                        'country' => !empty($values['donor_country']) ? trim((string) $values['donor_country']) : null,
+                        'contact_person' => !empty($values['donor_contact_person']) ? trim((string) $values['donor_contact_person']) : null,
+                        'email' => !empty($values['donor_email']) ? trim((string) $values['donor_email']) : null,
+                        'phone' => !empty($values['donor_phone']) ? trim((string) $values['donor_phone']) : null,
+                    ],
+                    'grant' => [
+                        'grant_no' => $grantNo,
+                        'agreement_no' => !empty($values['agreement_no']) ? trim((string) $values['agreement_no']) : null,
+                        'agreement_date' => $agreementDate,
+                        'agreement_name' => !empty($values['grant_name']) ? trim((string) $values['grant_name']) : $grantNo,
+                        'terms_conditions' => !empty($values['terms_conditions']) ? trim((string) $values['terms_conditions']) : null,
+                        'reporting_period' => !empty($values['reporting_period']) ? trim((string) $values['reporting_period']) : null,
+                        'donor_fiscal_calendar' => !empty($values['donor_fiscal_calendar']) ? trim((string) $values['donor_fiscal_calendar']) : 'JAN_DEC',
+                        'grant_value' => $cleanNumber($values['grant_value'] ?? 0),
+                        'currency_id' => $currencyId,
+                        'status' => !empty($values['grant_status']) ? trim((string) $values['grant_status']) : 'draft',
+                        'start_date' => $grantStartDate,
+                        'end_date' => $grantEndDate,
+                    ],
+                    'programme' => [
+                        'code' => !empty($values['programme_code']) ? trim((string) $values['programme_code']) : null,
+                        'name' => !empty($values['programme_name']) ? trim((string) $values['programme_name']) : null,
+                    ],
+                    'project' => [
+                        'code' => $projectCode,
+                        'name' => !empty($values['project_name']) ? trim((string) $values['project_name']) : $projectCode,
+                        'theme' => !empty($values['project_theme']) ? trim((string) $values['project_theme']) : null,
+                        'manager_name' => !empty($values['project_manager_pic']) ? trim((string) $values['project_manager_pic']) : null,
+                        'start_date' => $projectStartDate,
+                        'end_date' => $projectEndDate,
+                        'total_budget' => $cleanNumber($values['project_budget'] ?? 0),
+                        'status' => !empty($values['project_status']) ? trim((string) $values['project_status']) : 'draft',
+                    ],
+                    'frameworks' => [], 'workplans' => [], 'deadlines' => [],
+                ];
             }
-            return $count;
-        });
-        return response()->json(['success' => true, 'message' => 'Import Donor & Grant Terintegrasi berhasil.', 'created' => $created]);
+
+            if (!$records) {
+                return response()->json(['message' => 'Template CSV/Excel Donor & Grant Terintegrasi tidak valid atau tidak memiliki baris data.'], 422);
+            }
+
+            $created = DB::transaction(function () use ($records) {
+                $count = 0;
+                foreach ($records as $record) {
+                    $donor = Donor::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
+                        ['code' => $record['donor']['code']],
+                        array_merge($record['donor'], ['is_active' => true, 'status' => 'active'])
+                    );
+                    $relationNo = $this->resolveRelationNo($record);
+                    $grant = GrantAgreement::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
+                        ['donor_id' => $donor->id, 'grant_no' => $record['grant']['grant_no']],
+                        array_merge($record['grant'], ['relation_no' => $relationNo, 'is_active' => true])
+                    );
+                    $programId = null;
+                    if (! empty($record['programme']['code'])) {
+                        $programId = Program::updateOrCreate(
+                            ['code' => $record['programme']['code']],
+                            ['name' => $record['programme']['name'] ?: $record['programme']['code'], 'is_active' => true]
+                        )->id;
+                    }
+                    $project = Project::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
+                        ['grant_agreement_id' => $grant->id, 'code' => $record['project']['code']],
+                        array_merge($record['project'], ['program_id' => $programId, 'relation_no' => $relationNo, 'budget_currency_id' => $grant->currency_id, 'is_active' => true])
+                    );
+                    $this->syncProjectFiscalYears($project, $grant);
+                    $count++;
+                }
+                return $count;
+            });
+
+            return response()->json(['success' => true, 'message' => "Import Donor & Grant Terintegrasi berhasil. {$created} baris diproses.", 'created' => $created]);
+        } catch (\Throwable $exception) {
+            Log::error('Import integrated donor grant failed: ' . $exception->getMessage(), [
+                'trace' => $exception->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memproses import data: ' . $exception->getMessage(),
+            ], 422);
+        }
     }
 
     public function template()

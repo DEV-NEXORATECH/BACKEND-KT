@@ -123,8 +123,12 @@ class PurchaseRequestController extends Controller
     public function store(Request $request): JsonResponse
     {
         $payload = $this->hydrateTemplateFields($this->validatePayload($request));
-        if (! $this->canAccessAll($request)) {
+        $isProcurement = $this->isProcurementStaff($request);
+
+        if (! $isProcurement) {
             $payload['requester_id'] = $request->user()->id;
+            // Requester tidak boleh menentukan vendor; penetapan vendor adalah wewenang bagian procurement
+            $payload['vendor_id'] = null;
         }
 
         $purchaseRequest = DB::transaction(function () use ($payload, $request) {
@@ -165,7 +169,10 @@ class PurchaseRequestController extends Controller
     {
         $this->authorizeScope($request, $purchaseRequest);
 
-        if ($purchaseRequest->status !== 'draft') {
+        $isProcurement = $this->isProcurementStaff($request);
+
+        // Hanya draft yang dapat diedit oleh requester biasa, sedangkan procurement staff dapat memperbarui data PR (misal menetapkan vendor)
+        if ($purchaseRequest->status !== 'draft' && ! $isProcurement) {
             throw ValidationException::withMessages([
                 'status' => 'Purchase request hanya dapat diubah saat status draft.',
             ]);
@@ -176,13 +183,20 @@ class PurchaseRequestController extends Controller
         // while the draft contents are edited.
         unset($payload['pr_number']);
 
-        $purchaseRequest = DB::transaction(function () use ($purchaseRequest, $payload) {
+        // Requester tidak boleh mengubah vendor; pertahankan vendor existing jika diedit oleh requester
+        if (! $isProcurement) {
+            $payload['vendor_id'] = $purchaseRequest->vendor_id;
+        }
+
+        $purchaseRequest = DB::transaction(function () use ($purchaseRequest, $payload, $isProcurement) {
             $lines = $payload['lines'];
             unset($payload['lines']);
 
             $purchaseRequest->update($payload);
-            $purchaseRequest->lines()->get()->each->delete();
-            $this->syncLines($purchaseRequest, $lines);
+            if ($purchaseRequest->status === 'draft') {
+                $purchaseRequest->lines()->get()->each->delete();
+                $this->syncLines($purchaseRequest, $lines);
+            }
 
             return $purchaseRequest->fresh()->load($this->with);
         });
@@ -453,14 +467,28 @@ class PurchaseRequestController extends Controller
         return $payload;
     }
 
-    private function canAccessAll(Request $request): bool
+    private function isProcurementStaff(Request $request): bool
     {
-        return $request->user()->hasAnyPermission([
-            'procurement.pr.approve',
+        $user = $request->user();
+        if (! $user) {
+            return false;
+        }
+
+        return $user->hasAnyPermission([
             'procurement.po.create',
+            'procurement.po.approve',
             'procurement.rfq.create',
             'procurement.cba.create',
-        ]);
+            'procurement.pr.approve',
+            'procurement.grn.create',
+            'procurement.invoice.create',
+            'procurement.invoice.match',
+        ]) || $user->hasRole(['super-admin', 'procurement-officer', 'procurement-manager', 'finance-manager']);
+    }
+
+    private function canAccessAll(Request $request): bool
+    {
+        return $this->isProcurementStaff($request);
     }
 
     private function authorizeScope(Request $request, PurchaseRequest $purchaseRequest): void
