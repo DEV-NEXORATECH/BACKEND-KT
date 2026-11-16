@@ -828,8 +828,12 @@ abstract class BaseMasterController extends Controller
                 }
                 if ($bankCoaCode !== '') {
                     $payload['gl_account_id'] = \App\Models\Master\ChartOfAccount::query()
-                        ->where('code', $bankCoaCode)
-                        ->orWhereKey(is_numeric($bankCoaCode) ? (int) $bankCoaCode : 0)
+                        ->where(function ($query) use ($bankCoaCode) {
+                            $query->where('code', $bankCoaCode);
+                            if (is_numeric($bankCoaCode)) {
+                                $query->orWhere('id', (int) $bankCoaCode);
+                            }
+                        })
                         ->value('id');
                 }
                 if (empty($payload['fiscal_year_id']) && ! empty($payload['fiscal_year'])) {
