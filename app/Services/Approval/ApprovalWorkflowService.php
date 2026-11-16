@@ -4,6 +4,7 @@ namespace App\Services\Approval;
 
 use App\Models\ApprovalWorkflowRun;
 use App\Models\ApprovalWorkflowEvent;
+use App\Models\Notification;
 use App\Models\Master\ApprovalMatrix;
 use App\Models\Master\FiscalYear;
 use App\Models\User;
@@ -81,6 +82,7 @@ class ApprovalWorkflowService
             $this->skipRequesterActions($run, $entity);
             $run = $run->fresh('actions');
             $this->recordEvent($run, 'resubmitted', null, $run->current_level, $submittedBy, 'Document submitted or resubmitted for approval.');
+            $this->notifyCurrentApprovers($run, $entity, $module);
             return $run;
         });
     }
@@ -112,6 +114,7 @@ class ApprovalWorkflowService
             $action = $actions->first(fn ($item) => $this->matchesApprover($item, $user, $entity));
             if (! $action) throw ValidationException::withMessages(['approval' => 'You are not the approver for the current approval stage.']);
             $action->update(['status' => 'approved', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
+            $this->closeApprovalNotification($run, $user->id, (int) $run->current_level);
             $this->recordEvent($run, 'approved', $run->current_level, $run->current_level, $user->id, $notes);
 
             if ($run->actions()->where('level', $run->current_level)->where('status', 'pending')->exists()) {
@@ -121,9 +124,11 @@ class ApprovalWorkflowService
             if ($nextLevel) {
                 $run->actions()->where('level', $nextLevel)->where('status', 'queued')->update(['status' => 'pending']);
                 $run->update(['current_level' => $nextLevel]);
+                $this->notifyCurrentApprovers($run->fresh('actions'), $entity, $module);
                 return ['managed' => true, 'completed' => false, 'next_level' => $nextLevel];
             }
             $run->update(['status' => 'approved', 'completed_at' => now()]);
+            $this->closeAllApprovalNotifications($run);
             $this->recordEvent($run, 'completed', $run->current_level, null, $user->id, $notes);
             return ['managed' => true, 'completed' => true, 'next_level' => null];
         });
@@ -149,6 +154,7 @@ class ApprovalWorkflowService
                 $action->update(['status' => 'rejected', 'action_by' => $user->id, 'action_at' => now(), 'notes' => $notes]);
             }
             $run->update(['status' => 'rejected', 'completed_at' => now()]);
+            $this->closeAllApprovalNotifications($run);
             $this->recordEvent($run, 'rejected', $run->current_level, null, $user->id, $notes);
         });
     }
@@ -230,6 +236,7 @@ class ApprovalWorkflowService
                 'assigned_user_name' => $targetUser->name,
                 'assigned_employee_id' => $resolvedEmployeeId,
             ]);
+            $this->notifyCurrentApprovers($run->fresh('actions'), $entity, $module);
 
             return [
                 'level' => $level,
@@ -260,6 +267,8 @@ class ApprovalWorkflowService
                 'reason' => $notes,
                 'target_level' => $targetLevel,
             ]);
+            $this->closeAllApprovalNotifications($run);
+            $this->notifyCurrentApprovers($run->fresh('actions'), $entity, $module);
             return ['target_level' => $targetLevel, 'message' => 'Document returned for revision.'];
         });
     }
@@ -291,6 +300,7 @@ class ApprovalWorkflowService
                 'reason' => $notes,
                 'returned_to' => 'requester',
             ]);
+            $this->closeAllApprovalNotifications($run);
 
             return ['message' => 'Document returned to the requester for correction.', 'status' => 'draft'];
         });
@@ -313,6 +323,82 @@ class ApprovalWorkflowService
             'notes' => $notes,
             'metadata' => $metadata ?: null,
         ]);
+    }
+
+    private function notifyCurrentApprovers(ApprovalWorkflowRun $run, Model $entity, string $module): void
+    {
+        if ($run->status !== 'in_progress') return;
+
+        $run->loadMissing('actions.approvalMatrix.role');
+        $level = (int) $run->current_level;
+        $actions = $run->actions->filter(fn ($action) => (int) $action->level === $level && $action->status === 'pending');
+        $label = $this->moduleLabel($module);
+        $reference = $this->entityReference($entity);
+        $actionUrl = $this->approvalActionUrl($module, (int) $entity->getKey(), $level);
+
+        $userIds = $actions->flatMap(fn ($action) => collect($this->approversFor($action, $entity, $module))->pluck('user_id'))
+            ->filter()
+            ->unique();
+
+        foreach ($userIds as $userId) {
+            Notification::query()->updateOrCreate(
+                [
+                    'user_id' => (int) $userId,
+                    'type' => 'approval',
+                    'action_url' => $actionUrl,
+                ],
+                [
+                    'title' => "Approval diperlukan · {$label}",
+                    'message' => "{$reference} menunggu persetujuan Anda pada tahap {$level}.",
+                    'read_at' => null,
+                ],
+            );
+        }
+    }
+
+    private function closeApprovalNotification(ApprovalWorkflowRun $run, int $userId, int $level): void
+    {
+        Notification::query()
+            ->where('user_id', $userId)
+            ->where('type', 'approval')
+            ->where('action_url', $this->approvalActionUrl($run->module, (int) $run->approvable_id, $level))
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
+    }
+
+    private function closeAllApprovalNotifications(ApprovalWorkflowRun $run): void
+    {
+        Notification::query()
+            ->where('type', 'approval')
+            ->where('action_url', 'like', '/expenses-approvals/approvals?module='.rawurlencode($run->module).'&id='.(int) $run->approvable_id.'&level=%')
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
+    }
+
+    private function approvalActionUrl(string $module, int $entityId, int $level): string
+    {
+        return '/expenses-approvals/approvals?module='.rawurlencode($module).'&id='.$entityId.'&level='.$level;
+    }
+
+    private function moduleLabel(string $module): string
+    {
+        return [
+            'expense' => 'Expense Request', 'payment' => 'Payment', 'settlement' => 'Settlement',
+            'pr' => 'Purchase Request', 'po' => 'Purchase Order', 'cba' => 'Competitive Bid Analysis',
+            'scn' => 'Services Completion Note', 'journal' => 'Journal', 'ap' => 'Accounts Payable',
+            'ar' => 'Accounts Receivable', 'timesheet' => 'Timesheet', 'asset' => 'Fixed Asset',
+            'asset_disposal' => 'Asset Disposal', 'tax_transaction' => 'Tax Transaction',
+            'bank_reconciliation' => 'Bank Reconciliation', 'period_closing' => 'Period Closing',
+            'budget_reallocation' => 'Budget Reallocation',
+        ][$module] ?? ucwords(str_replace('_', ' ', $module));
+    }
+
+    private function entityReference(Model $entity): string
+    {
+        foreach (['request_number', 'pr_number', 'po_number', 'cba_number', 'scn_number', 'journal_number', 'invoice_number', 'reallocation_number', 'relation_no', 'code'] as $field) {
+            if ($value = $entity->getAttribute($field)) return (string) $value;
+        }
+        return class_basename($entity).' #'.$entity->getKey();
     }
 
     public function userCanApproveAction(\App\Models\ApprovalWorkflowAction $action, User $user, ?Model $entity = null): bool

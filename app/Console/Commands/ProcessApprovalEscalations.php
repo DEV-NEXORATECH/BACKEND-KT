@@ -121,7 +121,7 @@ class ProcessApprovalEscalations extends Command
                 $alreadyReminded = \App\Models\Notification::query()
                     ->where('user_id', $approver->id)
                     ->where('type', 'approval')
-                    ->where('action_url', '/approvals')
+                    ->where('action_url', '/expenses-approvals/approvals')
                     ->whereDate('created_at', now()->toDateString())
                     ->exists();
                 if ($alreadyReminded) {
@@ -132,7 +132,7 @@ class ProcessApprovalEscalations extends Command
                     'title' => 'Reminder persetujuan',
                     'message' => "Terdapat " . count($items) . " pengajuan yang menunggu persetujuan Anda lebih dari {$days} hari.",
                     'type' => 'approval',
-                    'action_url' => '/approvals',
+                    'action_url' => '/expenses-approvals/approvals',
                 ]);
 
                 $approver->notify(new ApprovalReminderNotification(

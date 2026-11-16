@@ -57,6 +57,9 @@ class JournalApprovalFiscalYearTest extends TestCase
     public function test_assigned_identity_matches_history_and_intermediate_approval_does_not_post(): void
     {
         $f = $this->fixture(); [$journal, $run] = $this->workflow($f);
+        $firstUrl = '/expenses-approvals/approvals?module=journal&id='.$journal->id.'&level=1';
+        $this->assertDatabaseHas('notifications', ['user_id' => $f['approver']->id, 'type' => 'approval', 'action_url' => $firstUrl, 'read_at' => null]);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $f['requester']->id, 'type' => 'approval', 'action_url' => $firstUrl]);
         $this->actingAs($f['approver'], 'sanctum');
         $this->getJson('/api/v1/accounting/journals/'.$journal->id)->assertOk()
             ->assertJsonPath('data.approval_progress.can_approve', true)->assertJsonPath('data.approval_progress.can_post', false)
@@ -65,6 +68,8 @@ class JournalApprovalFiscalYearTest extends TestCase
             ->assertJsonPath('data.can_approve', true)->assertJsonPath('data.steps.0.approver_name', $f['approver']->name);
         $this->postJson('/api/v1/accounting/journals/'.$journal->id.'/post')->assertOk()
             ->assertJsonPath('data.status', 'reviewed')->assertJsonPath('data.approval_progress.status', 'in_progress')->assertJsonPath('data.approval_progress.current_level', 2);
+        $this->assertNotNull(\App\Models\Notification::where('user_id', $f['approver']->id)->where('action_url', $firstUrl)->value('read_at'));
+        $this->assertDatabaseHas('notifications', ['user_id' => $f['next']->id, 'type' => 'approval', 'action_url' => '/expenses-approvals/approvals?module=journal&id='.$journal->id.'&level=2', 'read_at' => null]);
         $this->assertSame('in_progress', $run->fresh()->status);
         $this->actingAs($f['next'], 'sanctum')->postJson('/api/v1/accounting/journals/'.$journal->id.'/post')->assertOk()
             ->assertJsonPath('data.status', 'posted')->assertJsonPath('data.approval_progress.status', 'approved');

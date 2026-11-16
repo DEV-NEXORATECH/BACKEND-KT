@@ -16,6 +16,8 @@ class BudgetMonitoringService
             ->with([
                 'grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
                 'grantAgreement.donor:id,code,name',
+                'grantAgreement.fundingSource:id,code,name',
+                'grantAgreement.currency:id,code,name',
                 'grantAgreement.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
                 'grantAgreement.bankAccount.glAccount:id,code,name',
                 'grantAgreement.disbursementRequests' => fn ($q) => $q->whereNotNull('received_bank_account_id')->latest('received_date')->latest('id'),
@@ -24,9 +26,15 @@ class BudgetMonitoringService
                 'grantAgreement.fiscalYear:id,year,name',
                 'project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
                 'project.program:id,code,name',
+                'project.partners:id,code,name',
+                'project.fundingSources:id,code,name',
+                'project.budgetCurrency:id,code,name',
                 'project.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
                 'project.bankAccount.glAccount:id,code,name',
                 'project.grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
+                'project.grantAgreement.donor:id,code,name',
+                'project.grantAgreement.fundingSource:id,code,name',
+                'project.grantAgreement.currency:id,code,name',
                 'project.grantAgreement.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
                 'project.grantAgreement.bankAccount.glAccount:id,code,name',
                 'project.grantAgreement.disbursementRequests' => fn ($q) => $q->whereNotNull('received_bank_account_id')->latest('received_date')->latest('id'),
@@ -112,8 +120,10 @@ class BudgetMonitoringService
             $utilization = $approved > 0 ? round(($totalSpent / $approved) * 100, 2) : 0;
             $variancePercent = $approved > 0 ? round(($variance / $approved) * 100, 2) : 0;
 
-            $fiscalYearId = $line->fiscal_year_id ?: ($line->project?->fiscalYears?->first()?->id ?: $line->grantAgreement?->fiscal_year_id);
-            $fiscalYearYear = $line->fiscalYear?->year ?: ($line->project?->fiscalYears?->first()?->year ?: ($line->grantAgreement?->fiscalYear?->year ?: null));
+            $effectiveGrant = $line->grantAgreement ?: $line->project?->grantAgreement;
+            $effectiveCurrency = $line->currency ?: $effectiveGrant?->currency ?: $line->project?->budgetCurrency;
+            $fiscalYearId = $line->fiscal_year_id ?: ($line->project?->fiscalYears?->first()?->id ?: $effectiveGrant?->fiscal_year_id);
+            $fiscalYearYear = $line->fiscalYear?->year ?: ($line->project?->fiscalYears?->first()?->year ?: ($effectiveGrant?->fiscalYear?->year ?: null));
             if (! $fiscalYearYear && ! empty($filters['fiscal_year_id'])) {
                 $fiscalYearYear = \App\Models\Master\FiscalYear::where('id', $filters['fiscal_year_id'])->value('year');
             }
@@ -136,7 +146,7 @@ class BudgetMonitoringService
                 'budget_line_id' => $line->id,
                 'fiscal_year_id' => $fiscalYearId ?: ($filters['fiscal_year_id'] ?? null),
                 'fiscal_year_year' => $fiscalYearYear,
-                'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: $line->grantAgreement?->relation_no),
+                'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: $effectiveGrant?->relation_no),
                 'line_code' => $line->line_code,
                 'description' => $line->description,
                 'activity' => $line->activity ? ['id' => $line->activity->id, 'code' => $line->activity->code, 'name' => $line->activity->name, 'target_output' => $line->activity->target_output] : null,
@@ -157,17 +167,22 @@ class BudgetMonitoringService
                 'available' => $available,
                 'utilization_percent' => $utilization,
                 'status' => $available < 0 ? 'over_budget' : ($utilization >= 90 ? 'warning' : 'healthy'),
-                'donor' => $line->grantAgreement?->donor ? [
-                    'id' => $line->grantAgreement->donor->id,
-                    'code' => $line->grantAgreement->donor->code,
-                    'name' => $line->grantAgreement->donor->name,
+                'donor' => $effectiveGrant?->donor ? [
+                    'id' => $effectiveGrant->donor->id,
+                    'code' => $effectiveGrant->donor->code,
+                    'name' => $effectiveGrant->donor->name,
                 ] : null,
-                'grant_agreement' => $line->grantAgreement ? [
-                    'id' => $line->grantAgreement->id,
-                    'code' => $line->grantAgreement->grant_no,
-                    'name' => $line->grantAgreement->agreement_name,
-                    'relation_no' => $line->grantAgreement->relation_no,
-                    'bank_account_id' => $line->grantAgreement->bank_account_id,
+                'grant_agreement' => $effectiveGrant ? [
+                    'id' => $effectiveGrant->id,
+                    'code' => $effectiveGrant->grant_no,
+                    'name' => $effectiveGrant->agreement_name,
+                    'relation_no' => $effectiveGrant->relation_no,
+                    'bank_account_id' => $effectiveGrant->bank_account_id,
+                ] : null,
+                'funding_source' => $effectiveGrant?->fundingSource ? [
+                    'id' => $effectiveGrant->fundingSource->id,
+                    'code' => $effectiveGrant->fundingSource->code,
+                    'name' => $effectiveGrant->fundingSource->name,
                 ] : null,
                 'program' => $line->project?->program ? [
                     'id' => $line->project->program->id,
@@ -181,17 +196,19 @@ class BudgetMonitoringService
                     'relation_no' => $line->project->relation_no,
                     'budget_holder' => $line->project->manager_name,
                     'bank_account_id' => $line->project->bank_account_id,
+                    'partners' => $line->project->partners->map(fn ($partner) => ['id' => $partner->id, 'code' => $partner->code, 'name' => $partner->name])->values()->all(),
+                    'funding_sources' => $line->project->fundingSources->map(fn ($source) => ['id' => $source->id, 'code' => $source->code, 'name' => $source->name, 'amount' => $source->pivot?->amount])->values()->all(),
                 ] : null,
                 'budget_category' => $line->budgetCategory ? [
                     'id' => $line->budgetCategory->id,
                     'code' => $line->budgetCategory->code,
                     'name' => $line->budgetCategory->name,
                 ] : null,
-                'currency_id' => $line->currency_id,
-                'currency' => $line->currency ? [
-                    'id' => $line->currency->id,
-                    'code' => $line->currency->code,
-                    'name' => $line->currency->name,
+                'currency_id' => $effectiveCurrency?->id,
+                'currency' => $effectiveCurrency ? [
+                    'id' => $effectiveCurrency->id,
+                    'code' => $effectiveCurrency->code,
+                    'name' => $effectiveCurrency->name,
                 ] : null,
                 'gl_account' => $line->glAccount ? [
                     'id' => $line->glAccount->id,

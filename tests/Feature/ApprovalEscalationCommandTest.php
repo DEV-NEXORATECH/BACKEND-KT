@@ -24,7 +24,7 @@ class ApprovalEscalationCommandTest extends TestCase
         DB::table('expense_requests')->where('id', $expense->id)->update(['updated_at' => now()->subDays(4)]);
 
         $this->artisan('app:process-approval-escalations --days=3')->assertSuccessful();
-        $this->assertDatabaseHas('notifications', ['user_id' => $approver->id, 'type' => 'approval', 'action_url' => '/approvals']);
+        $this->assertDatabaseHas('notifications', ['user_id' => $approver->id, 'type' => 'approval', 'action_url' => '/expenses-approvals/approvals']);
 
         $this->artisan('app:process-approval-escalations --days=3')->assertSuccessful();
         $this->assertDatabaseCount('notifications', 1);

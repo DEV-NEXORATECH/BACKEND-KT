@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\Timesheet\TimesheetEntryController;
 use App\Http\Controllers\Api\Asset\FixedAssetController;
 use App\Http\Controllers\Api\ReportsDashboardController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\AiMonitoringController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SystemSettingsController;
 use App\Http\Controllers\Api\CustomReportController;
@@ -194,6 +195,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/read-all', [NotificationController::class, 'markAllAsRead']);
         Route::delete('/{notification}', [NotificationController::class, 'destroy']);
     });
+
+    Route::get('/v1/ai-monitoring', [AiMonitoringController::class, 'index']);
 
     Route::prefix('v1/accounting')->group(function () {
         Route::get('prepaid-expenses', [PrepaidExpenseController::class, 'index'])->middleware('permission:accounting.prepaid.view');
