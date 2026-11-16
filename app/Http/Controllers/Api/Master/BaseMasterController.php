@@ -664,8 +664,10 @@ abstract class BaseMasterController extends Controller
                 if (! empty($payload['fiscal_year_id']) && ! is_numeric($payload['fiscal_year_id'])) {
                     $fyVal = (int) $payload['fiscal_year_id'];
                     $fyId = \App\Models\Master\FiscalYear::query()
-                        ->where('year', $fyVal)
-                        ->orWhereKey($fyVal)
+                        ->where(function ($query) use ($fyVal) {
+                            $query->where('year', $fyVal)
+                                ->orWhere('id', $fyVal);
+                        })
                         ->value('id');
                     $payload['fiscal_year_id'] = $fyId;
                 }
@@ -839,8 +841,10 @@ abstract class BaseMasterController extends Controller
                 if (empty($payload['fiscal_year_id']) && ! empty($payload['fiscal_year'])) {
                     $fiscalYearValue = (int) $payload['fiscal_year'];
                     $payload['fiscal_year_id'] = \App\Models\Master\FiscalYear::query()
-                        ->where('year', $fiscalYearValue)
-                        ->orWhereKey($fiscalYearValue)
+                        ->where(function ($query) use ($fiscalYearValue) {
+                            $query->where('year', $fiscalYearValue)
+                                ->orWhere('id', $fiscalYearValue);
+                        })
                         ->value('id');
                 }
                 // Templates commonly contain the calendar year directly in
@@ -849,8 +853,10 @@ abstract class BaseMasterController extends Controller
                 if (! empty($payload['fiscal_year_id'])) {
                     $fiscalYearValue = (int) $payload['fiscal_year_id'];
                     $resolvedFiscalYearId = \App\Models\Master\FiscalYear::query()
-                        ->where('year', $fiscalYearValue)
-                        ->orWhereKey($fiscalYearValue)
+                        ->where(function ($query) use ($fiscalYearValue) {
+                            $query->where('year', $fiscalYearValue)
+                                ->orWhere('id', $fiscalYearValue);
+                        })
                         ->value('id');
                     if ($resolvedFiscalYearId) {
                         $payload['fiscal_year_id'] = $resolvedFiscalYearId;
