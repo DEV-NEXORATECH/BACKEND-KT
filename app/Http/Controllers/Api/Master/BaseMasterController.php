@@ -320,13 +320,33 @@ abstract class BaseMasterController extends Controller
         if ($this->modelClass === \App\Models\Master\BudgetLine::class) {
             $columns = array_map(static fn ($column) => $column === 'gl_account_id' ? 'coa_code' : $column, $columns);
         }
+        $headerOverrides = [];
+        if ($this->modelClass === \App\Models\Master\ChartOfAccount::class) {
+            $columns = ['code', 'name', 'account_type', 'detail_type', 'normal_balance', 'opening_balance', 'opening_balance_date', 'parent_id', 'is_active'];
+            $headerOverrides = [
+                'code' => 'Account Number',
+                'name' => 'Account Name',
+                'parent_id' => 'Parent Account',
+                'is_active' => 'Active Status',
+            ];
+        }
+        if ($this->modelClass === \App\Models\Master\BankAccount::class) {
+            $columns = ['bank_name', 'account_number', 'account_name', 'currency_id', 'swift_code', 'opening_balance', 'opening_balance_date', 'organization_id', 'gl_account_id', 'fiscal_year_id', 'is_active'];
+            $headerOverrides = [
+                'currency_id' => 'Currency Code',
+                'organization_id' => 'Organization Code',
+                'gl_account_id' => 'COA Code',
+                'fiscal_year_id' => 'Fiscal Year',
+                'is_active' => 'Active Status',
+            ];
+        }
         if (in_array(strtolower((string) $request->query('format')), ['xlsx', 'excel'], true)) {
-            return $exportService->template(class_basename($this->modelClass), $columns);
+            return $exportService->template(class_basename($this->modelClass), $columns, $headerOverrides);
         }
 
         // CSV templates use the same readable labels as the Excel template.
         // The importer maps these labels back to the model field names.
-        $headers = $exportService->templateHeaders($columns);
+        $headers = $exportService->templateHeaders($columns, $headerOverrides);
         $handle = fopen('php://temp', 'w+');
         fprintf($handle, "\xEF\xBB\xBF");
         fputcsv($handle, $headers);
@@ -372,6 +392,24 @@ abstract class BaseMasterController extends Controller
             } elseif (isset($fillable[$normalized.'_id'])) {
                 $mapped = $normalized.'_id';
             } elseif ($normalized === 'active' && isset($fillable['is_active'])) {
+                $mapped = 'is_active';
+            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['account_number', 'account_no'], true)) {
+                $mapped = 'code';
+            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && $normalized === 'account_name') {
+                $mapped = 'name';
+            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && $normalized === 'parent_account') {
+                $mapped = 'parent_id';
+            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && $normalized === 'active_status') {
+                $mapped = 'is_active';
+            } elseif ($this->modelClass === \App\Models\Master\BankAccount::class && $normalized === 'currency_code') {
+                $mapped = 'currency';
+            } elseif ($this->modelClass === \App\Models\Master\BankAccount::class && $normalized === 'organization_code') {
+                $mapped = 'organization_code';
+            } elseif ($this->modelClass === \App\Models\Master\BankAccount::class && in_array($normalized, ['coa_code', 'co_a_code'], true)) {
+                $mapped = 'coa_code';
+            } elseif ($this->modelClass === \App\Models\Master\BankAccount::class && $normalized === 'fiscal_year') {
+                $mapped = 'fiscal_year';
+            } elseif ($this->modelClass === \App\Models\Master\BankAccount::class && $normalized === 'active_status') {
                 $mapped = 'is_active';
             } elseif ($this->modelClass === \App\Models\Master\BudgetLine::class && in_array($normalized, ['coa_code', 'co_a_code'], true)) {
                 $mapped = 'coa_code';
@@ -431,6 +469,26 @@ abstract class BaseMasterController extends Controller
                         ->where('code', strtoupper($currencyValue))
                         ->value('id');
                 }
+                if (empty($payload['organization_id']) && ! empty($payload['organization_code'])) {
+                    $organizationValue = trim((string) $payload['organization_code']);
+                    $payload['organization_id'] = \App\Models\Master\Organization::query()
+                        ->where('code', $organizationValue)
+                        ->orWhere('name', $organizationValue)
+                        ->value('id');
+                }
+                if (empty($payload['gl_account_id']) && ! empty($payload['coa_code'])) {
+                    $payload['gl_account_id'] = \App\Models\Master\ChartOfAccount::query()
+                        ->where('code', trim((string) $payload['coa_code']))
+                        ->value('id');
+                }
+                if (empty($payload['fiscal_year_id']) && ! empty($payload['fiscal_year'])) {
+                    $fiscalYearValue = (int) $payload['fiscal_year'];
+                    $payload['fiscal_year_id'] = \App\Models\Master\FiscalYear::query()
+                        ->where('year', $fiscalYearValue)
+                        ->orWhereKey($fiscalYearValue)
+                        ->value('id');
+                }
+                unset($payload['organization_code'], $payload['coa_code'], $payload['fiscal_year']);
                 if (empty($payload['currency_id'])) {
                     $payload['currency_id'] = \App\Models\Master\Currency::query()
                         ->where('is_base_currency', true)
@@ -484,9 +542,24 @@ abstract class BaseMasterController extends Controller
                 }
                 if (isset($payload['parent_id']) && ! is_numeric($payload['parent_id'])) {
                     $parentId = $importedCoaIds[(string) $payload['parent_id']]
-                        ?? \App\Models\Master\ChartOfAccount::query()->where('name', (string) $payload['parent_id'])->value('id');
+                        ?? \App\Models\Master\ChartOfAccount::query()
+                            ->where(function ($query) use ($payload) {
+                                $query->where('code', (string) $payload['parent_id'])
+                                    ->orWhere('name', (string) $payload['parent_id']);
+                            })->value('id');
                     if ($parentId) $payload['parent_id'] = $parentId;
                     else unset($payload['parent_id']);
+                }
+                if (! empty($payload['parent_id'])) {
+                    $parentAccount = \App\Models\Master\ChartOfAccount::query()->find($payload['parent_id']);
+                    $payload['level'] = min(3, ((int) ($parentAccount?->level ?: 1)) + 1);
+                    $payload['is_header'] = false;
+                    if ($parentAccount && ! $parentAccount->is_header) {
+                        $parentAccount->forceFill(['is_header' => true])->save();
+                    }
+                } else {
+                    $payload['level'] = 1;
+                    $payload['is_header'] = true;
                 }
             }
 

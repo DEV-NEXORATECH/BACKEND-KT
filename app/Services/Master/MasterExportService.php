@@ -56,13 +56,28 @@ class MasterExportService
         @unlink($base);
         return [$path, "{$safeName}.csv", 'text/csv'];
     }
-    public function template(string $entityName, array $columns)
+    public function template(string $entityName, array $columns, array $headerOverrides = [])
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Input Data');
-        $displayColumns = $this->templateHeaders($columns);
+        $displayColumns = $this->templateHeaders($columns, $headerOverrides);
+        $isCoaTemplate = $entityName === 'ChartOfAccount';
+        $isBankTemplate = $entityName === 'BankAccount';
+        if ($isCoaTemplate || $isBankTemplate) $displayColumns[] = 'Import Note';
         $sheet->fromArray([$displayColumns], null, 'A1');
+        if ($isCoaTemplate) {
+            $sheet->fromArray([
+                ['10000', 'BANK AND CASH', 'asset', 'Cash and cash equivalents', 'debit', 0, now()->startOfYear()->toDateString(), '', 'Active', 'CONTOH BANK UTAMA — hapus semua baris contoh sebelum import.'],
+                ['10200', 'BANK BNI', 'asset', 'Bank', 'debit', 0, now()->startOfYear()->toDateString(), '10000', 'Active', 'CONTOH SUB-AKUN — Parent Account diisi dengan Account Number akun induk.'],
+                ['10210', 'BNI OPERASIONAL', 'asset', 'Bank', 'debit', 0, now()->startOfYear()->toDateString(), '10200', 'Active', 'CONTOH SUB DALAM SUB — urutkan parent lebih dulu; hapus baris contoh sebelum import.'],
+            ], null, 'A2');
+        } elseif ($isBankTemplate) {
+            $sheet->fromArray([
+                ['Bank BNI', '0000000001', 'Kaoem Telapak Operasional', 'IDR', 'BNI-IDJA', 0, now()->startOfYear()->toDateString(), 'KT', '10210', now()->year, 'Active', 'CONTOH BANK/REKENING UTAMA — hapus semua baris contoh sebelum import.'],
+                ['Bank BNI', '0000000002', 'Kaoem Telapak Project', 'IDR', 'BNI-IDJA', 0, now()->startOfYear()->toDateString(), 'KT', '10211', now()->year, 'Active', 'CONTOH SUB REKENING — COA Code harus sudah tersedia di Chart of Accounts.'],
+            ], null, 'A2');
+        }
         $lastColumn = $sheet->getHighestColumn();
         $headerStyle = $sheet->getStyle("A1:{$lastColumn}1");
         $headerStyle->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
@@ -78,6 +93,18 @@ class MasterExportService
             $letter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($column);
             $sheet->getColumnDimension($letter)->setAutoSize(true);
         }
+        if ($isCoaTemplate) {
+            $sheet->getStyle("A2:{$lastColumn}2")->getFill()->setFillType('solid')->getStartColor()->setARGB('FFDCE6F1');
+            $sheet->getStyle("A3:{$lastColumn}3")->getFill()->setFillType('solid')->getStartColor()->setARGB('FFE2F0D9');
+            $sheet->getStyle("A4:{$lastColumn}4")->getFill()->setFillType('solid')->getStartColor()->setARGB('FFFFF2CC');
+        } elseif ($isBankTemplate) {
+            $sheet->getStyle("A2:{$lastColumn}2")->getFill()->setFillType('solid')->getStartColor()->setARGB('FFDCE6F1');
+            $sheet->getStyle("A3:{$lastColumn}3")->getFill()->setFillType('solid')->getStartColor()->setARGB('FFE2F0D9');
+        }
+        if ($isCoaTemplate || $isBankTemplate) {
+            $sheet->getColumnDimension($lastColumn)->setWidth(72);
+            $sheet->getStyle("{$lastColumn}1:{$lastColumn}".($isCoaTemplate ? '4' : '3'))->getAlignment()->setWrapText(true);
+        }
 
         $instructions = $spreadsheet->createSheet();
         $instructions->setTitle('Instructions');
@@ -86,16 +113,17 @@ class MasterExportService
             ['How to use', 'Enter data in the Input Data sheet. Do not change the column order. Add one row for each new record.'],
             ['Format import', 'Excel (.xlsx/.xls) atau CSV UTF-8. Kolom tampilan yang mudah dibaca dan nama field API sama-sama diterima saat import.'],
             ['Relasi', 'Kolom bertanda (ID) diisi dengan ID data terkait.'],
+            ['Contoh data', ($isCoaTemplate || $isBankTemplate) ? 'Baris berwarna hanyalah contoh/dummy. Hapus seluruh baris contoh sebelum mengisi dan mengimpor data asli.' : 'Tidak ada baris contoh.'],
             ['', ''],
             ['Kolom pada template', 'Field import'],
         ];
         foreach ($columns as $column) {
-            $instructionRows[] = [$this->displayHeader($column), $column];
+            $instructionRows[] = [$headerOverrides[$column] ?? $this->displayHeader($column), $column];
         }
         $instructions->fromArray($instructionRows, null, 'A1');
-        $instructions->getStyle('A1:A6')->getFont()->setBold(true);
-        $instructions->getStyle('A6:B6')->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
-        $instructions->getStyle('A6:B6')->getFill()->setFillType('solid')->getStartColor()->setARGB('FF1F4E78');
+        $instructions->getStyle('A1:A7')->getFont()->setBold(true);
+        $instructions->getStyle('A7:B7')->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
+        $instructions->getStyle('A7:B7')->getFill()->setFillType('solid')->getStartColor()->setARGB('FF1F4E78');
         $instructions->getColumnDimension('A')->setWidth(24);
         $instructions->getColumnDimension('B')->setWidth(110);
         $instructions->getStyle('B1:B3')->getAlignment()->setWrapText(true);
@@ -106,9 +134,9 @@ class MasterExportService
         return response()->download($temp, strtolower($entityName).'-template.xlsx')->deleteFileAfterSend(true);
     }
 
-    public function templateHeaders(array $columns): array
+    public function templateHeaders(array $columns, array $headerOverrides = []): array
     {
-        return array_map(fn (string $column): string => $this->displayHeader($column), $columns);
+        return array_map(fn (string $column): string => $headerOverrides[$column] ?? $this->displayHeader($column), $columns);
     }
 
     private function displayHeader(string $column): string
