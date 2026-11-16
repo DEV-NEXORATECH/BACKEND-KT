@@ -775,6 +775,7 @@ abstract class BaseMasterController extends Controller
 
                 $payload['account_type'] = $accountTypeAliases[$cleanType] ?? ($accountTypeAliases[$rawAccountType] ?? $rawAccountType);
 
+
                 if (empty($payload['detail_type'])) {
                     $payload['detail_type'] = $payload['account_type'] === 'asset' ? 'Current Asset' : 'General';
                 }
