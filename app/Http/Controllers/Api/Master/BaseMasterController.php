@@ -799,7 +799,11 @@ abstract class BaseMasterController extends Controller
 
             if ($this->modelClass === \App\Models\Master\BankAccount::class) {
                 $bankProjectCode = trim((string) ($payload['project_code'] ?? ''));
-                $bankCoaCode = trim((string) ($payload['coa_code'] ?? ''));
+                // Depending on the spreadsheet header normalizer, COA Code
+                // may arrive as `coa_code` or as the model field
+                // `gl_account_id`. Treat both as an external COA code and
+                // resolve it to the real chart_of_accounts.id below.
+                $bankCoaCode = trim((string) ($payload['coa_code'] ?? $payload['gl_account_id'] ?? ''));
                 $mappingAccountName = trim((string) ($payload['account_name'] ?? ''));
                 $mappingStartDate = ! empty($payload['start_date']) ? $payload['start_date'] : null;
                 $mappingEndDate = ! empty($payload['end_date']) ? $payload['end_date'] : null;
@@ -822,9 +826,10 @@ abstract class BaseMasterController extends Controller
                         ->orWhere('name', $organizationValue)
                         ->value('id');
                 }
-                if (empty($payload['gl_account_id']) && $bankCoaCode !== '') {
+                if ($bankCoaCode !== '') {
                     $payload['gl_account_id'] = \App\Models\Master\ChartOfAccount::query()
                         ->where('code', $bankCoaCode)
+                        ->orWhereKey(is_numeric($bankCoaCode) ? (int) $bankCoaCode : 0)
                         ->value('id');
                 }
                 if (empty($payload['fiscal_year_id']) && ! empty($payload['fiscal_year'])) {
