@@ -148,10 +148,10 @@ class RoleSeeder extends Seeder
                     ['title' => 'Asset Categories', 'slug' => 'master-asset-categories', 'path' => '/master-data/asset-categories', 'sort_order' => 203],
                 ]],
                 ['title' => 'Procurement', 'slug' => 'master-procurement', 'path' => '/master-data', 'sort_order' => 23, 'children' => [
+                    ['title' => 'Suppliers / Vendors', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 230],
                     ['title' => 'Delivery Methods', 'slug' => 'master-delivery-methods', 'path' => '/master-data/delivery-methods', 'sort_order' => 231],
                     ['title' => 'Payment Terms', 'slug' => 'master-payment-terms', 'path' => '/master-data/payment-terms', 'sort_order' => 232],
                 ]],
-                ['title' => 'Suppliers / Vendors', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 22],
             ]],
             ['title' => 'Donor & Grant', 'slug' => 'donor-grant', 'path' => '/donor-grant', 'icon' => 'briefcase', 'sort_order' => 20, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'donor-grant-dashboard', 'path' => '/donor-grant/dashboard', 'sort_order' => 21],
@@ -201,11 +201,12 @@ class RoleSeeder extends Seeder
                 ['title' => 'Dashboard', 'slug' => 'procurement-dashboard', 'path' => '/procurement/dashboard', 'sort_order' => 490],
                 ['title' => 'Purchase Request', 'slug' => 'procurement-purchase-request', 'path' => '/procurement/purchase-requests', 'sort_order' => 491],
                 ['title' => 'Waiver & Justification', 'slug' => 'procurement-waivers', 'path' => '/procurement/waivers', 'sort_order' => 492],
-                ['title' => 'RFQ & CBA', 'slug' => 'procurement-rfq-cba', 'path' => '/procurement/rfq-cba', 'sort_order' => 493],
-                ['title' => 'Procurement Contracts', 'slug' => 'procurement-contracts', 'path' => '/procurement/contracts', 'sort_order' => 494],
-                ['title' => 'Supplier Contract Notification', 'slug' => 'procurement-scn', 'path' => '/procurement/scn', 'sort_order' => 495],
-                ['title' => 'Purchase Orders', 'slug' => 'procurement-purchase-orders', 'path' => '/procurement/purchase-orders', 'sort_order' => 496],
-                ['title' => 'Goods Receipts', 'slug' => 'procurement-goods-receipts', 'path' => '/procurement/goods-receipts', 'sort_order' => 497],
+                ['title' => 'Request for Quotation', 'slug' => 'procurement-rfq', 'path' => '/procurement/rfq', 'sort_order' => 493],
+                ['title' => 'Competitive Bid Analysis', 'slug' => 'procurement-cba', 'path' => '/procurement/cba', 'sort_order' => 494],
+                ['title' => 'Procurement Contracts', 'slug' => 'procurement-contracts', 'path' => '/procurement/contracts', 'sort_order' => 495],
+                ['title' => 'Supplier Contract Notification', 'slug' => 'procurement-scn', 'path' => '/procurement/scn', 'sort_order' => 496],
+                ['title' => 'Purchase Orders', 'slug' => 'procurement-purchase-orders', 'path' => '/procurement/purchase-orders', 'sort_order' => 497],
+                ['title' => 'Goods Receipts', 'slug' => 'procurement-goods-receipts', 'path' => '/procurement/goods-receipts', 'sort_order' => 498],
             ]],
             ['title' => 'Timesheet', 'slug' => 'timesheet', 'path' => '/timesheet', 'icon' => 'clock', 'sort_order' => 52, 'children' => [
                 ['title' => 'Dashboard', 'slug' => 'timesheet-dashboard', 'path' => '/timesheet/dashboard', 'sort_order' => 521],
@@ -304,7 +305,7 @@ class RoleSeeder extends Seeder
                 'timesheet', 'timesheet-dashboard', 'timesheet-internal', 'timesheet-external', 'timesheet-my', 'timesheet-team', 'timesheet-approval', 'timesheet-external-register', 'timesheet-external-verification', 'timesheet-external-reports', 'timesheet-project', 'timesheet-reports',
             ],
             'Procurement' => [
-                'procurement', 'procurement-dashboard', 'procurement-purchase-request', 'procurement-rfq-cba', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-contracts', 'procurement-scn', 'procurement-goods-receipts', 'procurement-waivers',
+                'procurement', 'procurement-dashboard', 'procurement-purchase-request', 'procurement-rfq', 'procurement-cba', 'procurement-vendors', 'procurement-purchase-orders', 'procurement-contracts', 'procurement-scn', 'procurement-goods-receipts', 'procurement-waivers',
             ],
             'Taxes' => [
                 'taxes', 'taxes-dashboard', 'taxes-setup', 'taxes-transactions', 'taxes-pph', 'taxes-vat', 'taxes-ebupot', 'taxes-efaktur', 'taxes-calendar', 'taxes-reports', 'tax-calculator',

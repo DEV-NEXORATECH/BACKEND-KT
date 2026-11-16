@@ -26,4 +26,16 @@ class MembershipMenuHierarchyTest extends TestCase
         $this->assertNotSame($finance->id, $members->parent_id);
         $this->assertNotSame($finance->id, $dues->parent_id);
     }
+
+    public function test_suppliers_vendors_is_nested_under_procurement_master_group(): void
+    {
+        $this->seed(MasterMenuSeeder::class);
+
+        $procurement = Menu::query()->where('slug', 'master-procurement')->firstOrFail();
+        $vendors = Menu::query()->where('slug', 'master-vendors')->firstOrFail();
+
+        $this->assertSame($procurement->id, $vendors->parent_id);
+        $this->assertSame('/master-data/vendors', $vendors->path);
+        $this->assertTrue($vendors->is_active);
+    }
 }

@@ -989,22 +989,56 @@ class ReportsDashboardController extends Controller
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
         $financialStatement = $this->financialStatement($postedLines, ! $projectId);
         $isScoped = $relationNo || $projectId || $grantAgreementId || $budgetLineId;
+        $isProjectReport = $request->is('api/v1/reports/project');
         $scopedTransactions = $postedLines
             ->filter(fn (JournalLine $line) => $line->account?->account_type === 'expense')
             ->sortByDesc(fn (JournalLine $line) => $line->journal?->journal_date)
             ->take(100)
-            ->map(fn (JournalLine $line) => [
-                'date' => $line->journal?->journal_date?->toDateString(),
-                'reference' => $line->journal?->reference ?: $line->journal?->journal_number,
-                'description' => $line->line_description ?: $line->journal?->description,
-                'status' => $line->journal?->status,
-                'amount' => round((float) $line->debit - (float) $line->credit, 2),
-                'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: ($line->grantAgreement?->relation_no ?: $line->budgetLine?->relation_no)),
-                'project_id' => $line->project_id,
-                'project' => $line->project?->name,
-                'budget_line_id' => $line->budget_line_id,
-                'line_code' => $line->budgetLine?->line_code,
-            ])
+            ->map(function (JournalLine $line) {
+                $project = $line->project ?: $line->budgetLine?->project;
+                $grant = $line->grantAgreement ?: ($project?->grantAgreement ?: $line->budgetLine?->grantAgreement);
+                $donor = $line->donor ?: $grant?->donor;
+                $bank = $project?->bankAccount ?: $grant?->bankAccount;
+
+                return [
+                    'date' => $line->journal?->journal_date?->toDateString(),
+                    'reference' => $line->journal?->reference ?: $line->journal?->journal_number,
+                    'description' => $line->line_description ?: $line->journal?->description,
+                    'status' => $line->journal?->status,
+                    'amount' => round((float) $line->debit - (float) $line->credit, 2),
+                    'relation_no' => $line->relation_no ?: ($project?->relation_no ?: ($line->grantAgreement?->relation_no ?: $line->budgetLine?->relation_no)),
+                    'project_id' => $project?->id,
+                    'project' => $project?->name,
+                    'project_code' => $project?->code,
+                    'grant_agreement_id' => $grant?->id,
+                    'grant_agreement' => $grant?->agreement_name,
+                    'grant_no' => $grant?->grant_no,
+                    'donor_id' => $donor?->id,
+                    'donor' => $donor?->name,
+                    'budget_line_id' => $line->budget_line_id,
+                    'line_code' => $line->budgetLine?->line_code,
+                    'coa' => $line->account ? [
+                        'id' => $line->account->id,
+                        'code' => $line->account->code,
+                        'name' => $line->account->name,
+                        'account_type' => $line->account->account_type,
+                    ] : null,
+                    'bank_account' => $bank ? [
+                        'id' => $bank->id,
+                        'bank_name' => $bank->bank_name,
+                        'account_number' => $bank->account_number,
+                        'account_name' => $bank->account_name,
+                        'gl_account_id' => $bank->gl_account_id,
+                        'gl_account' => $bank->glAccount ? [
+                            'id' => $bank->glAccount->id,
+                            'code' => $bank->glAccount->code,
+                            'name' => $bank->glAccount->name,
+                        ] : null,
+                    ] : null,
+                    'bank_link_source' => $project?->bankAccount ? 'project' : ($grant?->bankAccount ? 'grant_agreement' : null),
+                    'bank_link_status' => $bank ? ($bank->gl_account_id ? 'connected' : 'missing_gl_account') : 'unlinked',
+                ];
+            })
             ->values()
             ->all();
 
@@ -1039,6 +1073,10 @@ class ReportsDashboardController extends Controller
                     'project_code' => $row['project']['code'] ?? null,
                     'grant_agreement_id' => $row['grant_agreement']['id'] ?? null,
                     'grant_agreement' => $row['grant_agreement']['name'] ?? '-',
+                    'gl_account' => $row['gl_account'] ?? null,
+                    'bank_account' => $row['bank_account'] ?? null,
+                    'bank_link_source' => $row['bank_link_source'] ?? null,
+                    'bank_link_status' => $row['bank_link_status'] ?? 'unlinked',
                     'approved_budget' => $row['approved_budget'],
                     'actual' => $row['actual'],
                     'committed' => $row['committed'],
@@ -1055,7 +1093,7 @@ class ReportsDashboardController extends Controller
             'my_requests' => $this->expenseReportWorkspace($request, $period),
             'historical_expenses' => $this->historicalExpenseReport($request, $period),
             'cash_advance_settlement' => $this->cashAdvanceSettlementReport($request, $period),
-            'recent_transactions' => $isScoped
+            'recent_transactions' => ($isScoped || $isProjectReport)
                 ? $scopedTransactions
                 : $this->recentTransactions($period['start'], $period['end']),
         ]);
@@ -1550,14 +1588,43 @@ class ReportsDashboardController extends Controller
     private function postedLines(?CarbonInterface $start, ?CarbonInterface $end, ?string $projectId = null, ?string $budgetLineId = null, ?int $fiscalYearId = null, ?string $relationNo = null, ?string $grantAgreementId = null)
     {
         return JournalLine::query()
-            ->with(['journal:id,journal_number,journal_date,status,reference,description', 'account:id,code,name,account_type,normal_balance', 'donor:id,code,name', 'grantAgreement:id,grant_no,relation_no,agreement_name', 'budgetLine:id,line_code,relation_no', 'project:id,code,relation_no,name,grant_agreement_id', 'project.grantAgreement:id,grant_no,relation_no,agreement_name'])
+            ->with([
+                'journal:id,journal_number,journal_date,status,reference,description',
+                'account:id,code,name,account_type,normal_balance',
+                'donor:id,code,name',
+                'grantAgreement:id,donor_id,bank_account_id,grant_no,relation_no,agreement_name',
+                'grantAgreement.donor:id,code,name',
+                'grantAgreement.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
+                'grantAgreement.bankAccount.glAccount:id,code,name',
+                'budgetLine:id,line_code,relation_no,project_id,grant_agreement_id,gl_account_id',
+                'budgetLine.glAccount:id,code,name,account_type',
+                'budgetLine.grantAgreement:id,donor_id,bank_account_id,grant_no,relation_no,agreement_name',
+                'budgetLine.grantAgreement.donor:id,code,name',
+                'budgetLine.grantAgreement.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
+                'budgetLine.grantAgreement.bankAccount.glAccount:id,code,name',
+                'budgetLine.project:id,code,relation_no,name,grant_agreement_id,bank_account_id',
+                'budgetLine.project.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
+                'budgetLine.project.bankAccount.glAccount:id,code,name',
+                'budgetLine.project.grantAgreement:id,donor_id,bank_account_id,grant_no,relation_no,agreement_name',
+                'budgetLine.project.grantAgreement.donor:id,code,name',
+                'project:id,code,relation_no,name,grant_agreement_id,bank_account_id',
+                'project.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
+                'project.bankAccount.glAccount:id,code,name',
+                'project.grantAgreement:id,donor_id,bank_account_id,grant_no,relation_no,agreement_name',
+                'project.grantAgreement.donor:id,code,name',
+                'project.grantAgreement.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
+                'project.grantAgreement.bankAccount.glAccount:id,code,name',
+            ])
             ->whereHas('journal', function (Builder $query) use ($start, $end) {
                 $query->where('status', 'posted')
                     ->when($start, fn (Builder $inner) => $inner->whereDate('journal_date', '>=', $start))
                     ->when($end, fn (Builder $inner) => $inner->whereDate('journal_date', '<=', $end));
             })
             ->when($fiscalYearId, fn (Builder $query) => $query->whereHas('journal', fn (Builder $journal) => $journal->where('fiscal_year_id', $fiscalYearId)))
-            ->when($projectId, fn (Builder $query) => $query->where('project_id', $projectId))
+            ->when($projectId, fn (Builder $query) => $query->where(function (Builder $scope) use ($projectId) {
+                $scope->where('project_id', $projectId)
+                    ->orWhereHas('budgetLine', fn (Builder $budgetLine) => $budgetLine->where('project_id', $projectId));
+            }))
             ->when($budgetLineId, fn (Builder $query) => $query->where('budget_line_id', $budgetLineId))
             ->when($grantAgreementId, function (Builder $query) use ($grantAgreementId) {
                 $query->where(function (Builder $scope) use ($grantAgreementId) {
@@ -1701,7 +1768,7 @@ class ReportsDashboardController extends Controller
     private function recentTransactions(?CarbonInterface $start, ?CarbonInterface $end): array
     {
         return Journal::query()
-            ->with(['lines.account:id,code,name,account_type', 'lines.project:id,relation_no', 'lines.grantAgreement:id,relation_no', 'lines.budgetLine:id,relation_no'])
+            ->with(['lines.account:id,code,name,account_type', 'lines.project:id,code,name,relation_no', 'lines.grantAgreement:id,relation_no', 'lines.budgetLine:id,relation_no,project_id', 'lines.budgetLine.project:id,code,name,relation_no'])
             // The dashboard's Recent Transactions list is an activity feed,
             // so it must also show journals waiting for approval/posting.
             // Exclude only terminal invalidated records.
@@ -1722,6 +1789,11 @@ class ReportsDashboardController extends Controller
                     ->filter()
                     ->unique()
                     ->values();
+                $projects = $journal->lines
+                    ->map(fn (JournalLine $line) => $line->project ?: $line->budgetLine?->project)
+                    ->filter()
+                    ->unique('id')
+                    ->values();
 
                 return [
                     'date' => $journal->journal_date?->toDateString(),
@@ -1732,6 +1804,15 @@ class ReportsDashboardController extends Controller
                     'direction' => $expense > 0 ? 'out' : 'neutral',
                     'relation_no' => $relations->count() === 1 ? $relations->first() : null,
                     'relation_nos' => $relations->all(),
+                    'project_id' => $projects->count() === 1 ? $projects->first()->id : null,
+                    'project' => $projects->pluck('name')->filter()->join(', ') ?: null,
+                    'project_code' => $projects->count() === 1 ? $projects->first()->code : null,
+                    'projects' => $projects->map(fn ($project) => [
+                        'id' => $project->id,
+                        'code' => $project->code,
+                        'name' => $project->name,
+                        'relation_no' => $project->relation_no,
+                    ])->all(),
                 ];
             })
             ->all();

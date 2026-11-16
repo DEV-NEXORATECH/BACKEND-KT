@@ -59,6 +59,7 @@ class JournalController extends Controller
         'currency:id,code,name',
         'fiscalYear:id,year,name,start_date,end_date',
         'lines.account:id,code,name',
+        'lines.account.bankAccounts:id,gl_account_id,bank_name,account_number,account_name,is_active',
         'lines.donor:id,code,name',
         'lines.grantAgreement:id,donor_id,grant_no,relation_no,agreement_name',
         'lines.partner:id,code,name',
@@ -1024,6 +1025,15 @@ class JournalController extends Controller
                 'account_id' => $line->account_id,
                 'account_code' => $line->account?->code,
                 'account_name' => $line->account?->name,
+                'bank_accounts' => $line->account?->bankAccounts
+                    ?->map(fn ($bankAccount) => [
+                        'id' => $bankAccount->id,
+                        'gl_account_id' => $bankAccount->gl_account_id,
+                        'bank_name' => $bankAccount->bank_name,
+                        'account_number' => $bankAccount->account_number,
+                        'account_name' => $bankAccount->account_name,
+                        'is_active' => $bankAccount->is_active,
+                    ])->values() ?? [],
                 'donor_id' => $line->donor_id,
                 'donor_code' => $line->donor?->code,
                 'donor_name' => $line->donor?->name,

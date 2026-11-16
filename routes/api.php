@@ -272,6 +272,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('purchase-orders/{purchaseOrder}/supplier-invoices', [ProcurementFulfillmentController::class, 'createInvoice'])->middleware('permission:procurement.invoice.create');
         Route::post('supplier-invoices/{supplierInvoice}/three-way-match', [ProcurementFulfillmentController::class, 'threeWayMatch'])->middleware('permission:procurement.invoice.match');
         Route::get('rfqs', [AdvancedProcurementController::class, 'rfqs'])->middleware('permission:procurement.rfq.view');
+        Route::get('cba', [AdvancedProcurementController::class, 'cbas'])->middleware('permission:procurement.cba.view');
         Route::post('purchase-requests/{purchaseRequest}/rfqs', [AdvancedProcurementController::class, 'createRfq'])->middleware('permission:procurement.rfq.create');
         Route::post('rfqs/{rfq}/quotations', [AdvancedProcurementController::class, 'submitQuotation'])->middleware('permission:procurement.rfq.create');
         Route::post('rfqs/{rfq}/close', [AdvancedProcurementController::class, 'closeRfq'])->middleware('permission:procurement.rfq.create');

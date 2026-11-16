@@ -57,10 +57,31 @@ class AdvancedProcurementTest extends TestCase
             'analysis_date' => '2026-09-22',
             'selected_quotation_id' => $quotationB,
             'selection_reason' => 'Best technical score and fastest delivery.',
+            'prepared_by' => 'Procurement Officer',
+            'prepared_by_position' => 'Supply Chain',
+            'budget_holder_name' => 'Program Manager',
+            'budget_holder_position' => 'Budget Holder',
+            'panelist_1_name' => 'Senior Campaigner',
+            'panelist_1_position' => 'Panelist',
+            'bid_comparison' => [
+                (string) $quotationB => [
+                    'location' => 'Jakarta',
+                    'lines' => ['0' => ['unit_price' => 980, 'total_price' => 980, 'availability' => '5 days']],
+                ],
+            ],
         ])
             ->assertCreated()
             ->assertJsonPath('data.selected_vendor_id', $vendorB->id)
+            ->assertJsonPath('data.prepared_by_position', 'Supply Chain')
+            ->assertJsonPath('data.panelist_1_position', 'Panelist')
             ->json('data.id');
+
+        $this->getJson('/api/v1/procurement/cba')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $rfqId)
+            ->assertJsonPath('data.0.purchase_request.pr_number', 'PR-ADV-001')
+            ->assertJsonPath('data.0.purchase_request.lines.0.item_description', 'Equipment')
+            ->assertJsonPath('data.0.cba.prepared_by_position', 'Supply Chain');
 
         $this->postJson("/api/v1/procurement/cba/{$cbaId}/approve")
             ->assertOk()
@@ -87,7 +108,7 @@ class AdvancedProcurementTest extends TestCase
     private function fixture(): array
     {
         $role = Role::create(['name' => 'Advanced Procurement Role', 'slug' => 'advanced-procurement-role']);
-        foreach (['procurement.rfq.create', 'procurement.cba.create', 'procurement.cba.approve', 'procurement.po.create', 'procurement.po.approve'] as $permission) {
+        foreach (['procurement.rfq.view', 'procurement.rfq.create', 'procurement.cba.view', 'procurement.cba.create', 'procurement.cba.approve', 'procurement.po.create', 'procurement.po.approve'] as $permission) {
             $role->permissions()->attach(Permission::firstOrCreate(['slug' => $permission], ['name' => $permission]));
         }
         $user = User::factory()->create(['role_id' => $role->id]);

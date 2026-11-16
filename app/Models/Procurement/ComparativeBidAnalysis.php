@@ -14,8 +14,10 @@ class ComparativeBidAnalysis extends Model
 
     protected $fillable = [
         'rfq_id', 'cba_number', 'analysis_date', 'selected_vendor_id', 'selected_quotation_id',
-        'selection_reason', 'remarks', 'bidding_results', 'prepared_by', 'budget_holder_name',
-        'panelist_1_name', 'panelist_2_name', 'panelist_3_name', 'bid_comparison', 'status',
+        'selection_reason', 'remarks', 'bidding_results', 'prepared_by', 'prepared_by_position',
+        'budget_holder_name', 'budget_holder_position', 'panelist_1_name', 'panelist_1_position',
+        'panelist_2_name', 'panelist_2_position', 'panelist_3_name', 'panelist_3_position',
+        'bid_comparison', 'status',
         'attachments', 'approved_by', 'approved_at', 'created_by', 'updated_by', 'deleted_by',
     ];
 

@@ -16,19 +16,25 @@ class BudgetMonitoringService
             ->with([
                 'grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
                 'grantAgreement.donor:id,code,name',
-                'grantAgreement.bankAccount:id,bank_name,account_number,account_name',
+                'grantAgreement.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
+                'grantAgreement.bankAccount.glAccount:id,code,name',
                 'grantAgreement.disbursementRequests' => fn ($q) => $q->whereNotNull('received_bank_account_id')->latest('received_date')->latest('id'),
-                'grantAgreement.disbursementRequests.receivedBankAccount:id,bank_name,account_number,account_name',
+                'grantAgreement.disbursementRequests.receivedBankAccount:id,bank_name,account_number,account_name,gl_account_id',
+                'grantAgreement.disbursementRequests.receivedBankAccount.glAccount:id,code,name',
                 'grantAgreement.fiscalYear:id,year,name',
                 'project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
                 'project.program:id,code,name',
-                'project.bankAccount:id,bank_name,account_number,account_name',
+                'project.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
+                'project.bankAccount.glAccount:id,code,name',
                 'project.grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
-                'project.grantAgreement.bankAccount:id,bank_name,account_number,account_name',
+                'project.grantAgreement.bankAccount:id,bank_name,account_number,account_name,gl_account_id',
+                'project.grantAgreement.bankAccount.glAccount:id,code,name',
                 'project.grantAgreement.disbursementRequests' => fn ($q) => $q->whereNotNull('received_bank_account_id')->latest('received_date')->latest('id'),
-                'project.grantAgreement.disbursementRequests.receivedBankAccount:id,bank_name,account_number,account_name',
+                'project.grantAgreement.disbursementRequests.receivedBankAccount:id,bank_name,account_number,account_name,gl_account_id',
+                'project.grantAgreement.disbursementRequests.receivedBankAccount.glAccount:id,code,name',
                 'project.fiscalYears:id,year,name',
                 'fiscalYear:id,year,name',
+                'currency:id,code,name',
                 'budgetCategory:id,code,name',
                 'glAccount:id,code,name',
                 'activity:id,project_id,code,name,target_output',
@@ -115,6 +121,17 @@ class BudgetMonitoringService
                 $fiscalYearYear = \App\Models\Master\FiscalYear::where('is_active', true)->value('year');
             }
 
+            $bank = $line->project?->bankAccount
+                ?: $line->grantAgreement?->bankAccount
+                ?: $line->project?->grantAgreement?->bankAccount
+                ?: $line->grantAgreement?->disbursementRequests?->first()?->receivedBankAccount
+                ?: $line->project?->grantAgreement?->disbursementRequests?->first()?->receivedBankAccount;
+            $bankSource = $line->project?->bankAccount ? 'project'
+                : ($line->grantAgreement?->bankAccount ? 'grant_agreement'
+                    : ($line->project?->grantAgreement?->bankAccount ? 'project_grant_agreement'
+                        : ($line->grantAgreement?->disbursementRequests?->first()?->receivedBankAccount ? 'grant_receipt'
+                            : ($line->project?->grantAgreement?->disbursementRequests?->first()?->receivedBankAccount ? 'project_grant_receipt' : null))));
+
             return [
                 'budget_line_id' => $line->id,
                 'fiscal_year_id' => $fiscalYearId ?: ($filters['fiscal_year_id'] ?? null),
@@ -150,6 +167,7 @@ class BudgetMonitoringService
                     'code' => $line->grantAgreement->grant_no,
                     'name' => $line->grantAgreement->agreement_name,
                     'relation_no' => $line->grantAgreement->relation_no,
+                    'bank_account_id' => $line->grantAgreement->bank_account_id,
                 ] : null,
                 'program' => $line->project?->program ? [
                     'id' => $line->project->program->id,
@@ -162,27 +180,38 @@ class BudgetMonitoringService
                     'name' => $line->project->name,
                     'relation_no' => $line->project->relation_no,
                     'budget_holder' => $line->project->manager_name,
+                    'bank_account_id' => $line->project->bank_account_id,
                 ] : null,
                 'budget_category' => $line->budgetCategory ? [
                     'id' => $line->budgetCategory->id,
                     'code' => $line->budgetCategory->code,
                     'name' => $line->budgetCategory->name,
                 ] : null,
+                'currency_id' => $line->currency_id,
+                'currency' => $line->currency ? [
+                    'id' => $line->currency->id,
+                    'code' => $line->currency->code,
+                    'name' => $line->currency->name,
+                ] : null,
                 'gl_account' => $line->glAccount ? [
                     'id' => $line->glAccount->id,
                     'code' => $line->glAccount->code,
                     'name' => $line->glAccount->name,
                 ] : null,
-                'bank_account' => ($bank = $line->project?->bankAccount
-                    ?: $line->grantAgreement?->bankAccount
-                    ?: $line->project?->grantAgreement?->bankAccount
-                    ?: $line->grantAgreement?->disbursementRequests?->first()?->receivedBankAccount
-                    ?: $line->project?->grantAgreement?->disbursementRequests?->first()?->receivedBankAccount
-                ) ? [
+                'bank_account_id' => $bank?->id,
+                'bank_link_source' => $bankSource,
+                'bank_link_status' => $bank ? ($bank->gl_account_id ? 'connected' : 'missing_gl_account') : 'unlinked',
+                'bank_account' => $bank ? [
                     'id' => $bank->id,
                     'bank_name' => $bank->bank_name,
                     'account_number' => $bank->account_number,
                     'account_name' => $bank->account_name,
+                    'gl_account_id' => $bank->gl_account_id,
+                    'gl_account' => $bank->glAccount ? [
+                        'id' => $bank->glAccount->id,
+                        'code' => $bank->glAccount->code,
+                        'name' => $bank->glAccount->name,
+                    ] : null,
                 ] : null,
             ];
         });

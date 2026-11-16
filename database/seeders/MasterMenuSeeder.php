@@ -69,7 +69,7 @@ class MasterMenuSeeder extends Seeder
                 ['title' => 'Asset Categories', 'slug' => 'master-asset-categories', 'path' => '/master-data/asset-categories', 'sort_order' => 203],
             ]],
             ['title' => 'Procurement', 'slug' => 'master-procurement', 'sort_order' => 22, 'children' => [
-                ['title' => 'Suppliers / Vendors', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 210],
+                ['title' => 'Suppliers / Vendors', 'slug' => 'master-vendors', 'path' => '/master-data/vendors', 'sort_order' => 230],
                 ['title' => 'Vendor Categories', 'slug' => 'master-vendor-categories', 'path' => '/master-data/vendor-categories', 'sort_order' => 211],
                 ['title' => 'Items / Services', 'slug' => 'master-items-services', 'path' => '/master-data/procurement-items', 'sort_order' => 212],
                 ['title' => 'Unit of Measures', 'slug' => 'master-unit-of-measures', 'path' => '/master-data/unit-of-measures', 'sort_order' => 213],

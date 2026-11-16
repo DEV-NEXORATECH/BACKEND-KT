@@ -20,10 +20,22 @@ class AdvancedProcurementController extends Controller
 {
     public function rfqs(Request $request): JsonResponse
     {
-        $query = Rfq::with(['purchaseRequest:id,pr_number,status', 'vendors:id,code,name', 'quotations.vendor:id,code,name', 'cba.selectedVendor:id,code,name'])
-            ->when($request->filled('fiscal_year_id'), fn ($query) => $query->where('fiscal_year_id', (int) $request->query('fiscal_year_id')));
+        $query = $this->rfqListingQuery($request);
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
         return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn (Rfq $rfq) => $this->formatRfq($rfq))]);
+    }
+
+    public function cbas(Request $request): JsonResponse
+    {
+        $query = $this->rfqListingQuery($request)->whereHas('quotations');
+        app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
+        return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn (Rfq $rfq) => $this->formatRfq($rfq))]);
+    }
+
+    private function rfqListingQuery(Request $request)
+    {
+        return Rfq::with(['purchaseRequest.lines', 'vendors:id,code,name,address', 'quotations.vendor:id,code,name,address', 'cba.selectedVendor:id,code,name,address'])
+            ->when($request->filled('fiscal_year_id'), fn ($query) => $query->where('fiscal_year_id', (int) $request->query('fiscal_year_id')));
     }
 
     public function createRfq(PurchaseRequest $purchaseRequest, Request $request): JsonResponse
@@ -51,6 +63,7 @@ class AdvancedProcurementController extends Controller
             'other_tax' => ['nullable', 'numeric', 'min:0'],
             'other_charges' => ['nullable', 'numeric', 'min:0'],
             'checked_by' => ['nullable', 'string', 'max:120'],
+            'checked_by_title' => ['nullable', 'string', 'max:120'],
             'budget_holder_name' => ['nullable', 'string', 'max:120'],
             'budget_holder_title' => ['nullable', 'string', 'max:120'],
             'supplier_acceptance_name' => ['nullable', 'string', 'max:120'],
@@ -82,6 +95,7 @@ class AdvancedProcurementController extends Controller
                 'other_tax' => $data['other_tax'] ?? 0,
                 'other_charges' => $data['other_charges'] ?? 0,
                 'checked_by' => $data['checked_by'] ?? null,
+                'checked_by_title' => $data['checked_by_title'] ?? null,
                 'budget_holder_name' => $data['budget_holder_name'] ?? null,
                 'budget_holder_title' => $data['budget_holder_title'] ?? null,
                 'supplier_acceptance_name' => $data['supplier_acceptance_name'] ?? null,
@@ -162,10 +176,15 @@ class AdvancedProcurementController extends Controller
             'remarks' => ['nullable', 'string'],
             'bidding_results' => ['nullable', 'string'],
             'prepared_by' => ['nullable', 'string', 'max:120'],
+            'prepared_by_position' => ['nullable', 'string', 'max:120'],
             'budget_holder_name' => ['nullable', 'string', 'max:120'],
+            'budget_holder_position' => ['nullable', 'string', 'max:120'],
             'panelist_1_name' => ['nullable', 'string', 'max:120'],
+            'panelist_1_position' => ['nullable', 'string', 'max:120'],
             'panelist_2_name' => ['nullable', 'string', 'max:120'],
+            'panelist_2_position' => ['nullable', 'string', 'max:120'],
             'panelist_3_name' => ['nullable', 'string', 'max:120'],
+            'panelist_3_position' => ['nullable', 'string', 'max:120'],
             'bid_comparison' => ['nullable', 'array'],
         ]);
 
@@ -187,10 +206,15 @@ class AdvancedProcurementController extends Controller
                     'remarks' => $data['remarks'] ?? null,
                     'bidding_results' => $data['bidding_results'] ?? null,
                     'prepared_by' => $data['prepared_by'] ?? null,
+                    'prepared_by_position' => $data['prepared_by_position'] ?? null,
                     'budget_holder_name' => $data['budget_holder_name'] ?? null,
+                    'budget_holder_position' => $data['budget_holder_position'] ?? null,
                     'panelist_1_name' => $data['panelist_1_name'] ?? null,
+                    'panelist_1_position' => $data['panelist_1_position'] ?? null,
                     'panelist_2_name' => $data['panelist_2_name'] ?? null,
+                    'panelist_2_position' => $data['panelist_2_position'] ?? null,
                     'panelist_3_name' => $data['panelist_3_name'] ?? null,
+                    'panelist_3_position' => $data['panelist_3_position'] ?? null,
                     'bid_comparison' => $data['bid_comparison'] ?? null,
                     'status' => 'draft',
                 ],
@@ -304,12 +328,14 @@ class AdvancedProcurementController extends Controller
             'other_tax' => $rfq->other_tax,
             'other_charges' => $rfq->other_charges,
             'checked_by' => $rfq->checked_by,
+            'checked_by_title' => $rfq->checked_by_title,
             'budget_holder_name' => $rfq->budget_holder_name,
             'budget_holder_title' => $rfq->budget_holder_title,
             'supplier_acceptance_name' => $rfq->supplier_acceptance_name,
             'supplier_acceptance_title' => $rfq->supplier_acceptance_title,
             'status' => $rfq->status,
-            'vendors' => $rfq->vendors->map(fn ($vendor) => ['id' => $vendor->id, 'code' => $vendor->code, 'name' => $vendor->name, 'status' => $vendor->pivot?->status])->values(),
+            'purchase_request' => $rfq->purchaseRequest,
+            'vendors' => $rfq->vendors->map(fn ($vendor) => ['id' => $vendor->id, 'code' => $vendor->code, 'name' => $vendor->name, 'address' => $vendor->address, 'status' => $vendor->pivot?->status])->values(),
             'quotations' => $rfq->quotations->map(fn ($q) => $this->formatQuotation($q))->values(),
             'cba' => $rfq->cba ? $this->formatCba($rfq->cba) : null,
         ];
@@ -321,6 +347,8 @@ class AdvancedProcurementController extends Controller
             'id' => $quotation->id,
             'vendor_id' => $quotation->vendor_id,
             'vendor_name' => $quotation->vendor?->name,
+            'vendor_address' => $quotation->vendor?->address,
+            'vendor' => $quotation->vendor?->only(['id', 'code', 'name', 'address']),
             'quotation_number' => $quotation->quotation_number,
             'quotation_date' => $quotation->quotation_date?->toDateString(),
             'total_amount' => $quotation->total_amount,
@@ -352,10 +380,15 @@ class AdvancedProcurementController extends Controller
             'remarks' => $cba->remarks,
             'bidding_results' => $cba->bidding_results,
             'prepared_by' => $cba->prepared_by,
+            'prepared_by_position' => $cba->prepared_by_position,
             'budget_holder_name' => $cba->budget_holder_name,
+            'budget_holder_position' => $cba->budget_holder_position,
             'panelist_1_name' => $cba->panelist_1_name,
+            'panelist_1_position' => $cba->panelist_1_position,
             'panelist_2_name' => $cba->panelist_2_name,
+            'panelist_2_position' => $cba->panelist_2_position,
             'panelist_3_name' => $cba->panelist_3_name,
+            'panelist_3_position' => $cba->panelist_3_position,
             'bid_comparison' => $cba->bid_comparison,
             'status' => $cba->status,
             'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('cba', $cba, request()->user()),

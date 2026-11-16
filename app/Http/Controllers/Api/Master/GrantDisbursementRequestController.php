@@ -148,10 +148,17 @@ class GrantDisbursementRequestController extends Controller
                 'projects' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
             ])
             ->findOrFail($grantId);
-        if ($request->filled('fiscal_year_id') && (int) $grant->fiscal_year_id !== $request->integer('fiscal_year_id')) {
-            throw ValidationException::withMessages([
-                'grant_agreement_id' => 'Grant Agreement tidak termasuk dalam tahun fiskal yang dipilih.',
-            ]);
+        if ($request->filled('fiscal_year_id')) {
+            $selectedFiscalYear = \App\Models\Master\FiscalYear::query()->find($request->integer('fiscal_year_id'));
+            $matchesFiscalYear = (int) $grant->fiscal_year_id === $request->integer('fiscal_year_id')
+                || (! $grant->fiscal_year_id && $selectedFiscalYear
+                    && $grant->start_date?->lte($selectedFiscalYear->end_date)
+                    && $grant->end_date?->gte($selectedFiscalYear->start_date));
+            if (! $matchesFiscalYear) {
+                throw ValidationException::withMessages([
+                    'grant_agreement_id' => 'Grant Agreement tidak termasuk dalam tahun fiskal yang dipilih.',
+                ]);
+            }
         }
         if ($request->filled('relation_no')) {
             $relationNo = trim((string) $request->input('relation_no'));

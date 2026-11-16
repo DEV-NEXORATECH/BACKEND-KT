@@ -21,10 +21,46 @@ class ProcurementFulfillmentTest extends TestCase
 
         $po = $this->actingAs($user, 'sanctum')
             ->postJson("/api/v1/procurement/purchase-requests/{$purchaseRequest->id}/purchase-orders", [
+                'po_number' => 'PO-TEMPLATE-001',
                 'po_date' => '2026-09-20',
+                'required_delivery_date' => '2026-09-25',
+                'delivery_method' => 'Hand carry',
+                'payment_terms' => 'Net 30',
+                'delivery_address' => 'Bogor Office',
+                'delivery_contact_name' => 'Delivery Contact',
+                'delivery_contact_email' => 'delivery@example.org',
+                'supplier_company_name' => 'Supplier Example',
+                'supplier_contact_name' => 'Supplier Contact',
+                'supplier_email' => 'supplier@example.org',
+                'supplier_phone' => '021123456',
+                'supplier_fax' => '021654321',
+                'supplier_mobile' => '0812000000',
+                'supplier_address' => 'Supplier Address',
+                'procurement_contact_name' => 'Procurement Contact',
+                'procurement_contact_email' => 'procurement@kaoemtelapak.org',
+                'procurement_address' => 'Kaoem Telapak Bogor',
+                'other_tax' => 10,
+                'other_charges' => 5,
+                'checked_by' => 'Ziadatunnisa Ilmi Latifa',
+                'checked_by_title' => 'Campaigner',
+                'budget_holder_name' => 'Abu Meridian',
+                'budget_holder_title' => 'Campaign Leader',
+                'supplier_acceptance_name' => 'Supplier Signatory',
+                'supplier_acceptance_title' => 'Director',
                 'terms' => 'Net 30',
             ])
             ->assertCreated()
+            ->assertJsonPath('data.po_number', 'PO-TEMPLATE-001')
+            ->assertJsonPath('data.supplier_company_name', 'Supplier Example')
+            ->assertJsonPath('data.delivery_contact_name', 'Delivery Contact')
+            ->assertJsonPath('data.checked_by_title', 'Campaigner')
+            ->assertJsonPath('data.subtotal_amount', '200.00')
+            ->assertJsonPath('data.total_amount', '215.00')
+            ->assertJsonPath('data.lines.0.budget_code', 'PROC-001')
+            ->assertJsonPath('data.lines.0.pr_number', 'PR-001')
+            ->assertJsonPath('data.lines.0.pr_line_item_no', 1)
+            ->assertJsonPath('data.lines.0.unit', 'package')
+            ->assertJsonPath('data.lines.0.currency', 'IDR')
             ->json('data');
 
         $this->postJson("/api/v1/procurement/purchase-orders/{$po['id']}/approve")
@@ -33,14 +69,38 @@ class ProcurementFulfillmentTest extends TestCase
 
         $poLineId = $po['lines'][0]['id'];
         $grn = $this->postJson("/api/v1/procurement/purchase-orders/{$po['id']}/goods-receipts", [
+            'grn_number' => 'GRNKT001',
             'receipt_date' => '2026-09-21',
+            'supplier_waybill_number' => 'DN-001',
+            'receiving_location' => 'Bogor Office',
+            'acceptable_for_payment' => true,
+            'remarks' => 'Goods received in good condition.',
+            'receipt_by_name' => 'Storekeeper',
+            'receipt_by_position' => 'Supply Chain Officer',
+            'requester_name' => 'Programme Requester',
+            'requester_position' => 'Campaign Lead',
             'lines' => [[
                 'purchase_order_line_id' => $poLineId,
                 'received_quantity' => 2,
+                'quality_check' => 'Acceptable',
+                'comment' => 'New and in good condition',
             ]],
         ])
             ->assertCreated()
+            ->assertJsonPath('data.grn_number', 'GRNKT001')
+            ->assertJsonPath('data.pr_number', 'PR-001')
+            ->assertJsonPath('data.supplier_waybill_number', 'DN-001')
+            ->assertJsonPath('data.acceptable_for_payment', true)
+            ->assertJsonPath('data.lines.0.quantity_expected', '2.00')
+            ->assertJsonPath('data.lines.0.received_quantity', '2.00')
+            ->assertJsonPath('data.lines.0.quality_check', 'Acceptable')
+            ->assertJsonPath('data.lines.0.comment', 'New and in good condition')
             ->json('data');
+
+        $this->getJson('/api/v1/procurement/goods-receipts')
+            ->assertOk()
+            ->assertJsonPath('data.0.grn_number', 'GRNKT001')
+            ->assertJsonPath('data.0.lines.0.item_description', 'Materials');
 
         $invoice = $this->postJson("/api/v1/procurement/purchase-orders/{$po['id']}/supplier-invoices", [
             'goods_receipt_id' => $grn['id'],
@@ -56,6 +116,18 @@ class ProcurementFulfillmentTest extends TestCase
             ->assertCreated()
             ->json('data');
 
+        $this->putJson("/api/v1/procurement/goods-receipts/{$grn['id']}", ['acceptable_for_payment' => false])
+            ->assertOk()
+            ->assertJsonPath('data.acceptable_for_payment', false);
+
+        $this->postJson("/api/v1/procurement/supplier-invoices/{$invoice['id']}/three-way-match")
+            ->assertOk()
+            ->assertJsonPath('data.match_status', 'mismatch');
+
+        $this->putJson("/api/v1/procurement/goods-receipts/{$grn['id']}", ['acceptable_for_payment' => true])
+            ->assertOk()
+            ->assertJsonPath('data.acceptable_for_payment', true);
+
         $this->postJson("/api/v1/procurement/supplier-invoices/{$invoice['id']}/three-way-match")
             ->assertOk()
             ->assertJsonPath('data.match_status', 'matched')
@@ -69,6 +141,7 @@ class ProcurementFulfillmentTest extends TestCase
             'procurement.po.create',
             'procurement.po.approve',
             'procurement.grn.create',
+            'procurement.grn.view',
             'procurement.invoice.create',
             'procurement.invoice.match',
         ];
@@ -98,6 +171,9 @@ class ProcurementFulfillmentTest extends TestCase
         ]);
         $purchaseRequest->lines()->create([
             'budget_line_id' => $budgetLine->id,
+            'budget_code' => 'PROC-001',
+            'unit' => 'package',
+            'currency' => 'IDR',
             'item_description' => 'Materials',
             'quantity' => 2,
             'unit_price' => 100,

@@ -27,17 +27,47 @@ class PurchaseRequestWorkflowTest extends TestCase
         $purchaseRequestId = $this->actingAs($user, 'sanctum')
             ->postJson('/api/v1/procurement/purchase-requests', [
                 'request_date' => '2026-09-20',
+                'required_date' => '2026-09-27',
+                'country' => 'Indonesia - IDN',
+                'office' => 'Bogor',
+                'requester_name' => 'Rika Putri Andini',
+                'requester_program' => 'EUDR Program',
+                'requester_email' => 'rika.andini@kaoemtelapak.org',
+                'requester_phone' => '081280922592',
+                'requester_address' => 'Sempur 05 - Bogor Jawa Barat',
+                'destination' => 'Bogor Office',
+                'donor_name' => 'Program Donor',
+                'delivery_method' => 'hand_carry',
+                'requirements' => 'Local catering and on-time delivery',
+                'preferred_incoterm' => 'DAP',
+                'shipping_requirements' => 'Deliver before lunch',
                 'justification' => 'Procure project materials',
                 'lines' => [[
                     'budget_line_id' => $budgetLine->id,
                     'item_description' => 'Training materials',
+                    'account_code' => '5100',
+                    'budget_code' => 'PROC-001',
+                    'source_of_fund' => 'Program Donor',
+                    'unit' => 'package',
+                    'currency' => 'IDR',
                     'quantity' => 2,
                     'unit_price' => 100,
                 ]],
             ])
             ->assertCreated()
             ->assertJsonPath('data.status', 'draft')
+            ->assertJsonPath('data.requester_email', 'rika.andini@kaoemtelapak.org')
+            ->assertJsonPath('data.delivery_method', 'hand_carry')
+            ->assertJsonPath('data.lines.0.account_code', '5100')
+            ->assertJsonPath('data.lines.0.budget_code', 'PROC-001')
+            ->assertJsonPath('data.lines.0.source_of_fund', 'Program Donor')
+            ->assertJsonPath('data.lines.0.unit', 'package')
+            ->assertJsonPath('data.lines.0.currency', 'IDR')
             ->json('data.id');
+
+        $this->get("/api/v1/procurement/purchase-requests/{$purchaseRequestId}/pdf")
+            ->assertOk()
+            ->assertDownload();
 
         $this->postJson("/api/v1/procurement/purchase-requests/{$purchaseRequestId}/submit")
             ->assertOk()

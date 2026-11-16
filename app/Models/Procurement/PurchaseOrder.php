@@ -18,9 +18,10 @@ class PurchaseOrder extends Model
     protected $fillable = [
         'fiscal_year_id', 'purchase_request_id', 'rfq_id', 'cba_id', 'vendor_id', 'po_number', 'po_date',
         'required_delivery_date', 'delivery_method', 'payment_terms', 'delivery_address',
-        'supplier_contact_name', 'supplier_email', 'supplier_phone', 'supplier_fax', 'supplier_mobile', 'supplier_address',
+        'supplier_company_name', 'supplier_contact_name', 'supplier_email', 'supplier_phone', 'supplier_fax', 'supplier_mobile', 'supplier_address',
+        'delivery_contact_name', 'delivery_contact_email',
         'procurement_contact_name', 'procurement_contact_email', 'procurement_address',
-        'other_tax', 'other_charges', 'checked_by', 'budget_holder_name', 'budget_holder_title',
+        'other_tax', 'other_charges', 'checked_by', 'checked_by_title', 'budget_holder_name', 'budget_holder_title',
         'supplier_acceptance_name', 'supplier_acceptance_title', 'contract_number', 'contract_date', 'terms',
         'status', 'attachments', 'approved_by', 'approved_at', 'created_by', 'updated_by', 'deleted_by',
     ];
@@ -56,6 +57,11 @@ class PurchaseOrder extends Model
         return $this->belongsTo(Vendor::class);
     }
 
+    public function approvedBy(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\User::class, 'approved_by');
+    }
+
     public function rfq(): BelongsTo
     {
         return $this->belongsTo(Rfq::class, 'rfq_id');
@@ -85,6 +91,11 @@ class PurchaseOrder extends Model
     public function vendorEvaluations(): HasMany { return $this->hasMany(VendorEvaluation::class); }
 
     public function getTotalAmountAttribute(): string
+    {
+        return number_format((float) $this->lines->sum('total_amount') + (float) $this->other_tax + (float) $this->other_charges, 2, '.', '');
+    }
+
+    public function getSubtotalAmountAttribute(): string
     {
         return number_format((float) $this->lines->sum('total_amount'), 2, '.', '');
     }

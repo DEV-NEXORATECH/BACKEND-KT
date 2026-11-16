@@ -200,7 +200,11 @@ class JournalBudgetIntegrationTest extends TestCase
         $this->getJson('/api/v1/accounting/journals?bank_account_id='.$bankAccount->id)
             ->assertOk()
             ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.id', $journalId);
+            ->assertJsonPath('data.0.id', $journalId)
+            ->assertJsonPath('data.0.lines.1.account_id', $f['bank']->id)
+            ->assertJsonPath('data.0.lines.1.bank_accounts.0.id', $bankAccount->id)
+            ->assertJsonPath('data.0.lines.1.bank_accounts.0.gl_account_id', $f['bank']->id)
+            ->assertJsonPath('data.0.lines.1.bank_accounts.0.account_number', 'INT-BANK-001');
         $this->getJson('/api/v1/budget/monitoring?budget_line_id='.$f['budget']->id.'&fiscal_year_id='.$f['year']->id)
             ->assertOk()
             ->assertJsonPath('by_line.0.gl_account.id', $f['expense']->id)

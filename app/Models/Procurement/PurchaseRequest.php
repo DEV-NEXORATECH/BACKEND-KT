@@ -23,6 +23,20 @@ class PurchaseRequest extends Model
         'fiscal_year_id',
         'pr_number',
         'request_date',
+        'required_date',
+        'country',
+        'office',
+        'requester_name',
+        'requester_program',
+        'requester_email',
+        'requester_phone',
+        'requester_address',
+        'destination',
+        'donor_name',
+        'delivery_method',
+        'requirements',
+        'preferred_incoterm',
+        'shipping_requirements',
         'requester_id',
         'department_id',
         'project_id',
@@ -44,6 +58,7 @@ class PurchaseRequest extends Model
 
     protected $casts = [
         'request_date' => 'date',
+        'required_date' => 'date',
         'attachments' => 'array',
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
@@ -73,6 +88,16 @@ class PurchaseRequest extends Model
     public function vendor(): BelongsTo
     {
         return $this->belongsTo(Vendor::class);
+    }
+
+    public function submittedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'submitted_by');
+    }
+
+    public function approvedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
     }
 
     public function getTotalAmountAttribute(): string

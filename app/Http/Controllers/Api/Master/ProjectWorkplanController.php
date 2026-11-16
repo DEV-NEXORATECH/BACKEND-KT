@@ -46,12 +46,20 @@ class ProjectWorkplanController extends Controller
             })
             ->when($request->filled('fiscal_year_id'), function ($q) use ($request) {
                 $fiscalYearId = $request->integer('fiscal_year_id');
-                $q->where(function ($scope) use ($fiscalYearId) {
+                $fiscalYear = \App\Models\Master\FiscalYear::query()->find($fiscalYearId);
+                $q->where(function ($scope) use ($fiscalYearId, $fiscalYear) {
                     // Keep legacy rows visible while new rows are explicitly scoped.
                     $scope->where('fiscal_year_id', $fiscalYearId)
-                        ->orWhere(function ($legacy) use ($fiscalYearId) {
+                        ->orWhere(function ($legacy) use ($fiscalYearId, $fiscalYear) {
                             $legacy->whereNull('fiscal_year_id')
-                                ->whereHas('project.fiscalYears', fn ($project) => $project->whereKey($fiscalYearId));
+                                ->where(function ($projectScope) use ($fiscalYearId, $fiscalYear) {
+                                    $projectScope->whereHas('project.fiscalYears', fn ($project) => $project->whereKey($fiscalYearId));
+                                    if ($fiscalYear) {
+                                        $projectScope->orWhereHas('project', fn ($project) => $project
+                                            ->whereDate('start_date', '<=', $fiscalYear->end_date)
+                                            ->whereDate('end_date', '>=', $fiscalYear->start_date));
+                                    }
+                                });
                         });
                 });
             })

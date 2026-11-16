@@ -47,7 +47,23 @@ abstract class BaseMasterController extends Controller
             if ($request->filled('fiscal_year_id')) {
                 $table = (new $this->modelClass)->getTable();
                 if (\Illuminate\Support\Facades\Schema::hasColumn($table, 'fiscal_year_id')) {
-                    $query->where('fiscal_year_id', $request->integer('fiscal_year_id'));
+                    if ($this->modelClass === \App\Models\Master\GrantAgreement::class) {
+                        $fiscalYear = \App\Models\Master\FiscalYear::query()
+                            ->withoutGlobalScope('fiscal_year_context')
+                            ->find($request->integer('fiscal_year_id'));
+                        $query->where(function ($scope) use ($request, $fiscalYear) {
+                            $scope->where('fiscal_year_id', $request->integer('fiscal_year_id'));
+                            if ($fiscalYear) {
+                                $scope->orWhere(function ($legacyGrant) use ($fiscalYear) {
+                                    $legacyGrant->whereNull('fiscal_year_id')
+                                        ->whereDate('start_date', '<=', $fiscalYear->end_date)
+                                        ->whereDate('end_date', '>=', $fiscalYear->start_date);
+                                });
+                            }
+                        });
+                    } else {
+                        $query->where('fiscal_year_id', $request->integer('fiscal_year_id'));
+                    }
                 } elseif (in_array($this->modelClass, [
                     \App\Models\Master\HolidayCalendar::class,
                     \App\Models\Master\ExchangeRate::class,

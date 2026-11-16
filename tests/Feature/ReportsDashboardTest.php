@@ -8,6 +8,8 @@ use App\Models\Master\BudgetCategory;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\Currency;
+use App\Models\Master\Donor;
+use App\Models\Master\GrantAgreement;
 use App\Models\Master\Project;
 use App\Models\Permission;
 use App\Models\Procurement\SupplierInvoice;
@@ -152,10 +154,13 @@ class ReportsDashboardTest extends TestCase
 
     public function test_budget_report_relation_number_scopes_budget_rows_and_transactions(): void
     {
-        [$user, $budgetLine, $expenseAccount, $liabilityAccount] = $this->fixture();
-        $projectA = Project::create(['code' => 'REL-A', 'relation_no' => 'KT-REL-A', 'name' => 'Project Relation A', 'is_active' => true]);
+        [$user, $budgetLine, $expenseAccount, $liabilityAccount, $bank] = $this->fixture();
+        $currency = Currency::query()->firstOrFail();
+        $donor = Donor::create(['code' => 'DON-REL-A', 'name' => 'Donor Relation A', 'type' => 'institutional', 'default_currency_id' => $currency->id, 'is_active' => true]);
+        $grant = GrantAgreement::create(['grant_no' => 'GRT-REL-A', 'relation_no' => 'KT-REL-A', 'donor_id' => $donor->id, 'agreement_name' => 'Grant Relation A', 'start_date' => '2026-01-01', 'end_date' => '2026-12-31', 'currency_id' => $currency->id, 'grant_value' => 5000, 'bank_account_id' => $bank->id, 'status' => 'active', 'is_active' => true]);
+        $projectA = Project::create(['code' => 'REL-A', 'relation_no' => 'KT-REL-A', 'name' => 'Project Relation A', 'grant_agreement_id' => $grant->id, 'bank_account_id' => $bank->id, 'is_active' => true]);
         $projectB = Project::create(['code' => 'REL-B', 'relation_no' => 'KT-REL-B', 'name' => 'Project Relation B', 'is_active' => true]);
-        $budgetLine->update(['project_id' => $projectA->id, 'relation_no' => 'KT-REL-A']);
+        $budgetLine->update(['project_id' => $projectA->id, 'grant_agreement_id' => $grant->id, 'relation_no' => 'KT-REL-A']);
         $otherBudgetLine = BudgetLine::create([
             'budget_category_id' => $budgetLine->budget_category_id,
             'project_id' => $projectB->id,
@@ -178,7 +183,7 @@ class ReportsDashboardTest extends TestCase
                 'posted_by' => $user->id,
                 'posted_at' => now(),
             ]);
-            $journal->lines()->create(['account_id' => $expenseAccount->id, 'budget_line_id' => $line->id, 'project_id' => $project->id, 'relation_no' => $project->relation_no, 'line_description' => 'Scoped expense', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
+            $journal->lines()->create(['account_id' => $expenseAccount->id, 'budget_line_id' => $line->id, 'project_id' => $project->id, 'grant_agreement_id' => $project->grant_agreement_id, 'donor_id' => $project->id === $projectA->id ? $donor->id : null, 'relation_no' => $project->relation_no, 'line_description' => 'Scoped expense', 'debit' => $amount, 'credit' => 0, 'line_order' => 1]);
             $journal->lines()->create(['account_id' => $liabilityAccount->id, 'project_id' => $project->id, 'relation_no' => $project->relation_no, 'line_description' => 'Liability', 'debit' => 0, 'credit' => $amount, 'line_order' => 2]);
         }
 
@@ -194,7 +199,37 @@ class ReportsDashboardTest extends TestCase
             ->assertJsonCount(1, 'recent_transactions')
             ->assertJsonPath('recent_transactions.0.reference', 'JV-REL-A')
             ->assertJsonPath('recent_transactions.0.relation_no', 'KT-REL-A')
+            ->assertJsonPath('recent_transactions.0.project', 'Project Relation A')
+            ->assertJsonPath('recent_transactions.0.project_code', 'REL-A')
             ->assertJsonPath('recent_transactions.0.line_code', 'OPS-001');
+
+        $this->getJson('/api/v1/reports/budget?start_date=2026-09-01&end_date=2026-09-30')
+            ->assertOk()
+            ->assertJsonPath('recent_transactions.0.project', 'Project Relation B')
+            ->assertJsonPath('recent_transactions.0.projects.0.name', 'Project Relation B');
+
+        $draft = Journal::create(['journal_number' => 'JV-REL-DRAFT', 'journal_date' => '2026-09-21', 'journal_type' => 'manual', 'reference' => 'JV-REL-DRAFT', 'description' => 'Draft must not become project actual', 'status' => 'draft']);
+        $draft->lines()->create(['account_id' => $expenseAccount->id, 'budget_line_id' => $budgetLine->id, 'project_id' => $projectA->id, 'relation_no' => 'KT-REL-A', 'line_description' => 'Unposted expense', 'debit' => 999, 'credit' => 0, 'line_order' => 1]);
+
+        $this->getJson('/api/v1/reports/project?project_id='.$projectA->id.'&start_date=2026-09-01&end_date=2026-09-30')
+            ->assertOk()
+            ->assertJsonCount(1, 'recent_transactions')
+            ->assertJsonPath('recent_transactions.0.status', 'posted')
+            ->assertJsonPath('recent_transactions.0.relation_no', 'KT-REL-A')
+            ->assertJsonPath('recent_transactions.0.project', 'Project Relation A')
+            ->assertJsonPath('recent_transactions.0.grant_no', 'GRT-REL-A')
+            ->assertJsonPath('recent_transactions.0.donor', 'Donor Relation A')
+            ->assertJsonPath('recent_transactions.0.line_code', 'OPS-001')
+            ->assertJsonPath('recent_transactions.0.coa.code', '5100')
+            ->assertJsonPath('recent_transactions.0.bank_account.account_number', '001')
+            ->assertJsonPath('recent_transactions.0.bank_account.gl_account.code', '1000')
+            ->assertJsonPath('recent_transactions.0.bank_link_source', 'project')
+            ->assertJsonPath('recent_transactions.0.bank_link_status', 'connected');
+
+        $this->getJson('/api/v1/reports/project?start_date=2026-09-01&end_date=2026-09-30')
+            ->assertOk()
+            ->assertJsonCount(2, 'recent_transactions')
+            ->assertJsonMissing(['reference' => 'JV-REL-DRAFT']);
     }
 
     private function fixture(): array

@@ -96,6 +96,9 @@ class BudgetMonitoringTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.bank_account.id', $bank->id)
             ->assertJsonPath('data.0.bank_account.bank_name', 'Bank Grant')
+            ->assertJsonPath('data.0.bank_account.gl_account.code', '1100')
+            ->assertJsonPath('data.0.bank_link_source', 'grant_receipt')
+            ->assertJsonPath('data.0.bank_link_status', 'connected')
             ->assertJsonPath('data.0.gl_account.code', '5100');
     }
 

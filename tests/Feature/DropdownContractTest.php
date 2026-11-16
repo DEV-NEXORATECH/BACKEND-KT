@@ -79,4 +79,46 @@ class DropdownContractTest extends TestCase
             ->getJson("/api/v1/master/budget-lines?options=1&fiscal_year_id={$year->id}&donor_id={$donor->id}&grant_agreement_id={$grant->id}&project_id={$project->id}")
             ->assertOk()->assertJsonFragment(['id' => $budgetLine->id]);
     }
+
+    public function test_grant_options_include_legacy_grant_whose_dates_overlap_selected_fiscal_year(): void
+    {
+        $role = Role::create(['name' => 'Super Admin', 'slug' => 'super-admin']);
+        $user = User::factory()->create(['role_id' => $role->id]);
+        $year = \App\Models\Master\FiscalYear::create([
+            'year' => 2026,
+            'name' => 'FY 2026',
+            'start_date' => '2026-01-01',
+            'end_date' => '2026-12-31',
+            'status' => 'open',
+            'is_active' => true,
+        ]);
+        $currency = \App\Models\Master\Currency::create([
+            'code' => 'IDR',
+            'name' => 'Rupiah',
+            'is_active' => true,
+        ]);
+        $donor = Donor::create([
+            'code' => 'DNR-LEGACY',
+            'name' => 'Legacy Donor',
+            'type' => 'institution',
+            'is_active' => true,
+        ]);
+        $grant = GrantAgreement::create([
+            'fiscal_year_id' => null,
+            'grant_no' => 'GRT-LEGACY-2026',
+            'donor_id' => $donor->id,
+            'agreement_name' => 'Legacy Grant Active in 2026',
+            'start_date' => '2025-07-01',
+            'end_date' => '2026-06-30',
+            'currency_id' => $currency->id,
+            'grant_value' => 1000000,
+            'status' => 'active',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/v1/master/grant-agreements?options=1&fiscal_year_id={$year->id}")
+            ->assertOk()
+            ->assertJsonFragment(['id' => $grant->id, 'grant_no' => 'GRT-LEGACY-2026']);
+    }
 }

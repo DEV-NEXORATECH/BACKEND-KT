@@ -23,7 +23,7 @@ class Rfq extends Model
         'required_delivery_date', 'delivery_method', 'payment_terms', 'supplier_vendor_id',
         'supplier_contact_name', 'supplier_email', 'supplier_phone', 'supplier_fax', 'supplier_mobile', 'supplier_address',
         'procurement_contact_name', 'procurement_contact_email', 'procurement_address',
-        'other_tax', 'other_charges', 'checked_by', 'budget_holder_name', 'budget_holder_title',
+        'other_tax', 'other_charges', 'checked_by', 'checked_by_title', 'budget_holder_name', 'budget_holder_title',
         'supplier_acceptance_name', 'supplier_acceptance_title', 'terms', 'status', 'attachments',
         'created_by', 'updated_by', 'deleted_by',
     ];

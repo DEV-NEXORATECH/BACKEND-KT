@@ -20,7 +20,7 @@ class GoodsReceipt extends Model
         'received_by', 'received_at', 'created_by', 'updated_by', 'deleted_by',
     ];
 
-    protected $casts = ['receipt_date' => 'date', 'attachments' => 'array', 'received_at' => 'datetime'];
+    protected $casts = ['receipt_date' => 'date', 'acceptable_for_payment' => 'boolean', 'attachments' => 'array', 'received_at' => 'datetime'];
 
     public function purchaseOrder(): BelongsTo
     {

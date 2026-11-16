@@ -69,22 +69,33 @@ class ProcurementFulfillmentController extends Controller
 
     public function goodsReceipts(Request $request): JsonResponse
     {
-        $query = GoodsReceipt::with('purchaseOrder:id,po_number');
+        $query = GoodsReceipt::with($this->grnRelations());
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseOrder.purchaseRequest');
-        return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn ($grn) => ['id' => $grn->id, 'grn_number' => $grn->grn_number, 'receipt_date' => $grn->receipt_date?->toDateString(), 'purchase_order' => $grn->purchaseOrder?->po_number, 'status' => $grn->status])]);
+        return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn (GoodsReceipt $grn) => $this->formatGrn($grn))]);
     }
 
     public function showGoodsReceipt(Request $request, GoodsReceipt $goodsReceipt): JsonResponse
     {
         $this->ensureRelatedScope($request, GoodsReceipt::class, $goodsReceipt->id, 'created_by', 'purchaseOrder.purchaseRequest');
-        return response()->json(['success' => true, 'data' => $this->formatGrn($goodsReceipt->load(['purchaseOrder:id,po_number', 'lines.purchaseOrderLine']))]);
+        return response()->json(['success' => true, 'data' => $this->formatGrn($goodsReceipt->load($this->grnRelations()))]);
     }
 
     public function updateGoodsReceipt(Request $request, GoodsReceipt $goodsReceipt): JsonResponse
     {
         $this->ensureRelatedScope($request, GoodsReceipt::class, $goodsReceipt->id, 'created_by', 'purchaseOrder.purchaseRequest');
         if ($goodsReceipt->status === 'cancelled') throw ValidationException::withMessages(['status' => 'GRN sudah dibatalkan.']);
-        $data = $request->validate(['receipt_date' => ['sometimes', 'date'], 'notes' => ['nullable', 'string'], 'lines' => ['sometimes', 'array', 'min:1'], 'lines.*.purchase_order_line_id' => ['required_with:lines', 'integer', 'exists:purchase_order_lines,id'], 'lines.*.received_quantity' => ['required_with:lines', 'numeric', 'min:0.01']]);
+        $data = $request->validate([
+            'grn_number' => ['sometimes', 'string', 'max:80', 'unique:goods_receipts,grn_number,'.$goodsReceipt->id],
+            'receipt_date' => ['sometimes', 'date'], 'supplier_waybill_number' => ['nullable', 'string', 'max:100'],
+            'receiving_location' => ['nullable', 'string', 'max:200'], 'donor_name' => ['nullable', 'string', 'max:200'],
+            'acceptable_for_payment' => ['nullable', 'boolean'], 'remarks' => ['nullable', 'string'],
+            'receipt_by_name' => ['nullable', 'string', 'max:120'], 'receipt_by_position' => ['nullable', 'string', 'max:120'],
+            'requester_name' => ['nullable', 'string', 'max:120'], 'requester_position' => ['nullable', 'string', 'max:120'],
+            'notes' => ['nullable', 'string'], 'lines' => ['sometimes', 'array', 'min:1'],
+            'lines.*.purchase_order_line_id' => ['required_with:lines', 'integer', 'exists:purchase_order_lines,id'],
+            'lines.*.received_quantity' => ['required_with:lines', 'numeric', 'min:0.01'],
+            'lines.*.quality_check' => ['nullable', 'string', 'max:50'], 'lines.*.comment' => ['nullable', 'string'],
+        ]);
         if (isset($data['lines'])) {
             $this->validateOrderLines($goodsReceipt->purchaseOrder, $data['lines'], $goodsReceipt->id);
             $goodsReceipt->lines()->get()->each->delete();
@@ -92,7 +103,7 @@ class ProcurementFulfillmentController extends Controller
             unset($data['lines']);
         }
         $goodsReceipt->update($data);
-        return response()->json(['success' => true, 'message' => 'GRN berhasil diperbarui.', 'data' => $this->formatGrn($goodsReceipt->fresh(['purchaseOrder:id,po_number', 'lines.purchaseOrderLine']))]);
+        return response()->json(['success' => true, 'message' => 'GRN berhasil diperbarui.', 'data' => $this->formatGrn($goodsReceipt->fresh($this->grnRelations()))]);
     }
 
     public function cancelGoodsReceipt(Request $request, GoodsReceipt $goodsReceipt): JsonResponse
@@ -101,7 +112,7 @@ class ProcurementFulfillmentController extends Controller
         if ($goodsReceipt->status === 'cancelled') throw ValidationException::withMessages(['status' => 'GRN sudah dibatalkan.']);
         if (SupplierInvoice::query()->where('goods_receipt_id', $goodsReceipt->id)->whereNotIn('status', ['cancelled'])->exists()) throw ValidationException::withMessages(['status' => 'GRN yang sudah direferensikan invoice tidak dapat dibatalkan.']);
         $goodsReceipt->update(['status' => 'cancelled']);
-        return response()->json(['success' => true, 'message' => 'GRN berhasil dibatalkan.', 'data' => $this->formatGrn($goodsReceipt->fresh(['purchaseOrder:id,po_number', 'lines.purchaseOrderLine']))]);
+        return response()->json(['success' => true, 'message' => 'GRN berhasil dibatalkan.', 'data' => $this->formatGrn($goodsReceipt->fresh($this->grnRelations()))]);
     }
 
     public function supplierInvoices(Request $request): JsonResponse
@@ -163,7 +174,36 @@ class ProcurementFulfillmentController extends Controller
     {
         $this->ensureRelatedScope($request, PurchaseOrder::class, $purchaseOrder->id, 'created_by', 'purchaseRequest');
         if ($purchaseOrder->status !== 'draft') throw ValidationException::withMessages(['status' => 'PO hanya dapat diubah saat draft.']);
-        $data = $request->validate(['po_date' => ['sometimes', 'date'], 'contract_number' => ['nullable', 'string', 'max:80'], 'contract_date' => ['nullable', 'date'], 'terms' => ['nullable', 'string']]);
+        $data = $request->validate([
+            'po_date' => ['sometimes', 'date'],
+            'required_delivery_date' => ['nullable', 'date'],
+            'delivery_method' => ['nullable', 'string', 'max:30'],
+            'payment_terms' => ['nullable', 'string', 'max:120'],
+            'delivery_address' => ['nullable', 'string'],
+            'delivery_contact_name' => ['nullable', 'string', 'max:120'],
+            'delivery_contact_email' => ['nullable', 'email', 'max:160'],
+            'supplier_company_name' => ['nullable', 'string', 'max:180'],
+            'supplier_contact_name' => ['nullable', 'string', 'max:120'],
+            'supplier_email' => ['nullable', 'email', 'max:160'],
+            'supplier_phone' => ['nullable', 'string', 'max:50'],
+            'supplier_fax' => ['nullable', 'string', 'max:50'],
+            'supplier_mobile' => ['nullable', 'string', 'max:50'],
+            'supplier_address' => ['nullable', 'string'],
+            'procurement_contact_name' => ['nullable', 'string', 'max:120'],
+            'procurement_contact_email' => ['nullable', 'email', 'max:160'],
+            'procurement_address' => ['nullable', 'string'],
+            'other_tax' => ['nullable', 'numeric', 'min:0'],
+            'other_charges' => ['nullable', 'numeric', 'min:0'],
+            'checked_by' => ['nullable', 'string', 'max:120'],
+            'checked_by_title' => ['nullable', 'string', 'max:120'],
+            'budget_holder_name' => ['nullable', 'string', 'max:120'],
+            'budget_holder_title' => ['nullable', 'string', 'max:120'],
+            'supplier_acceptance_name' => ['nullable', 'string', 'max:120'],
+            'supplier_acceptance_title' => ['nullable', 'string', 'max:120'],
+            'contract_number' => ['nullable', 'string', 'max:80'],
+            'contract_date' => ['nullable', 'date'],
+            'terms' => ['nullable', 'string'],
+        ]);
         $purchaseOrder->update($data);
         return response()->json(['success' => true, 'message' => 'PO berhasil diperbarui.', 'data' => $this->formatPo($purchaseOrder->fresh(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']))]);
     }
@@ -184,11 +224,15 @@ class ProcurementFulfillmentController extends Controller
         }
 
         $data = $request->validate([
+            'po_number' => ['nullable', 'string', 'max:80', 'unique:purchase_orders,po_number'],
             'po_date' => ['required', 'date'],
-            'required_delivery_date' => ['nullable', 'date'],
+            'required_delivery_date' => ['nullable', 'date', 'after_or_equal:po_date'],
             'delivery_method' => ['nullable', 'string', 'max:30'],
             'payment_terms' => ['nullable', 'string', 'max:120'],
             'delivery_address' => ['nullable', 'string'],
+            'delivery_contact_name' => ['nullable', 'string', 'max:120'],
+            'delivery_contact_email' => ['nullable', 'email', 'max:160'],
+            'supplier_company_name' => ['nullable', 'string', 'max:180'],
             'supplier_contact_name' => ['nullable', 'string', 'max:120'],
             'supplier_email' => ['nullable', 'email', 'max:160'],
             'supplier_phone' => ['nullable', 'string', 'max:50'],
@@ -201,6 +245,7 @@ class ProcurementFulfillmentController extends Controller
             'other_tax' => ['nullable', 'numeric', 'min:0'],
             'other_charges' => ['nullable', 'numeric', 'min:0'],
             'checked_by' => ['nullable', 'string', 'max:120'],
+            'checked_by_title' => ['nullable', 'string', 'max:120'],
             'budget_holder_name' => ['nullable', 'string', 'max:120'],
             'budget_holder_title' => ['nullable', 'string', 'max:120'],
             'supplier_acceptance_name' => ['nullable', 'string', 'max:120'],
@@ -208,13 +253,28 @@ class ProcurementFulfillmentController extends Controller
             'terms' => ['nullable', 'string'],
         ]);
 
+        $purchaseRequest->loadMissing([
+            'vendor:id,code,name,contact_person,contact_person_title,email,phone,address',
+            'lines.budgetLine:id,line_code,description,currency_id',
+            'lines.budgetLine.currency:id,code,name',
+        ]);
+
         $po = DB::transaction(function () use ($purchaseRequest, $data) {
+            $vendor = $purchaseRequest->vendor;
             $po = PurchaseOrder::create([
                 'purchase_request_id' => $purchaseRequest->id,
                 'vendor_id' => $purchaseRequest->vendor_id,
-                'po_number' => 'PO-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                'po_number' => $data['po_number'] ?? ('PO-'.now()->format('YmdHis').'-'.random_int(100, 999)),
                 'po_date' => $data['po_date'],
-                ...collect($data)->except(['po_date'])->all(),
+                ...collect($data)->except(['po_number', 'po_date'])->all(),
+                'required_delivery_date' => $data['required_delivery_date'] ?? $purchaseRequest->required_date,
+                'delivery_method' => $data['delivery_method'] ?? $purchaseRequest->delivery_method,
+                'delivery_address' => $data['delivery_address'] ?? $purchaseRequest->destination,
+                'supplier_company_name' => $data['supplier_company_name'] ?? $vendor?->name,
+                'supplier_contact_name' => $data['supplier_contact_name'] ?? $vendor?->contact_person,
+                'supplier_email' => $data['supplier_email'] ?? $vendor?->email,
+                'supplier_phone' => $data['supplier_phone'] ?? $vendor?->phone,
+                'supplier_address' => $data['supplier_address'] ?? $vendor?->address,
                 'terms' => $data['terms'] ?? null,
                 'status' => 'draft',
                 'created_by' => request()->user()->id,
@@ -224,8 +284,13 @@ class ProcurementFulfillmentController extends Controller
                 $po->lines()->create([
                     'purchase_request_line_id' => $line->id,
                     'budget_line_id' => $line->budget_line_id,
+                    'budget_code' => $line->budget_code ?: $line->budgetLine?->line_code,
+                    'budget_line' => $line->budgetLine?->description,
+                    'pr_line_item_no' => $line->line_order,
                     'item_description' => $line->item_description,
+                    'unit' => $line->unit,
                     'quantity' => $line->quantity,
+                    'currency' => $line->currency ?: ($line->budgetLine?->currency?->code ?: 'IDR'),
                     'unit_price' => $line->unit_price,
                     'total_amount' => $line->total_amount,
                     'line_order' => $line->line_order,
@@ -272,6 +337,7 @@ class ProcurementFulfillmentController extends Controller
         }
 
         $data = $request->validate([
+            'grn_number' => ['nullable', 'string', 'max:80', 'unique:goods_receipts,grn_number'],
             'receipt_date' => ['required', 'date'],
             'supplier_waybill_number' => ['nullable', 'string', 'max:100'],
             'receiving_location' => ['nullable', 'string', 'max:200'],
@@ -294,7 +360,7 @@ class ProcurementFulfillmentController extends Controller
         $grn = DB::transaction(function () use ($purchaseOrder, $data) {
             $grn = GoodsReceipt::create([
                 'purchase_order_id' => $purchaseOrder->id,
-                'grn_number' => 'GRN-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                'grn_number' => $data['grn_number'] ?? ('GRN-'.now()->format('YmdHis').'-'.random_int(100, 999)),
                 'receipt_date' => $data['receipt_date'],
                 'supplier_waybill_number' => $data['supplier_waybill_number'] ?? null,
                 'receiving_location' => $data['receiving_location'] ?? null,
@@ -316,7 +382,7 @@ class ProcurementFulfillmentController extends Controller
                 $grn->lines()->create($line);
             }
 
-            return $grn->load(['purchaseOrder:id,po_number', 'lines.purchaseOrderLine']);
+            return $grn->load($this->grnRelations());
         });
 
         return response()->json(['success' => true, 'message' => 'GRN berhasil dibuat.', 'data' => $this->formatGrn($grn)], Response::HTTP_CREATED);
@@ -391,10 +457,12 @@ class ProcurementFulfillmentController extends Controller
         $invoiceTotal = round((float) $supplierInvoice->lines->sum('total_amount'), 2);
 
         $matchStatus = 'mismatch';
-        if ($poTotal === $grnTotal && $poTotal === $invoiceTotal) {
-            $matchStatus = 'matched';
-        } elseif ($grnTotal > 0 && $invoiceTotal <= $poTotal) {
-            $matchStatus = 'partial_match';
+        if ($supplierInvoice->goodsReceipt?->acceptable_for_payment !== false) {
+            if ($poTotal === $grnTotal && $poTotal === $invoiceTotal) {
+                $matchStatus = 'matched';
+            } elseif ($grnTotal > 0 && $invoiceTotal <= $poTotal) {
+                $matchStatus = 'partial_match';
+            }
         }
 
         $supplierInvoice->update([
@@ -439,6 +507,20 @@ class ProcurementFulfillmentController extends Controller
 
     private function formatPo(PurchaseOrder $po): array
     {
+        $po->loadMissing([
+            'purchaseRequest:id,pr_number,project_id,justification,requester_name,requester_email,requester_phone,requester_address,donor_name,requester_program',
+            'purchaseRequest.project:id,code,name,program_id,grant_agreement_id,relation_no',
+            'purchaseRequest.project.program:id,code,name',
+            'purchaseRequest.project.grantAgreement:id,grant_no,agreement_name,donor_id,relation_no',
+            'purchaseRequest.project.grantAgreement.donor:id,code,name',
+            'vendor:id,code,name,contact_person,contact_person_title,email,phone,address',
+            'approvedBy:id,name,email',
+            'lines.purchaseRequestLine:id,purchase_request_id,budget_line_id,account_code,budget_code,source_of_fund,unit,currency,line_order',
+            'lines.budgetLine:id,line_code,description,gl_account_id,currency_id',
+            'lines.budgetLine.glAccount:id,code,name',
+            'lines.budgetLine.currency:id,code,name',
+        ]);
+
         return [
             'id' => $po->id,
             'fiscal_year_id' => $po->fiscal_year_id,
@@ -446,13 +528,22 @@ class ProcurementFulfillmentController extends Controller
             'po_number' => $po->po_number,
             'purchase_request_id' => $po->purchase_request_id,
             'pr_number' => $po->purchaseRequest?->pr_number,
+            'project_id' => $po->purchaseRequest?->project_id,
+            'project_name' => $po->purchaseRequest?->project?->name,
+            'relation_no' => $po->purchaseRequest?->project?->relation_no,
+            'program_name' => $po->purchaseRequest?->project?->program?->name ?: $po->purchaseRequest?->requester_program,
+            'grant_name' => $po->purchaseRequest?->project?->grantAgreement?->agreement_name,
+            'donor_name' => $po->purchaseRequest?->donor_name ?: $po->purchaseRequest?->project?->grantAgreement?->donor?->name,
             'vendor_id' => $po->vendor_id,
             'vendor_name' => $po->vendor?->name,
+            'supplier_company_name' => $po->supplier_company_name ?: $po->vendor?->name,
             'po_date' => $po->po_date?->toDateString(),
             'required_delivery_date' => $po->required_delivery_date?->toDateString(),
             'delivery_method' => $po->delivery_method,
             'payment_terms' => $po->payment_terms,
             'delivery_address' => $po->delivery_address,
+            'delivery_contact_name' => $po->delivery_contact_name,
+            'delivery_contact_email' => $po->delivery_contact_email,
             'supplier_contact_name' => $po->supplier_contact_name,
             'supplier_email' => $po->supplier_email,
             'supplier_phone' => $po->supplier_phone,
@@ -465,26 +556,80 @@ class ProcurementFulfillmentController extends Controller
             'other_tax' => $po->other_tax,
             'other_charges' => $po->other_charges,
             'checked_by' => $po->checked_by,
+            'checked_by_title' => $po->checked_by_title,
             'budget_holder_name' => $po->budget_holder_name,
             'budget_holder_title' => $po->budget_holder_title,
             'supplier_acceptance_name' => $po->supplier_acceptance_name,
             'supplier_acceptance_title' => $po->supplier_acceptance_title,
+            'terms' => $po->terms,
             'status' => $po->status,
             'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('po', $po, request()->user()),
+            'subtotal_amount' => $po->subtotal_amount,
             'total_amount' => $po->total_amount,
-            'lines' => $po->lines,
+            'approved_by_name' => $po->approvedBy?->name,
+            'approved_at' => $po->approved_at?->toISOString(),
+            'lines' => $po->lines->map(fn ($line) => [
+                'id' => $line->id,
+                'purchase_request_line_id' => $line->purchase_request_line_id,
+                'budget_line_id' => $line->budget_line_id,
+                'budget_code' => $line->budget_code ?: ($line->purchaseRequestLine?->budget_code ?: $line->budgetLine?->line_code),
+                'budget_line' => $line->budget_line ?: $line->budgetLine?->description,
+                'account_code' => $line->purchaseRequestLine?->account_code ?: $line->budgetLine?->glAccount?->code,
+                'source_of_fund' => $line->purchaseRequestLine?->source_of_fund,
+                'pr_number' => $po->purchaseRequest?->pr_number,
+                'pr_line_item_no' => $line->pr_line_item_no ?: ($line->purchaseRequestLine?->line_order ?: $line->line_order),
+                'item_description' => $line->item_description,
+                'unit' => $line->unit ?: $line->purchaseRequestLine?->unit,
+                'quantity' => $line->quantity,
+                'currency' => $line->currency ?: ($line->purchaseRequestLine?->currency ?: $line->budgetLine?->currency?->code),
+                'unit_price' => $line->unit_price,
+                'total_amount' => $line->total_amount,
+                'line_order' => $line->line_order,
+            ])->values(),
         ];
     }
 
     private function formatGrn(GoodsReceipt $grn): array
     {
+        $grn->loadMissing($this->grnRelations());
+        $po = $grn->purchaseOrder;
+        $pr = $po?->purchaseRequest;
+        $vendor = $po?->vendor;
+        $lines = $grn->lines->map(function ($line) use ($po, $pr) {
+            $poLine = $line->purchaseOrderLine;
+            $receivedQuantity = (float) $line->received_quantity;
+            $unitPrice = (float) ($poLine?->unit_price ?? 0);
+            return [
+                'id' => $line->id,
+                'purchase_order_line_id' => $line->purchase_order_line_id,
+                'pr_number' => $pr?->pr_number,
+                'line_item' => $poLine?->pr_line_item_no ?: $poLine?->line_order,
+                'item_description' => $poLine?->item_description,
+                'unit' => $poLine?->unit,
+                'quantity_expected' => $poLine?->quantity,
+                'received_quantity' => $line->received_quantity,
+                'quality_check' => $line->quality_check,
+                'comment' => $line->comment,
+                'unit_price' => $poLine?->unit_price,
+                'total_amount' => round($receivedQuantity * $unitPrice, 2),
+            ];
+        })->values();
+
         return [
             'id' => $grn->id,
             'fiscal_year_id' => $grn->fiscal_year_id,
             'fiscal_year' => $grn->fiscalYear?->only(['id', 'year', 'name']),
             'grn_number' => $grn->grn_number,
-            'po_number' => $grn->purchaseOrder?->po_number,
+            'purchase_order_id' => $grn->purchase_order_id,
+            'po_number' => $po?->po_number,
+            'purchase_order' => $po ? ['id' => $po->id, 'po_number' => $po->po_number, 'pr_number' => $pr?->pr_number, 'vendor_name' => $vendor?->name] : null,
+            'pr_number' => $pr?->pr_number,
+            'purchase_request' => $pr ? ['id' => $pr->id, 'pr_number' => $pr->pr_number, 'project_name' => $pr->project?->name, 'donor_name' => $pr->donor_name] : null,
+            'vendor_name' => $vendor?->name,
+            'supplier_name' => $vendor?->name,
+            'received_from' => $vendor?->name ?: $grn->donor_name,
             'receipt_date' => $grn->receipt_date?->toDateString(),
+            'grn_date' => $grn->receipt_date?->toDateString(),
             'supplier_waybill_number' => $grn->supplier_waybill_number,
             'receiving_location' => $grn->receiving_location,
             'donor_name' => $grn->donor_name,
@@ -494,8 +639,22 @@ class ProcurementFulfillmentController extends Controller
             'receipt_by_position' => $grn->receipt_by_position,
             'requester_name' => $grn->requester_name,
             'requester_position' => $grn->requester_position,
+            'notes' => $grn->notes,
             'status' => $grn->status,
-            'lines' => $grn->lines,
+            'total_amount' => $lines->sum('total_amount'),
+            'lines' => $lines,
+        ];
+    }
+
+    private function grnRelations(): array
+    {
+        return [
+            'fiscalYear:id,year,name',
+            'purchaseOrder:id,purchase_request_id,vendor_id,po_number',
+            'purchaseOrder.purchaseRequest:id,pr_number,project_id,donor_name',
+            'purchaseOrder.purchaseRequest.project:id,code,name',
+            'purchaseOrder.vendor:id,code,name',
+            'lines.purchaseOrderLine:id,purchase_order_id,item_description,unit,quantity,unit_price,pr_line_item_no,line_order',
         ];
     }
 
