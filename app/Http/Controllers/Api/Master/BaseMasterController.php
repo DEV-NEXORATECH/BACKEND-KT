@@ -534,7 +534,8 @@ abstract class BaseMasterController extends Controller
         $importedBankAccounts = [];
         $activeFiscalYearId = null;
         if ($this->modelClass === \App\Models\Master\ChartOfAccount::class) {
-            $activeFiscalYearId = \App\Models\Master\FiscalYear::query()
+            $activeFiscalYearId = $request->input('fiscal_year_id') ?: $request->header('X-Fiscal-Year-Id');
+            $activeFiscalYearId = $activeFiscalYearId ?: \App\Models\Master\FiscalYear::query()
                 ->where('is_active', true)
                 ->orderByDesc('year')
                 ->value('id');
@@ -1054,7 +1055,15 @@ abstract class BaseMasterController extends Controller
                 $fingerprint = $identityColumn
                     ? $identityColumn.'|'.mb_strtolower($identityValue)
                     : md5(json_encode($payload));
-                if (isset($seen[$fingerprint]) || ($identityColumn && ($this->modelClass)::query()->where($identityColumn, $identityValue)->exists())) {
+            $existingIdentity = false;
+            if ($identityColumn) {
+                $identityQuery = ($this->modelClass)::query()->where($identityColumn, $identityValue);
+                if ($this->modelClass === \App\Models\Master\ChartOfAccount::class && ! empty($payload['fiscal_year_id'])) {
+                    $identityQuery->where('fiscal_year_id', $payload['fiscal_year_id']);
+                }
+                $existingIdentity = $identityQuery->exists();
+            }
+            if (isset($seen[$fingerprint]) || $existingIdentity) {
                     $skipped++;
                     $seen[$fingerprint] = true;
                     $errors[] = ['row' => $rowNumber, 'message' => $identityColumn ? "Duplikat {$identityColumn}: {$identityValue}." : 'Data duplikat.'];
