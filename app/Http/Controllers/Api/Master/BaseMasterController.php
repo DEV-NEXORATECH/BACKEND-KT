@@ -409,7 +409,7 @@ abstract class BaseMasterController extends Controller
         $extension = strtolower($uploadedFile->getClientOriginalExtension());
         $rows = [];
         $handle = null;
-        $headerKeywords = ['number', 'code', 'account_number', 'account_name', 'name', 'type', 'account_type', 'bank_name', 'vendor_name'];
+        $headerKeywords = ['number', 'code', 'account_number', 'account_name', 'account name', 'name', 'type', 'type / category', 'type/category', 'account_type', 'bank_name', 'vendor_name'];
         if (in_array($extension, ['xlsx', 'xls'], true)) {
             $sheetRows = \PhpOffice\PhpSpreadsheet\IOFactory::load($uploadedFile->getRealPath())->getActiveSheet()->toArray(null, true, true, false);
             $headers = [];
@@ -459,9 +459,9 @@ abstract class BaseMasterController extends Controller
                 $mapped = 'is_active';
             } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['account_number', 'account_no', 'number', 'no', 'account_num'], true)) {
                 $mapped = 'code';
-            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['account_name', 'name', 'account'], true)) {
+            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['account_name', 'account_name_type', 'name', 'account'], true)) {
                 $mapped = 'name';
-            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['account_type', 'type'], true)) {
+            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['account_type', 'type', 'type_category', 'type_category_account'], true)) {
                 $mapped = 'account_type';
             } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['detail_type', 'detail_type_name'], true)) {
                 $mapped = 'detail_type';
