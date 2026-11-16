@@ -252,7 +252,8 @@ class IntegratedDonorGrantController extends Controller
         $request->validate(['file' => 'required|file|mimes:csv,txt,xlsx,xls|max:20480']);
 
         try {
-            $sheet = IOFactory::load($request->file('file')->getRealPath())->getActiveSheet()->toArray(null, true, true, true);
+            $workbook = IOFactory::load($request->file('file')->getRealPath());
+            $sheet = $workbook->getActiveSheet()->toArray(null, true, true, true);
             $headers = array_map(fn ($value) => strtolower(trim((string) $value)), array_shift($sheet) ?: []);
             $records = [];
 
@@ -412,6 +413,45 @@ class IntegratedDonorGrantController extends Controller
                 return $count;
             });
 
+            // Process optional Framework & Workplan sheet after the core
+            // Donor/Grant/Project rows have been created.
+            $frameworkSheet = $workbook->getSheetByName('D Framework Workplan');
+            if ($frameworkSheet) {
+                $frameworkRows = $frameworkSheet->toArray(null, true, true, true);
+                $frameworkHeaders = array_map(fn ($value) => strtolower(trim((string) $value)), array_shift($frameworkRows) ?: []);
+                foreach ($frameworkRows as $row) {
+                    $values = array_combine($frameworkHeaders, array_values($row));
+                    $relation = trim((string) ($values['relation_no'] ?? ''));
+                    $code = trim((string) ($values['code'] ?? ''));
+                    if ($relation === '' || $code === '' || strtolower($relation) === 'relation_no') continue;
+                    $project = Project::withoutGlobalScope('fiscal_year_context')->where('relation_no', $relation)->first();
+                    if (! $project) continue;
+                    ProjectLogframe::updateOrCreate(
+                        ['project_id' => $project->id, 'code' => $code],
+                        ['relation_no' => $relation, 'fiscal_year_id' => $request->input('fiscal_year_id'), 'level' => $values['level'] ?? 'output', 'description' => $values['description'] ?? $code, 'indicator' => $values['indicator'] ?? null, 'baseline' => $values['baseline'] ?? null, 'target' => $values['target'] ?? null, 'period_start' => $values['start_date'] ?? null, 'period_end' => $values['end_date'] ?? null, 'is_active' => true]
+                    );
+                }
+            }
+            // Process optional Donor Reporting sheet using the same fields as
+            // the integrated form validation rules.
+            $reportingSheet = $workbook->getSheetByName('F Donor Reporting');
+            if ($reportingSheet) {
+                $reportingRows = $reportingSheet->toArray(null, true, true, true);
+                $reportingHeaders = array_map(fn ($value) => strtolower(trim((string) $value)), array_shift($reportingRows) ?: []);
+                foreach ($reportingRows as $row) {
+                    $values = array_combine($reportingHeaders, array_values($row));
+                    $relation = trim((string) ($values['relation_no'] ?? ''));
+                    $reportType = trim((string) ($values['report_type'] ?? ''));
+                    $dueDate = trim((string) ($values['due_date'] ?? ''));
+                    if ($relation === '' || $reportType === '' || $dueDate === '' || strtolower($relation) === 'relation_no') continue;
+                    $grant = GrantAgreement::withoutGlobalScope('fiscal_year_context')->where('relation_no', $relation)->first();
+                    if (! $grant) continue;
+                    GrantReportingDeadline::updateOrCreate(
+                        ['grant_agreement_id' => $grant->id, 'report_type' => $reportType, 'period_label' => ($values['period_label'] ?? null)],
+                        ['due_date' => $dueDate, 'status' => $values['status'] ?? 'upcoming', 'notes' => $values['notes'] ?? null, 'reminder_days' => (int) ($values['reminder_days'] ?? 7)]
+                    );
+                }
+            }
             return response()->json(['success' => true, 'message' => "Import Donor & Grant Terintegrasi berhasil. {$created} baris diproses.", 'created' => $created]);
         } catch (\Throwable $exception) {
             Log::error('Import integrated donor grant failed: ' . $exception->getMessage(), [
