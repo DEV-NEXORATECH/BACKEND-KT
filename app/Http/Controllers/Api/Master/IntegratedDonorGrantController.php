@@ -386,7 +386,11 @@ class IntegratedDonorGrantController extends Controller
                         ['code' => $record['donor']['code']],
                         array_merge($record['donor'], ['is_active' => true, 'status' => 'active'])
                     );
-                    $relationNo = $this->resolveRelationNo($record);
+                    $existingGrant = GrantAgreement::withoutGlobalScope('fiscal_year_context')
+                        ->where('donor_id', $donor->id)
+                        ->where('grant_no', $record['grant']['grant_no'])
+                        ->first();
+                    $relationNo = $this->resolveRelationNo($record, $existingGrant);
                     $grant = GrantAgreement::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
                         ['donor_id' => $donor->id, 'grant_no' => $record['grant']['grant_no']],
                         array_merge($record['grant'], ['relation_no' => $relationNo, 'is_active' => true])
@@ -728,12 +732,39 @@ class IntegratedDonorGrantController extends Controller
             return $invalid;
         }
 
-        $currentGrant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->first();
+        $targetGrantId = $request->input('grant.id');
+        $targetGrantNo = $request->input('grant.grant_no');
+        $reqRelationNo = $request->input('relation_no');
+
+        $currentGrant = null;
+        if ($targetGrantId) {
+            $currentGrant = GrantAgreement::withoutGlobalScope('fiscal_year_context')->find($targetGrantId);
+        }
+        if (! $currentGrant && $targetGrantNo) {
+            $currentGrant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->where('grant_no', $targetGrantNo)->first();
+        }
+        if (! $currentGrant && $reqRelationNo) {
+            $currentGrant = GrantAgreement::withoutGlobalScope('fiscal_year_context')->where('relation_no', $reqRelationNo)->first();
+        }
+        if (! $currentGrant) {
+            $currentGrant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->first();
+        }
+
+        $ignoreGrantId = $currentGrant?->id;
+        if (! $ignoreGrantId && $reqRelationNo) {
+            $ignoreGrantId = GrantAgreement::withoutGlobalScope('fiscal_year_context')->where('relation_no', $reqRelationNo)->value('id');
+        }
+
         $data = $request->validate([
-            'relation_no' => ['nullable', 'string', 'max:100', Rule::unique('grant_agreements', 'relation_no')->ignore($currentGrant?->id)],
+            'relation_no' => ['nullable', 'string', 'max:100', Rule::unique('grant_agreements', 'relation_no')->ignore($ignoreGrantId)],
             'donor' => 'required|array', 'donor.code' => 'required|string|max:30', 'donor.name' => 'required|string|max:150', 'donor.type' => 'required|string|max:50', 'donor.lead_applicant' => 'nullable|string|max:150', 'donor.country' => 'nullable|string|max:100', 'donor.contact_person' => 'nullable|string|max:100', 'donor.email' => 'nullable|email|max:150', 'donor.phone' => 'nullable|string|max:50',
-            'grant' => 'required|array', 'grant.grant_no' => 'required|string|max:50', 'grant.agreement_no' => 'nullable|string|max:50', 'grant.agreement_date' => 'nullable|date', 'grant.agreement_name' => 'required|string|max:200', 'grant.terms_conditions' => 'nullable|string', 'grant.reporting_period' => 'nullable|string|max:30', 'grant.donor_fiscal_calendar' => 'nullable|in:JAN_DEC,APR_MAR', 'grant.currency_id' => 'required|exists:currencies,id', 'grant.funding_source_id' => 'nullable|exists:funding_sources,id', 'grant.bank_account_id' => 'nullable|exists:bank_accounts,id', 'grant.grant_value' => 'required|numeric|min:0', 'grant.start_date' => 'required|date', 'grant.end_date' => 'required|date|after_or_equal:grant.start_date', 'grant.status' => 'nullable|in:draft,active,closed,suspended',
-            'project' => 'required|array', 'project.code' => 'required|string|max:30', 'project.name' => 'required|string|max:150', 'project.program_id' => 'nullable|exists:programs,id', 'project.theme' => 'nullable|string|max:200', 'project.manager_name' => 'nullable|string|max:100', 'project.start_date' => 'nullable|date', 'project.end_date' => 'nullable|date|after_or_equal:project.start_date', 'project.total_budget' => 'nullable|numeric|min:0', 'project.partner_ids' => 'nullable|array', 'project.partner_ids.*' => 'integer|exists:beneficiary_partners,id', 'project.funding_source_ids' => 'nullable|array', 'project.funding_source_ids.*' => 'integer|exists:funding_sources,id',
+            'grant' => 'required|array',
+            'grant.id' => 'nullable|integer',
+            'grant.grant_no' => ['required', 'string', 'max:50', Rule::unique('grant_agreements', 'grant_no')->ignore($ignoreGrantId)],
+            'grant.agreement_no' => 'nullable|string|max:50', 'grant.agreement_date' => 'nullable|date', 'grant.agreement_name' => 'required|string|max:200', 'grant.terms_conditions' => 'nullable|string', 'grant.reporting_period' => 'nullable|string|max:30', 'grant.donor_fiscal_calendar' => 'nullable|in:JAN_DEC,APR_MAR', 'grant.currency_id' => 'required|exists:currencies,id', 'grant.funding_source_id' => 'nullable|exists:funding_sources,id', 'grant.bank_account_id' => 'nullable|exists:bank_accounts,id', 'grant.grant_value' => 'required|numeric|min:0', 'grant.start_date' => 'required|date', 'grant.end_date' => 'required|date|after_or_equal:grant.start_date', 'grant.status' => 'nullable|in:draft,active,closed,suspended',
+            'project' => 'required|array',
+            'project.id' => 'nullable|integer',
+            'project.code' => 'required|string|max:30', 'project.name' => 'required|string|max:150', 'project.program_id' => 'nullable|exists:programs,id', 'project.theme' => 'nullable|string|max:200', 'project.manager_name' => 'nullable|string|max:100', 'project.start_date' => 'nullable|date', 'project.end_date' => 'nullable|date|after_or_equal:project.start_date', 'project.total_budget' => 'nullable|numeric|min:0', 'project.partner_ids' => 'nullable|array', 'project.partner_ids.*' => 'integer|exists:beneficiary_partners,id', 'project.funding_source_ids' => 'nullable|array', 'project.funding_source_ids.*' => 'integer|exists:funding_sources,id',
             'programme' => 'nullable|array', 'programme.id' => 'nullable|integer|exists:programs,id', 'programme.code' => 'nullable|string|max:50', 'programme.name' => 'nullable|string|max:150', 'programme.objective' => 'nullable|string',
             'frameworks' => 'array', 'frameworks.*.level' => 'required|in:impact,outcome,output,activity', 'frameworks.*.code' => 'required|string|max:50', 'frameworks.*.description' => 'required|string', 'frameworks.*.indicator' => 'nullable|string|max:255', 'frameworks.*.baseline' => 'nullable|string', 'frameworks.*.target' => 'nullable|string',
             'workplans' => 'array', 'workplans.*.activity' => 'required|string|max:255', 'workplans.*.output_code' => 'nullable|string|max:100', 'workplans.*.start_date' => 'nullable|date', 'workplans.*.end_date' => 'nullable|date', 'workplans.*.status' => 'nullable|string|max:50', 'workplans.*.baseline' => 'nullable|string',
@@ -748,16 +779,26 @@ class IntegratedDonorGrantController extends Controller
             'documents.amendment' => 'nullable|file|max:40960|mimes:pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png',
         ]);
 
-        $result = DB::transaction(function () use ($data, $donor, $request) {
+        $result = DB::transaction(function () use ($data, $donor, $request, $currentGrant) {
             $donor->update(array_merge($data['donor'], ['draft_payload' => null, 'status' => $data['grant']['status'] ?? 'draft']));
-            $grant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->first();
+            $grant = $currentGrant;
+            if (! $grant && ! empty($data['grant']['id'])) {
+                $grant = GrantAgreement::withoutGlobalScope('fiscal_year_context')->find($data['grant']['id']);
+            }
+            if (! $grant && ! empty($data['grant']['grant_no'])) {
+                $grant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->where('grant_no', $data['grant']['grant_no'])->first();
+            }
+            if (! $grant) {
+                $grant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->first();
+            }
+
             $relationNo = $this->resolveRelationNo($data, $grant);
             [$documents, $agreementPath] = $this->storeUploadedDocuments($request, $grant);
             if ($grant) {
                 $grant->update(array_merge($data['grant'], [
                     'donor_id' => $donor->id,
                     'relation_no' => $relationNo,
-                    'agreement_document_path' => $agreementPath,
+                    'agreement_document_path' => $agreementPath ?: $grant->agreement_document_path,
                     'supporting_documents' => $documents ?: $grant->supporting_documents,
                 ]));
             } else {
@@ -770,7 +811,17 @@ class IntegratedDonorGrantController extends Controller
                     'is_active' => true,
                 ]));
             }
-            $project = $grant->projects()->withoutGlobalScope('fiscal_year_context')->first();
+            $project = null;
+            if (! empty($data['project']['id'])) {
+                $project = Project::withoutGlobalScope('fiscal_year_context')->find($data['project']['id']);
+            }
+            if (! $project && ! empty($data['project']['code'])) {
+                $project = $grant->projects()->withoutGlobalScope('fiscal_year_context')->where('code', $data['project']['code'])->first();
+            }
+            if (! $project) {
+                $project = $grant->projects()->withoutGlobalScope('fiscal_year_context')->first();
+            }
+
             if (!empty($data['programme']['id'])) $data['project']['program_id'] = $data['programme']['id'];
             elseif (!empty($data['programme']['code']) && !empty($data['programme']['name'])) $data['project']['program_id'] = Program::firstOrCreate(['code' => $data['programme']['code']], ['name' => $data['programme']['name'], 'objective' => $data['programme']['objective'] ?? null, 'is_active' => true])->id;
             if ($project) {
@@ -901,8 +952,20 @@ class IntegratedDonorGrantController extends Controller
             return $invalid;
         }
 
+        $existingGrantId = $request->input('grant.id');
+        if (! $existingGrantId && $request->filled('grant.grant_no')) {
+            $existingGrantId = GrantAgreement::withoutGlobalScope('fiscal_year_context')
+                ->where('grant_no', $request->input('grant.grant_no'))
+                ->value('id');
+        }
+        if (! $existingGrantId && $request->filled('relation_no')) {
+            $existingGrantId = GrantAgreement::withoutGlobalScope('fiscal_year_context')
+                ->where('relation_no', $request->input('relation_no'))
+                ->value('id');
+        }
+
         $data = $request->validate([
-            'relation_no' => 'nullable|string|max:100|unique:grant_agreements,relation_no',
+            'relation_no' => ['nullable', 'string', 'max:100', Rule::unique('grant_agreements', 'relation_no')->ignore($existingGrantId)],
             'donor' => 'required|array',
             'donor.id' => 'nullable|integer|exists:donors,id',
             'donor.code' => 'required|string|max:30|unique:donors,code,' . ((int) $request->input('donor.id')),
@@ -914,7 +977,8 @@ class IntegratedDonorGrantController extends Controller
             'donor.email' => 'nullable|email|max:150',
             'donor.phone' => 'nullable|string|max:50',
             'grant' => 'required|array',
-            'grant.grant_no' => 'required|string|max:50|unique:grant_agreements,grant_no',
+            'grant.id' => 'nullable|integer',
+            'grant.grant_no' => ['required', 'string', 'max:50', Rule::unique('grant_agreements', 'grant_no')->ignore($existingGrantId)],
             'grant.agreement_no' => 'nullable|string|max:50',
             'grant.agreement_date' => 'nullable|date',
             'grant.agreement_name' => 'required|string|max:200',
@@ -1016,7 +1080,7 @@ class IntegratedDonorGrantController extends Controller
         }, $data['budgets'] ?? []);
 
         try {
-            $result = DB::transaction(function () use ($data, $request) {
+            $result = DB::transaction(function () use ($data, $request, $existingGrantId) {
             [$documents, $agreementPath] = $this->storeUploadedDocuments($request);
             $donor = !empty($data['donor']['id']) ? Donor::findOrFail($data['donor']['id']) : Donor::create(array_merge($data['donor'], [
                 'status' => $data['donor']['status'] ?? 'active',
@@ -1024,15 +1088,27 @@ class IntegratedDonorGrantController extends Controller
             ]));
             unset($data['donor']['id']);
             if ($donor->wasRecentlyCreated === false) $donor->update(array_merge($data['donor'], ['draft_payload' => null]));
-            $relationNo = $this->resolveRelationNo($data);
-            $grant = GrantAgreement::create(array_merge($data['grant'], [
-                'donor_id' => $donor->id,
-                'relation_no' => $relationNo,
-                'agreement_document_path' => $agreementPath,
-                'supporting_documents' => $documents ?: null,
-                'status' => $data['grant']['status'] ?? 'draft',
-                'is_active' => true,
-            ]));
+            $grant = $existingGrantId ? GrantAgreement::withoutGlobalScope('fiscal_year_context')->find($existingGrantId) : null;
+            $relationNo = $this->resolveRelationNo($data, $grant);
+            if ($grant) {
+                $grant->update(array_merge($data['grant'], [
+                    'donor_id' => $donor->id,
+                    'relation_no' => $relationNo,
+                    'agreement_document_path' => $agreementPath ?: $grant->agreement_document_path,
+                    'supporting_documents' => $documents ?: $grant->supporting_documents,
+                    'status' => $data['grant']['status'] ?? 'draft',
+                    'is_active' => true,
+                ]));
+            } else {
+                $grant = GrantAgreement::create(array_merge($data['grant'], [
+                    'donor_id' => $donor->id,
+                    'relation_no' => $relationNo,
+                    'agreement_document_path' => $agreementPath,
+                    'supporting_documents' => $documents ?: null,
+                    'status' => $data['grant']['status'] ?? 'draft',
+                    'is_active' => true,
+                ]));
+            }
             if (!empty($data['programme']['id'])) $data['project']['program_id'] = $data['programme']['id'];
             elseif (!empty($data['programme']['code']) && !empty($data['programme']['name'])) $data['project']['program_id'] = Program::firstOrCreate(['code' => $data['programme']['code']], ['name' => $data['programme']['name'], 'objective' => $data['programme']['objective'] ?? null, 'is_active' => true])->id;
             $project = Project::create(array_merge($data['project'], [

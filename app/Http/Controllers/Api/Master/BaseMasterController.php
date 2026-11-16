@@ -61,6 +61,11 @@ abstract class BaseMasterController extends Controller
                                 });
                             }
                         });
+                    } elseif ($this->modelClass === \App\Models\Master\BudgetLine::class) {
+                        $query->where(function ($scope) use ($request) {
+                            $scope->where('fiscal_year_id', $request->integer('fiscal_year_id'))
+                                ->orWhereNull('fiscal_year_id');
+                        });
                     } else {
                         $query->where('fiscal_year_id', $request->integer('fiscal_year_id'));
                     }
