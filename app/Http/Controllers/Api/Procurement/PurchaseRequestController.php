@@ -172,6 +172,9 @@ class PurchaseRequestController extends Controller
         }
 
         $payload = $this->hydrateTemplateFields($this->validatePayload($request, $purchaseRequest));
+        // PR Number is assigned once on creation and must remain immutable
+        // while the draft contents are edited.
+        unset($payload['pr_number']);
 
         $purchaseRequest = DB::transaction(function () use ($purchaseRequest, $payload) {
             $lines = $payload['lines'];
