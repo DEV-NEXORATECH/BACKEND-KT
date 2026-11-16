@@ -167,6 +167,9 @@ class PurchaseRequestController extends Controller
 
     public function update(Request $request, PurchaseRequest $purchaseRequest): JsonResponse
     {
+        if (! $this->canEditAsProcurement($request)) {
+            abort(Response::HTTP_FORBIDDEN, 'Purchase Request hanya dapat diubah oleh bagian Procurement.');
+        }
         $this->authorizeScope($request, $purchaseRequest);
 
         $isProcurement = $this->isProcurementStaff($request);
@@ -489,6 +492,15 @@ class PurchaseRequestController extends Controller
     private function canAccessAll(Request $request): bool
     {
         return $this->isProcurementStaff($request);
+    }
+
+    private function canEditAsProcurement(Request $request): bool
+    {
+        return $request->user()->hasAnyPermission([
+            'procurement.po.create',
+            'procurement.rfq.create',
+            'procurement.cba.create',
+        ]);
     }
 
     private function authorizeScope(Request $request, PurchaseRequest $purchaseRequest): void

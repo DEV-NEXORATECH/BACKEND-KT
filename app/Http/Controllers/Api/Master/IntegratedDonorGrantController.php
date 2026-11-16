@@ -734,7 +734,9 @@ class IntegratedDonorGrantController extends Controller
 
         $targetGrantId = $request->input('grant.id');
         $targetGrantNo = $request->input('grant.grant_no');
-        $reqRelationNo = $request->input('relation_no');
+        // Older integrated-form payloads put relation_no inside the grant
+        // object. Normalize both shapes before resolving the record to edit.
+        $reqRelationNo = $request->input('relation_no') ?: $request->input('grant.relation_no');
 
         $currentGrant = null;
         if ($targetGrantId) {
@@ -744,11 +746,14 @@ class IntegratedDonorGrantController extends Controller
             $currentGrant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->where('grant_no', $targetGrantNo)->first();
         }
         if (! $currentGrant && $reqRelationNo) {
-            $currentGrant = GrantAgreement::withoutGlobalScope('fiscal_year_context')->where('relation_no', $reqRelationNo)->first();
+            $currentGrant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->where('relation_no', $reqRelationNo)->first()
+                ?: GrantAgreement::withoutGlobalScope('fiscal_year_context')->where('relation_no', $reqRelationNo)->first();
         }
         if (! $currentGrant) {
             $currentGrant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->first();
         }
+
+        $currentProject = $currentGrant?->projects()->withoutGlobalScope('fiscal_year_context')->first();
 
         $ignoreGrantId = $currentGrant?->id;
         if (! $ignoreGrantId && $reqRelationNo) {
@@ -825,11 +830,17 @@ class IntegratedDonorGrantController extends Controller
             if (!empty($data['programme']['id'])) $data['project']['program_id'] = $data['programme']['id'];
             elseif (!empty($data['programme']['code']) && !empty($data['programme']['name'])) $data['project']['program_id'] = Program::firstOrCreate(['code' => $data['programme']['code']], ['name' => $data['programme']['name'], 'objective' => $data['programme']['objective'] ?? null, 'is_active' => true])->id;
             if ($project) {
-                $project->update(array_merge($data['project'], ['relation_no' => $relationNo]));
+                // Keep the Integrated Grant bank as the project's default bank
+                // unless a project-specific account was explicitly provided.
+                $project->update(array_merge($data['project'], [
+                    'relation_no' => $relationNo,
+                    'bank_account_id' => $data['project']['bank_account_id'] ?? $grant->bank_account_id,
+                ]));
             } else {
                 $project = Project::create(array_merge($data['project'], [
                     'grant_agreement_id' => $grant->id,
                     'relation_no' => $relationNo,
+                    'bank_account_id' => $data['project']['bank_account_id'] ?? $grant->bank_account_id,
                     'budget_currency_id' => $data['project']['budget_currency_id'] ?? $grant->currency_id,
                     'is_active' => true,
                 ]));
@@ -994,7 +1005,7 @@ class IntegratedDonorGrantController extends Controller
             'grant.end_date' => 'required|date|after_or_equal:grant.start_date',
             'grant.status' => 'nullable|in:draft,active,closed,suspended',
             'project' => 'required|array',
-            'project.code' => 'required|string|max:30|unique:projects,code',
+            'project.code' => ['required', 'string', 'max:30', Rule::unique('projects', 'code')->ignore($currentProject?->id)],
             'project.name' => 'required|string|max:150',
             'project.program_id' => 'nullable|exists:programs,id',
             'project.theme' => 'nullable|string|max:200',
@@ -1114,6 +1125,7 @@ class IntegratedDonorGrantController extends Controller
             $project = Project::create(array_merge($data['project'], [
                 'grant_agreement_id' => $grant->id,
                 'relation_no' => $relationNo,
+                'bank_account_id' => $data['project']['bank_account_id'] ?? $grant->bank_account_id,
                 'budget_currency_id' => $data['project']['budget_currency_id'] ?? $grant->currency_id,
                 'is_active' => true,
             ]));
