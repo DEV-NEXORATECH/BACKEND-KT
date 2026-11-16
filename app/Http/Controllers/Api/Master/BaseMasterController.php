@@ -450,11 +450,39 @@ abstract class BaseMasterController extends Controller
             }
 
             if ($this->modelClass === \App\Models\Master\ChartOfAccount::class) {
+                $rawAccountType = strtolower(trim((string) ($payload['account_type'] ?? '')));
+                $normalizedAccountType = str_replace(['-', ' '], '_', $rawAccountType);
+                $accountCode = trim((string) ($payload['code'] ?? ''));
+                $accountTypeAliases = [
+                    'assets' => 'asset',
+                    'liabilities' => 'liability',
+                    'capital' => 'equity',
+                    'net_assets' => 'equity',
+                    'revenues' => 'revenue',
+                    'sales' => 'revenue',
+                    'expenses' => 'expense',
+                    'cost' => 'expense',
+                    'cost_of_sales' => 'expense',
+                    'other_revenue' => 'other_income',
+                    'other_revenues' => 'other_income',
+                    'misc_income' => 'other_income',
+                    'other_expenses' => 'other_expense',
+                ];
+                if ($normalizedAccountType === 'income') {
+                    $normalizedAccountType = str_starts_with($accountCode, '6') ? 'other_income' : 'revenue';
+                }
+                $payload['account_type'] = $accountTypeAliases[$normalizedAccountType] ?? $normalizedAccountType;
                 $required = ['code', 'name', 'account_type', 'detail_type'];
                 $missing = array_values(array_filter($required, fn ($field) => ! isset($payload[$field]) || trim((string) $payload[$field]) === ''));
                 if ($missing) {
                     $skipped++;
                     $errors[] = ['row' => $rowNumber, 'message' => 'Kolom wajib kosong: '.implode(', ', $missing).'.'];
+                    continue;
+                }
+                $allowedAccountTypes = ['asset', 'liability', 'equity', 'revenue', 'expense', 'other_income', 'other_expense'];
+                if (! in_array($payload['account_type'], $allowedAccountTypes, true)) {
+                    $skipped++;
+                    $errors[] = ['row' => $rowNumber, 'message' => "Account Type '{$rawAccountType}' tidak dikenali. Gunakan: ".implode(', ', $allowedAccountTypes).'.'];
                     continue;
                 }
             }
