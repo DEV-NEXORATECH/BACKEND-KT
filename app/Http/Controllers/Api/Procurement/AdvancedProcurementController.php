@@ -76,7 +76,7 @@ class AdvancedProcurementController extends Controller
         $rfq = DB::transaction(function () use ($purchaseRequest, $data) {
             $rfq = Rfq::create([
                 'purchase_request_id' => $purchaseRequest->id,
-                'rfq_number' => 'RFQ-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                'rfq_number' => $this->nextRfqNumber(),
                 'rfq_date' => $data['rfq_date'],
                 'submission_deadline' => $data['submission_deadline'] ?? null,
                 'required_delivery_date' => $data['required_delivery_date'] ?? null,
@@ -198,7 +198,7 @@ class AdvancedProcurementController extends Controller
             return ComparativeBidAnalysis::updateOrCreate(
                 ['rfq_id' => $rfq->id],
                 [
-                    'cba_number' => $rfq->cba?->cba_number ?? 'CBA-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                    'cba_number' => $rfq->cba?->cba_number ?? $this->nextCbaNumber(),
                     'analysis_date' => $data['analysis_date'],
                     'selected_vendor_id' => $quotation->vendor_id,
                     'selected_quotation_id' => $quotation->id,
@@ -266,7 +266,7 @@ class AdvancedProcurementController extends Controller
                 'rfq_id' => $cba->rfq_id,
                 'cba_id' => $cba->id,
                 'vendor_id' => $cba->selected_vendor_id,
-                'po_number' => 'PO-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                'po_number' => $this->nextPoNumber(),
                 'contract_number' => $data['contract_number'] ?? null,
                 'po_date' => $data['po_date'],
                 'contract_date' => $data['contract_date'] ?? null,
@@ -393,5 +393,47 @@ class AdvancedProcurementController extends Controller
             'status' => $cba->status,
             'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('cba', $cba, request()->user()),
         ];
+    }
+
+    private function nextRfqNumber(): string
+    {
+        $prefix = 'RFQ-' . now()->format('Ymd') . '-';
+        $latest = Rfq::withoutGlobalScopes()->where('rfq_number', 'LIKE', $prefix . '%')->orderByDesc('id')->value('rfq_number');
+        $seq = 1;
+        if ($latest && preg_match('/-(\d+)$/', $latest, $m)) $seq = ((int) $m[1]) + 1;
+        $candidate = $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+        while (Rfq::withoutGlobalScopes()->where('rfq_number', $candidate)->exists()) {
+            $seq++;
+            $candidate = $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+        }
+        return $candidate;
+    }
+
+    private function nextCbaNumber(): string
+    {
+        $prefix = 'CBA-' . now()->format('Ymd') . '-';
+        $latest = ComparativeBidAnalysis::withoutGlobalScopes()->where('cba_number', 'LIKE', $prefix . '%')->orderByDesc('id')->value('cba_number');
+        $seq = 1;
+        if ($latest && preg_match('/-(\d+)$/', $latest, $m)) $seq = ((int) $m[1]) + 1;
+        $candidate = $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+        while (ComparativeBidAnalysis::withoutGlobalScopes()->where('cba_number', $candidate)->exists()) {
+            $seq++;
+            $candidate = $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+        }
+        return $candidate;
+    }
+
+    private function nextPoNumber(): string
+    {
+        $prefix = 'PO-' . now()->format('Ymd') . '-';
+        $latest = PurchaseOrder::withoutGlobalScopes()->where('po_number', 'LIKE', $prefix . '%')->orderByDesc('id')->value('po_number');
+        $seq = 1;
+        if ($latest && preg_match('/-(\d+)$/', $latest, $m)) $seq = ((int) $m[1]) + 1;
+        $candidate = $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+        while (PurchaseOrder::withoutGlobalScopes()->where('po_number', $candidate)->exists()) {
+            $seq++;
+            $candidate = $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+        }
+        return $candidate;
     }
 }

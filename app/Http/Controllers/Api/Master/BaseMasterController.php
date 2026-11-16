@@ -322,12 +322,12 @@ abstract class BaseMasterController extends Controller
         }
         $headerOverrides = [];
         if ($this->modelClass === \App\Models\Master\ChartOfAccount::class) {
-            $columns = ['code', 'name', 'account_type', 'detail_type', 'normal_balance', 'opening_balance', 'opening_balance_date', 'parent_id', 'is_active'];
+            $columns = ['code', 'name', 'account_type', 'detail_type'];
             $headerOverrides = [
-                'code' => 'Account Number',
+                'code' => 'Number',
                 'name' => 'Account Name',
-                'parent_id' => 'Parent Account',
-                'is_active' => 'Active Status',
+                'account_type' => 'Type',
+                'detail_type' => 'Detail type',
             ];
         }
         if ($this->modelClass === \App\Models\Master\BankAccount::class) {
@@ -388,13 +388,34 @@ abstract class BaseMasterController extends Controller
         $extension = strtolower($uploadedFile->getClientOriginalExtension());
         $rows = [];
         $handle = null;
+        $headerKeywords = ['number', 'code', 'account_number', 'account_name', 'name', 'type', 'account_type', 'bank_name', 'vendor_name'];
         if (in_array($extension, ['xlsx', 'xls'], true)) {
             $sheetRows = \PhpOffice\PhpSpreadsheet\IOFactory::load($uploadedFile->getRealPath())->getActiveSheet()->toArray(null, true, true, false);
-            $headers = array_map(fn ($header) => trim((string) $header), array_shift($sheetRows) ?: []);
+            $headers = [];
+            while (! empty($sheetRows)) {
+                $candidate = array_shift($sheetRows) ?: [];
+                $clean = array_filter(array_map(fn ($h) => strtolower(trim((string) $h)), $candidate));
+                if (array_intersect($clean, $headerKeywords)) {
+                    $headers = array_map(fn ($h) => trim((string) $h), $candidate);
+                    break;
+                }
+            }
+            if (! $headers && ! empty($candidate)) {
+                $headers = array_map(fn ($h) => trim((string) $h), $candidate);
+            }
             $rows = $sheetRows;
         } else {
             $handle = fopen($uploadedFile->getRealPath(), 'r');
-            $headers = array_map(fn ($header) => ltrim(trim((string) $header), "\xEF\xBB\xBF"), fgetcsv($handle) ?: []);
+            $headers = [];
+            while (! feof($handle)) {
+                $candidate = fgetcsv($handle);
+                if ($candidate === false) break;
+                $clean = array_filter(array_map(fn ($h) => strtolower(ltrim(trim((string) $h), "\xEF\xBB\xBF")), $candidate));
+                if (array_intersect($clean, $headerKeywords)) {
+                    $headers = array_map(fn ($h) => ltrim(trim((string) $h), "\xEF\xBB\xBF"), $candidate);
+                    break;
+                }
+            }
         }
         $model = new $this->modelClass;
         $fillableColumns = array_values(array_filter($model->getFillable(), fn ($column) => ! in_array($column, [
@@ -415,10 +436,14 @@ abstract class BaseMasterController extends Controller
                 $mapped = $normalized.'_id';
             } elseif ($normalized === 'active' && isset($fillable['is_active'])) {
                 $mapped = 'is_active';
-            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['account_number', 'account_no'], true)) {
+            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['account_number', 'account_no', 'number', 'no', 'account_num'], true)) {
                 $mapped = 'code';
-            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && $normalized === 'account_name') {
+            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['account_name', 'name', 'account'], true)) {
                 $mapped = 'name';
+            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['account_type', 'type'], true)) {
+                $mapped = 'account_type';
+            } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && in_array($normalized, ['detail_type', 'detail_type_name'], true)) {
+                $mapped = 'detail_type';
             } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && $normalized === 'parent_account') {
                 $mapped = 'parent_id';
             } elseif ($this->modelClass === \App\Models\Master\ChartOfAccount::class && $normalized === 'active_status') {
@@ -644,35 +669,103 @@ abstract class BaseMasterController extends Controller
             }
 
             if ($this->modelClass === \App\Models\Master\ChartOfAccount::class) {
-                $rawAccountType = strtolower(trim((string) ($payload['account_type'] ?? '')));
-                $normalizedAccountType = str_replace(['-', ' '], '_', $rawAccountType);
                 $accountCode = trim((string) ($payload['code'] ?? ''));
+                $accountName = trim((string) ($payload['name'] ?? ''));
+
+                // Skip summary/footer lines such as "TOTAL" or export timestamps like "Friday, November..."
+                if (strcasecmp($accountName, 'TOTAL') === 0 || strcasecmp($accountCode, 'TOTAL') === 0) {
+                    continue;
+                }
+                if (str_contains(strtolower($accountName), 'gmt+') || str_contains(strtolower($accountCode), 'gmt+')) {
+                    continue;
+                }
+                if ($accountCode === '' && $accountName === '') {
+                    continue;
+                }
+
+                // If Number is empty (common for built-in accounts in QuickBooks, e.g. "Inventory Asset"),
+                // generate a clean deterministic code based on name
+                if ($accountCode === '') {
+                    $cleanSnippet = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $accountName));
+                    $accountCode = 'QB-' . substr($cleanSnippet ?: 'ACC', 0, 10);
+                    $payload['code'] = $accountCode;
+                }
+
+                $rawAccountType = strtolower(trim((string) ($payload['account_type'] ?? '')));
+                $cleanType = str_replace(['(', ')', '/', '\\', '-'], '_', $rawAccountType);
+                $cleanType = preg_replace('/_+/', '_', trim($cleanType, '_'));
+
                 $accountTypeAliases = [
+                    'asset' => 'asset',
                     'assets' => 'asset',
+                    'bank' => 'asset',
+                    'cash' => 'asset',
+                    'accounts_receivable' => 'asset',
+                    'accounts_receivable_a_r' => 'asset',
+                    'accounts_receivable_ar' => 'asset',
+                    'ar' => 'asset',
+                    'other_current_assets' => 'asset',
+                    'other_current_asset' => 'asset',
+                    'current_assets' => 'asset',
+                    'fixed_assets' => 'asset',
+                    'fixed_asset' => 'asset',
+                    'other_assets' => 'asset',
+
+                    'liability' => 'liability',
                     'liabilities' => 'liability',
+                    'accounts_payable' => 'liability',
+                    'accounts_payable_a_p' => 'liability',
+                    'accounts_payable_ap' => 'liability',
+                    'ap' => 'liability',
+                    'other_current_liabilities' => 'liability',
+                    'long_term_liabilities' => 'liability',
+                    'other_liabilities' => 'liability',
+
+                    'equity' => 'equity',
                     'capital' => 'equity',
                     'net_assets' => 'equity',
+                    'opening_balance_equity' => 'equity',
+                    'retained_earnings' => 'equity',
+
+                    'revenue' => 'revenue',
                     'revenues' => 'revenue',
+                    'income' => 'revenue',
                     'sales' => 'revenue',
+
+                    'expense' => 'expense',
                     'expenses' => 'expense',
                     'cost' => 'expense',
                     'cost_of_sales' => 'expense',
+                    'cost_of_goods_sold' => 'expense',
+                    'cogs' => 'expense',
+
+                    'other_income' => 'other_income',
                     'other_revenue' => 'other_income',
                     'other_revenues' => 'other_income',
                     'misc_income' => 'other_income',
+
+                    'other_expense' => 'other_expense',
                     'other_expenses' => 'other_expense',
                 ];
-                if ($normalizedAccountType === 'income') {
-                    $normalizedAccountType = str_starts_with($accountCode, '6') ? 'other_income' : 'revenue';
+
+                if ($cleanType === 'income') {
+                    $cleanType = str_starts_with($accountCode, '6') ? 'other_income' : 'revenue';
                 }
-                $payload['account_type'] = $accountTypeAliases[$normalizedAccountType] ?? $normalizedAccountType;
-                $required = ['code', 'name', 'account_type', 'detail_type'];
+
+                $payload['account_type'] = $accountTypeAliases[$cleanType] ?? ($accountTypeAliases[$rawAccountType] ?? $rawAccountType);
+
+                if (empty($payload['detail_type'])) {
+                    $payload['detail_type'] = $payload['account_type'] === 'asset' ? 'Current Asset' : 'General';
+                }
+
+                $required = ['code', 'name', 'account_type'];
                 $missing = array_values(array_filter($required, fn ($field) => ! isset($payload[$field]) || trim((string) $payload[$field]) === ''));
                 if ($missing) {
                     $skipped++;
                     $errors[] = ['row' => $rowNumber, 'message' => 'Kolom wajib kosong: '.implode(', ', $missing).'.'];
                     continue;
                 }
+
                 $allowedAccountTypes = ['asset', 'liability', 'equity', 'revenue', 'expense', 'other_income', 'other_expense'];
                 if (! in_array($payload['account_type'], $allowedAccountTypes, true)) {
                     $skipped++;

@@ -540,7 +540,26 @@ class PurchaseRequestController extends Controller
 
     private function nextNumber(): string
     {
-        return 'PR-'.now()->format('YmdHis').'-'.str_pad((string) random_int(1, 999), 3, '0', STR_PAD_LEFT);
+        $datePrefix = 'PR-' . now()->format('Ymd') . '-';
+
+        $latest = PurchaseRequest::withoutGlobalScope('fiscal_year_context')
+            ->where('pr_number', 'LIKE', $datePrefix . '%')
+            ->orderByDesc('id')
+            ->value('pr_number');
+
+        $nextSeq = 1;
+        if ($latest && preg_match('/-(\d+)$/', $latest, $matches)) {
+            $nextSeq = ((int) $matches[1]) + 1;
+        }
+
+        $candidate = $datePrefix . str_pad((string) $nextSeq, 4, '0', STR_PAD_LEFT);
+
+        while (PurchaseRequest::withoutGlobalScope('fiscal_year_context')->where('pr_number', $candidate)->exists()) {
+            $nextSeq++;
+            $candidate = $datePrefix . str_pad((string) $nextSeq, 4, '0', STR_PAD_LEFT);
+        }
+
+        return $candidate;
     }
 
     private function format(PurchaseRequest $purchaseRequest): array
