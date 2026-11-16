@@ -56,7 +56,7 @@ class ApprovalMatrixSeeder extends Seeder
             'procurement' => 'Purchase Request',
             'cba' => 'Competitive Bid Analysis',
             'po' => 'Purchase Order',
-            'scn' => 'Supplier Contract Notification',
+            'scn' => 'Services Completion Note',
             'waiver' => 'Procurement Waiver / Justification',
             'ap' => 'Supplier Invoice / Accounts Payable',
             'payment' => 'Payment',

@@ -204,7 +204,7 @@ class RoleSeeder extends Seeder
                 ['title' => 'Request for Quotation', 'slug' => 'procurement-rfq', 'path' => '/procurement/rfq', 'sort_order' => 493],
                 ['title' => 'Competitive Bid Analysis', 'slug' => 'procurement-cba', 'path' => '/procurement/cba', 'sort_order' => 494],
                 ['title' => 'Procurement Contracts', 'slug' => 'procurement-contracts', 'path' => '/procurement/contracts', 'sort_order' => 495],
-                ['title' => 'Supplier Contract Notification', 'slug' => 'procurement-scn', 'path' => '/procurement/scn', 'sort_order' => 496],
+                ['title' => 'Services Completion Note', 'slug' => 'procurement-scn', 'path' => '/procurement/scn', 'sort_order' => 496],
                 ['title' => 'Purchase Orders', 'slug' => 'procurement-purchase-orders', 'path' => '/procurement/purchase-orders', 'sort_order' => 497],
                 ['title' => 'Goods Receipts', 'slug' => 'procurement-goods-receipts', 'path' => '/procurement/goods-receipts', 'sort_order' => 498],
             ]],
