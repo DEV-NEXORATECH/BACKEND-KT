@@ -14,11 +14,12 @@ class StoreVendorRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'code' => 'required|string|max:30|unique:vendors,code',
+            'code' => 'nullable|string|max:30',
             'name' => 'required|string|max:150',
             'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
-            'type' => 'required|string|max:50',
+            'type' => 'nullable|string|max:50',
             'vendor_category_id' => 'nullable|integer|exists:vendor_categories,id',
+            'vendor_category_name' => 'required_without:vendor_category_id|nullable|string|max:150',
             'npwp' => 'nullable|string|max:50',
             'address' => 'nullable|string',
             'contact_person' => 'nullable|string|max:100',

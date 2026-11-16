@@ -19,7 +19,7 @@ class BankAccountController extends BaseMasterController
     protected string $storeRequestClass = StoreBankAccountRequest::class;
     protected string $updateRequestClass = UpdateBankAccountRequest::class;
     protected array $searchableColumns = ['bank_name', 'account_number', 'account_name'];
-    protected array $defaultWith = ['organization', 'currency', 'glAccount', 'fiscalYear'];
+    protected array $defaultWith = ['organization', 'currency', 'glAccount', 'fiscalYear', 'projectCoaMappings.project', 'projectCoaMappings.glAccount'];
 
     /**
      * Keep opening-balance data intact when the edit form does not send the

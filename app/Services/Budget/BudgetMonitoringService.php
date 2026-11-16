@@ -217,13 +217,13 @@ class BudgetMonitoringService
                 ] : null,
                 'bank_account_id' => $bank?->id,
                 'bank_link_source' => $bankSource,
-                'bank_link_status' => $bank ? ($bank->gl_account_id ? 'connected' : 'missing_gl_account') : 'unlinked',
+                'bank_link_status' => $bank ? ($bank->resolveGlAccountId($line->project_id, null, $line->fiscal_year_id) ? 'connected' : 'missing_gl_account') : 'unlinked',
                 'bank_account' => $bank ? [
                     'id' => $bank->id,
                     'bank_name' => $bank->bank_name,
                     'account_number' => $bank->account_number,
                     'account_name' => $bank->account_name,
-                    'gl_account_id' => $bank->gl_account_id,
+                    'gl_account_id' => $bank->resolveGlAccountId($line->project_id, null, $line->fiscal_year_id),
                     'gl_account' => $bank->glAccount ? [
                         'id' => $bank->glAccount->id,
                         'code' => $bank->glAccount->code,

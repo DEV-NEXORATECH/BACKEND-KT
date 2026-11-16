@@ -308,6 +308,7 @@ class GrantDisbursementRequestController extends Controller
             $disbursement = GrantDisbursementRequest::create([
                 'fiscal_year_id' => $grant->fiscal_year_id,
                 'grant_agreement_id' => $grant->id,
+                'project_id' => $validated['project_id'] ?? null,
                 'bank_account_id' => $validated['bank_account_id'] ?? $grant->bank_account_id,
                 'request_no' => $requestNo,
                 'period_type' => $validated['period_type'] ?? 'quarterly',
@@ -491,18 +492,26 @@ class GrantDisbursementRequestController extends Controller
             $receiptPath = $request->file('receipt_proof')->store('disbursement-receipts', 'public');
         }
 
-        $disbursement->loadMissing(['grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')]);
+        $disbursement->loadMissing([
+            'grantAgreement' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
+            'project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
+        ]);
         $bank = BankAccount::withoutGlobalScope('fiscal_year_context')->findOrFail($validated['received_bank_account_id']);
-        if (! $bank->is_active || ! $bank->gl_account_id) {
+        $bankGlAccountId = $bank->resolveGlAccountId(
+            $disbursement->project_id,
+            $validated['received_date'],
+            $disbursement->fiscal_year_id
+        );
+        if (! $bank->is_active || ! $bankGlAccountId) {
             throw ValidationException::withMessages([
-                'received_bank_account_id' => 'Rekening penerimaan harus aktif dan sudah terhubung ke COA bank.',
+                'received_bank_account_id' => 'Rekening penerimaan harus aktif dan memiliki COA bank untuk project/periode ini.',
             ]);
         }
 
         $journal = null;
         $bankTransaction = null;
 
-        DB::transaction(function () use ($disbursement, $validated, $receivedAmount, $actualRate, $receivedAmountIdr, $fxGainLoss, $receiptPath, $bank, &$journal, &$bankTransaction) {
+        DB::transaction(function () use ($disbursement, $validated, $receivedAmount, $actualRate, $receivedAmountIdr, $fxGainLoss, $receiptPath, $bank, $bankGlAccountId, &$journal, &$bankTransaction) {
             $disbursement->update([
                 'status' => 'received',
                 'received_date' => $validated['received_date'],
@@ -524,7 +533,7 @@ class GrantDisbursementRequestController extends Controller
                 ->where('source_id', $disbursement->id)
                 ->first();
 
-            if (! $existingJournal && $bank->gl_account_id && $fiscalYearId) {
+            if (! $existingJournal && $bankGlAccountId && $fiscalYearId) {
                 $creditAccountId = $validated['credit_account_id']
                     ?? ChartOfAccount::withoutGlobalScope('fiscal_year_context')
                         ->where('is_active', true)
@@ -563,12 +572,13 @@ class GrantDisbursementRequestController extends Controller
                     $lineContext = [
                         'donor_id' => $disbursement->grantAgreement?->donor_id,
                         'grant_agreement_id' => $disbursement->grant_agreement_id,
+                        'project_id' => $disbursement->project_id,
                         'relation_no' => $disbursement->grantAgreement?->relation_no,
                     ];
 
                     JournalLine::create(array_merge([
                         'journal_id' => $journal->id,
-                        'account_id' => $bank->gl_account_id,
+                        'account_id' => $bankGlAccountId,
                         'line_description' => 'Bank receipt grant disbursement '.$disbursement->request_no,
                         'debit' => $receivedAmountIdr,
                         'credit' => 0,

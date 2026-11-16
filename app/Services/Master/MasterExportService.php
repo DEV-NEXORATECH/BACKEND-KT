@@ -74,8 +74,8 @@ class MasterExportService
             ], null, 'A2');
         } elseif ($isBankTemplate) {
             $sheet->fromArray([
-                ['Bank BNI', '0000000001', 'Kaoem Telapak Operasional', 'IDR', 'BNI-IDJA', 0, now()->startOfYear()->toDateString(), 'KT', '10210', now()->year, 'Active', 'CONTOH BANK/REKENING UTAMA — hapus semua baris contoh sebelum import.'],
-                ['Bank BNI', '0000000002', 'Kaoem Telapak Project', 'IDR', 'BNI-IDJA', 0, now()->startOfYear()->toDateString(), 'KT', '10211', now()->year, 'Active', 'CONTOH SUB REKENING — COA Code harus sudah tersedia di Chart of Accounts.'],
+                ['Bank BNI', '0000000001', 'Kaoem Telapak Operasional', 'PROJECT-A', '10210', 'IDR', 'BNI-IDJA', 0, now()->startOfYear()->toDateString(), 'KT', now()->year, 'Active', 'CONTOH REKENING + MAPPING PROJECT A — hapus semua baris contoh sebelum import.'],
+                ['Bank BNI', '0000000001', 'Kaoem Telapak Operasional', 'PROJECT-B', '10211', 'IDR', 'BNI-IDJA', 0, now()->startOfYear()->toDateString(), 'KT', now()->year, 'Active', 'NOMOR REKENING SAMA diperbolehkan jika Project Code berbeda; baris ini menambah mapping Project B → COA 10211.'],
             ], null, 'A2');
         }
         $lastColumn = $sheet->getHighestColumn();

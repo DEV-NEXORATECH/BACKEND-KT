@@ -71,6 +71,16 @@ class Project extends Model
         return $this->belongsTo(\App\Models\Master\BankAccount::class, 'bank_account_id')->withoutGlobalScope('fiscal_year_context');
     }
 
+    public function bankAccountProjectCoas()
+    {
+        return $this->hasMany(\App\Models\Master\BankAccountProjectCoa::class, 'project_id');
+    }
+
+    public function mappedBankAccounts()
+    {
+        return $this->belongsToMany(\App\Models\Master\BankAccount::class, 'bank_account_project_coas', 'project_id', 'bank_account_id');
+    }
+
     public function activities()
     {
         return $this->hasMany(\App\Models\Master\Activity::class);

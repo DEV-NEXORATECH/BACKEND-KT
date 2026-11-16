@@ -539,7 +539,8 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
         }
 
         $bank = BankAccount::findOrFail($data['bank_account_id']);
-        if (! $bank->gl_account_id) {
+        $bankGlAccountId = $bank->resolveGlAccountId($expenseRequest->project_id, $data['payment_date'], $expenseRequest->fiscal_year_id);
+        if (! $bankGlAccountId) {
             throw ValidationException::withMessages(['bank_account_id' => 'The bank account is not linked to a GL account.']);
         }
         $isCashAdvance = $expenseRequest->expense_type === 'cash_advance';
@@ -548,7 +549,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             throw ValidationException::withMessages(['account' => 'A liability/payable CoA is not configured.']);
         }
 
-        $expense = DB::transaction(function () use ($expenseRequest, $data, $bank, $payable, $isCashAdvance, $request) {
+        $expense = DB::transaction(function () use ($expenseRequest, $data, $bank, $bankGlAccountId, $payable, $isCashAdvance, $request) {
             $requestRate = max((float) ($expenseRequest->exchange_rate ?: 1), 0.000001);
             $paymentRate = max((float) ($data['exchange_rate'] ?? $requestRate), 0.000001);
             $functionalAmount = round((float) $data['amount'] * $paymentRate, 2);
@@ -570,7 +571,7 @@ app(ApprovalWorkflowService::class)->reject('expense', $expenseRequest, $request
             ]);
             $lineContext = ['donor_id' => $expenseRequest->donor_id, 'program_id' => $expenseRequest->program_id, 'project_id' => $expenseRequest->project_id, 'department_id' => $expenseRequest->department_id];
             $journal->lines()->create(array_merge(['account_id' => $payable->id, 'line_description' => $isCashAdvance ? 'Staff Advance disbursement' : 'Expense payable payment', 'debit' => $requestFunctionalAmount, 'credit' => 0, 'line_order' => 1], $lineContext));
-            $journal->lines()->create(array_merge(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank payment', 'debit' => 0, 'credit' => $functionalAmount, 'line_order' => 2], $lineContext));
+            $journal->lines()->create(array_merge(['account_id' => $bankGlAccountId, 'line_description' => 'Bank payment', 'debit' => 0, 'credit' => $functionalAmount, 'line_order' => 2], $lineContext));
             if (abs($fxGainLoss) >= 0.01 && $fxAccount) $journal->lines()->create(['account_id' => $fxAccount->id, 'line_description' => $fxGainLoss > 0 ? 'FX loss on expense payment' : 'FX gain on expense payment', 'debit' => $fxGainLoss > 0 ? $fxGainLoss : 0, 'credit' => $fxGainLoss < 0 ? abs($fxGainLoss) : 0, 'line_order' => 3]);
 
             $payment = Payment::create([

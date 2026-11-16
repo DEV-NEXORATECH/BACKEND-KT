@@ -24,6 +24,9 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Throwable;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 
 class IntegratedDonorGrantController extends Controller
 {
@@ -140,12 +143,100 @@ class IntegratedDonorGrantController extends Controller
             })->values();
             return response()->json(['template_version' => 'donor-grant-integrated-v1', 'records' => $payload]);
         }
-        $rows = [['Donor Code', 'Donor Name', 'Donor Type', 'Lead Applicant / Intermediary', 'Grant No', 'Agreement Name', 'Project Code', 'Project Name', 'Grant Value', 'Status']];
+        if ($request->query('format') === 'xlsx') {
+            $workbook = new Spreadsheet();
+            $dateValue = static fn ($value) => $value instanceof \DateTimeInterface
+                ? $value->format('Y-m-d')
+                : ($value ? substr((string) $value, 0, 10) : null);
+            $sheets = [
+                'Import Data' => [['relation_no', 'donor_code', 'donor_name', 'donor_type', 'lead_applicant', 'donor_country', 'donor_contact_person', 'donor_email', 'donor_phone', 'grant_no', 'agreement_no', 'agreement_date', 'grant_name', 'grant_value', 'currency_code', 'grant_status', 'grant_start_date', 'grant_end_date', 'reporting_period', 'donor_fiscal_calendar', 'terms_conditions', 'programme_code', 'programme_name', 'project_code', 'project_name', 'project_theme', 'project_manager_pic', 'project_start_date', 'project_end_date', 'project_budget', 'project_status']],
+                'A Donor' => [['relation_no', 'donor_code', 'donor_name', 'donor_type', 'lead_applicant', 'country', 'contact_person', 'email', 'phone', 'status']],
+                'B Program Project' => [['relation_no', 'grant_no', 'grant_value', 'programme_code', 'programme_name', 'project_code', 'project_name', 'theme', 'manager_pic', 'project_start_date', 'project_end_date', 'project_budget', 'project_status']],
+                'C Grant Agreement' => [['relation_no', 'grant_no', 'agreement_no', 'agreement_date', 'agreement_name', 'grant_start_date', 'grant_end_date', 'currency_code', 'funding_source', 'bank_account', 'reporting_period', 'donor_fiscal_calendar', 'terms_conditions', 'grant_status']],
+                'D Framework Workplan' => [['relation_no', 'project_code', 'record_type', 'level', 'code_output', 'description_activity', 'indicator', 'baseline', 'target', 'start_date', 'end_date', 'workplan_status']],
+                'E Project Budget' => [['relation_no', 'project_code', 'budget_line_code', 'item_description', 'budget_category_id', 'total_amount', 'currency_code', 'coa_code']],
+                'F Donor Reporting' => [['relation_no', 'grant_no', 'report_type', 'period_label', 'due_date', 'status', 'reminder_days', 'notes']],
+                'G Documents' => [['relation_no', 'grant_no', 'project_code', 'document_type', 'file_path', 'status']],
+            ];
+            $seenDonors = [];
+            $seenGrants = [];
+            foreach ($records as $donor) {
+                foreach ($donor->grantAgreements as $grant) {
+                    $projects = $grant->projects->isEmpty() ? collect([null]) : $grant->projects;
+                    foreach ($projects as $project) {
+                        $relationNo = $project?->relation_no ?? $grant->relation_no;
+                        $sheets['Import Data'][] = [$relationNo, $donor->code, $donor->name, $donor->type, $donor->lead_applicant, $donor->country, $donor->contact_person, $donor->email, $donor->phone, $grant->grant_no, $grant->agreement_no, $grant->agreement_date, $grant->agreement_name, $grant->grant_value, $grant->currency?->code, $grant->status, $dateValue($grant->start_date), $dateValue($grant->end_date), $grant->reporting_period, $grant->donor_fiscal_calendar, $grant->terms_conditions, $project?->program?->code, $project?->program?->name, $project?->code, $project?->name, $project?->theme, $project?->manager_name, $dateValue($project?->start_date), $dateValue($project?->end_date), $project?->total_budget, $project?->status];
+                        if (! isset($seenDonors[$donor->id])) {
+                            $sheets['A Donor'][] = [$relationNo, $donor->code, $donor->name, $donor->type, $donor->lead_applicant, $donor->country, $donor->contact_person, $donor->email, $donor->phone, $donor->status];
+                            $seenDonors[$donor->id] = true;
+                        }
+                        if ($project) {
+                            $sheets['B Program Project'][] = [$relationNo, $grant->grant_no, $grant->grant_value, $project->program?->code, $project->program?->name, $project->code, $project->name, $project->theme, $project->manager_name, $dateValue($project->start_date), $dateValue($project->end_date), $project->total_budget, $project->status];
+                            foreach ($project->logframes as $framework) {
+                                $sheets['D Framework Workplan'][] = [$relationNo, $project->code, 'framework', $framework->level, $framework->code, $framework->description, $framework->indicator, $framework->baseline, $framework->target, null, null, null];
+                            }
+                            foreach ($project->workplans as $workplan) {
+                                $sheets['D Framework Workplan'][] = [$relationNo, $project->code, 'workplan', 'activity', $workplan->output_code, $workplan->activity, null, $workplan->baseline, null, optional($workplan->start_date)->format('Y-m-d'), optional($workplan->end_date)->format('Y-m-d'), $workplan->status];
+                            }
+                            foreach ($project->budgetLines as $budget) {
+                                $sheets['E Project Budget'][] = [$relationNo, $project->code, $budget->line_code, $budget->description, $budget->budget_category_id, $budget->total_amount, $grant->currency?->code, $budget->gl_account_id];
+                            }
+                        }
+                        if (! isset($seenGrants[$grant->id])) {
+                            $sheets['C Grant Agreement'][] = [$relationNo, $grant->grant_no, $grant->agreement_no, $grant->agreement_date, $grant->agreement_name, $grant->start_date?->format('Y-m-d'), $grant->end_date?->format('Y-m-d'), $grant->currency?->code, $grant->fundingSource?->name, $grant->bankAccount?->account_number, $grant->reporting_period, $grant->donor_fiscal_calendar, $grant->terms_conditions, $grant->status];
+                            foreach ($grant->reportingDeadlines as $deadline) {
+                                $sheets['F Donor Reporting'][] = [$relationNo, $grant->grant_no, $deadline->report_type, $deadline->period_label, optional($deadline->due_date)->format('Y-m-d'), $deadline->status, $deadline->reminder_days, $deadline->notes];
+                            }
+                            foreach ((array) $grant->supporting_documents as $type => $path) {
+                                $sheets['G Documents'][] = [$relationNo, $grant->grant_no, $project?->code, $type, $path, $path ? 'uploaded' : 'not_uploaded'];
+                            }
+                            if ($grant->agreement_document_path) {
+                                $sheets['G Documents'][] = [$relationNo, $grant->grant_no, $project?->code, 'agreement_document', $grant->agreement_document_path, 'uploaded'];
+                            }
+                            $seenGrants[$grant->id] = true;
+                        }
+                    }
+                }
+            }
+            foreach ($sheets as $index => $sheetRows) {
+                $sheet = $index === 'Import Data' ? $workbook->getActiveSheet() : $workbook->createSheet();
+                $sheet->setTitle($index);
+                $sheet->fromArray($sheetRows, null, 'A1');
+                $lastColumn = $sheet->getHighestColumn();
+                $sheet->getStyle("A1:{$lastColumn}1")->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
+                $sheet->getStyle("A1:{$lastColumn}1")->getFill()->setFillType('solid')->getStartColor()->setARGB('FF0F766E');
+                $sheet->getStyle("A1:{$lastColumn}".$sheet->getHighestRow())->getAlignment()->setVertical('center');
+                $sheet->freezePane('A2');
+                $sheet->setAutoFilter("A1:{$lastColumn}1");
+                for ($columnIndex = 1; $columnIndex <= Coordinate::columnIndexFromString($lastColumn); $columnIndex++) {
+                    $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($columnIndex))->setAutoSize(true);
+                }
+            }
+            $workbook->setActiveSheetIndex(0);
+            return response()->streamDownload(function () use ($workbook) {
+                (new Xlsx($workbook))->save('php://output');
+            }, 'donor-grant-integrated-'.now()->format('Y-m-d').'.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+        }
+        $rows = [[
+            'Relation No', 'Donor Code', 'Donor Name', 'Donor Type', 'Lead Applicant / Intermediary', 'Donor Country', 'Donor Contact', 'Donor Email', 'Donor Phone',
+            'Grant No', 'Agreement No', 'Agreement Date', 'Agreement Name', 'Grant Value', 'Currency', 'Grant Status', 'Grant Start', 'Grant End', 'Reporting Period', 'Donor Fiscal Calendar', 'Terms & Conditions',
+            'Programme Code', 'Programme Name', 'Project Code', 'Project Name', 'Project Theme', 'Project Manager / PIC', 'Project Start', 'Project End', 'Project Budget',
+            'Framework Count', 'Workplan Count', 'Budget Line Count', 'Reporting Deadline Count',
+        ]];
         foreach ($records as $donor) {
             foreach ($donor->grantAgreements as $grant) {
                 $projects = $grant->projects->isEmpty() ? [null] : $grant->projects;
                 foreach ($projects as $project) {
-                    $rows[] = [$donor->code, $donor->name, $donor->type, $donor->lead_applicant, $grant->grant_no, $grant->agreement_name, $project?->code, $project?->name, $grant->grant_value, $grant->status];
+                    $rows[] = [
+                        $project?->relation_no ?? $grant->relation_no,
+                        $donor->code, $donor->name, $donor->type, $donor->lead_applicant, $donor->country, $donor->contact_person, $donor->email, $donor->phone,
+                        $grant->grant_no, $grant->agreement_no, $grant->agreement_date, $grant->agreement_name, $grant->grant_value,
+                        $grant->currency?->code, $grant->status, optional($grant->start_date)->format('Y-m-d'), optional($grant->end_date)->format('Y-m-d'),
+                        $grant->reporting_period, $grant->donor_fiscal_calendar, $grant->terms_conditions,
+                        $project?->program?->code, $project?->program?->name, $project?->code, $project?->name, $project?->theme, $project?->manager_name,
+                        optional($project?->start_date)->format('Y-m-d'), optional($project?->end_date)->format('Y-m-d'), $project?->total_budget,
+                        $project?->logframes?->count() ?? 0, $project?->workplans?->count() ?? 0, $project?->budgetLines?->count() ?? 0, $grant->reportingDeadlines->count(),
+                    ];
                 }
             }
         }
@@ -165,20 +256,190 @@ class IntegratedDonorGrantController extends Controller
         foreach ($sheet as $row) {
             $values = array_combine($headers, array_values($row));
             if (!$values || empty($values['donor_code']) || empty($values['grant_no']) || empty($values['project_code'])) continue;
-            $records[] = ['donor' => ['code' => $values['donor_code'], 'name' => $values['donor_name'] ?? $values['donor_code'], 'type' => $values['donor_type'] ?? 'Other', 'lead_applicant' => $values['lead_applicant'] ?? $values['lead_applicant_intermediary'] ?? null], 'grant' => ['grant_no' => $values['grant_no'], 'agreement_name' => $values['grant_name'] ?? $values['grant_no'], 'grant_value' => $values['grant_value'] ?? 0, 'currency_id' => $values['currency_id'] ?: DB::table('currencies')->value('id'), 'status' => $values['grant_status'] ?? 'draft', 'start_date' => $values['grant_start_date'] ?? now()->toDateString(), 'end_date' => $values['grant_end_date'] ?? now()->addYear()->toDateString()], 'programme' => ['code' => $values['programme_code'] ?? null, 'name' => $values['programme_name'] ?? null], 'project' => ['code' => $values['project_code'], 'name' => $values['project_name'] ?? $values['project_code'], 'total_budget' => $values['project_budget'] ?? 0], 'frameworks' => [], 'workplans' => [], 'deadlines' => []];
+            $currencyValue = trim((string) ($values['currency_code'] ?? $values['currency_id'] ?? ''));
+            $currencyId = is_numeric($currencyValue)
+                ? (int) $currencyValue
+                : DB::table('currencies')->where('code', strtoupper($currencyValue ?: 'IDR'))->value('id');
+            $records[] = [
+                'relation_no' => $values['relation_no'] ?? null,
+                'donor' => [
+                    'code' => $values['donor_code'],
+                    'name' => $values['donor_name'] ?? $values['donor_code'],
+                    'type' => $values['donor_type'] ?? 'Other',
+                    'lead_applicant' => $values['lead_applicant'] ?? $values['lead_applicant_intermediary'] ?? null,
+                    'country' => $values['donor_country'] ?? null,
+                    'contact_person' => $values['donor_contact_person'] ?? null,
+                    'email' => $values['donor_email'] ?? null,
+                    'phone' => $values['donor_phone'] ?? null,
+                ],
+                'grant' => [
+                    'grant_no' => $values['grant_no'],
+                    'agreement_no' => $values['agreement_no'] ?? null,
+                    'agreement_date' => $values['agreement_date'] ?? null,
+                    'agreement_name' => $values['grant_name'] ?? $values['grant_no'],
+                    'terms_conditions' => $values['terms_conditions'] ?? null,
+                    'reporting_period' => $values['reporting_period'] ?? null,
+                    'donor_fiscal_calendar' => $values['donor_fiscal_calendar'] ?? 'JAN_DEC',
+                    'grant_value' => $values['grant_value'] ?? 0,
+                    'currency_id' => $currencyId ?: DB::table('currencies')->value('id'),
+                    'status' => $values['grant_status'] ?? 'draft',
+                    'start_date' => $values['grant_start_date'] ?? now()->toDateString(),
+                    'end_date' => $values['grant_end_date'] ?? now()->addYear()->toDateString(),
+                ],
+                'programme' => ['code' => $values['programme_code'] ?? null, 'name' => $values['programme_name'] ?? null],
+                'project' => [
+                    'code' => $values['project_code'],
+                    'name' => $values['project_name'] ?? $values['project_code'],
+                    'theme' => $values['project_theme'] ?? null,
+                    'manager_name' => $values['project_manager_pic'] ?? null,
+                    'start_date' => $values['project_start_date'] ?? ($values['grant_start_date'] ?? null),
+                    'end_date' => $values['project_end_date'] ?? ($values['grant_end_date'] ?? null),
+                    'total_budget' => $values['project_budget'] ?? 0,
+                    'status' => $values['project_status'] ?? 'draft',
+                ],
+                'frameworks' => [], 'workplans' => [], 'deadlines' => [],
+            ];
         }
         if (!$records) return response()->json(['message' => 'Template CSV/Excel Donor & Grant Terintegrasi tidak valid atau kosong.'], 422);
-        $created = 0;
-        $donorId = null;
-        foreach ($records as $record) {
-            if ($donorId) $record['donor']['id'] = $donorId;
-            $response = $this->store(Request::create('/v1/master/donor-grant-integrated', 'POST', $record));
-            if ($response->getStatusCode() >= 300) return $response;
-            $body = json_decode($response->getContent(), true);
-            $donorId = $donorId ?: ($body['data']['id'] ?? $body['data']['data']['id'] ?? null);
-            $created++;
-        }
+        $created = DB::transaction(function () use ($records) {
+            $count = 0;
+            foreach ($records as $record) {
+                $donor = Donor::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
+                    ['code' => $record['donor']['code']],
+                    array_merge($record['donor'], ['is_active' => true, 'status' => 'active'])
+                );
+                $relationNo = $this->resolveRelationNo($record);
+                $grant = GrantAgreement::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
+                    ['donor_id' => $donor->id, 'grant_no' => $record['grant']['grant_no']],
+                    array_merge($record['grant'], ['relation_no' => $relationNo, 'is_active' => true])
+                );
+                $programId = null;
+                if (! empty($record['programme']['code'])) {
+                    $programId = Program::updateOrCreate(
+                        ['code' => $record['programme']['code']],
+                        ['name' => $record['programme']['name'] ?: $record['programme']['code'], 'is_active' => true]
+                    )->id;
+                }
+                $project = Project::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
+                    ['grant_agreement_id' => $grant->id, 'code' => $record['project']['code']],
+                    array_merge($record['project'], ['program_id' => $programId, 'relation_no' => $relationNo, 'budget_currency_id' => $grant->currency_id, 'is_active' => true])
+                );
+                $this->syncProjectFiscalYears($project, $grant);
+                $count++;
+            }
+            return $count;
+        });
         return response()->json(['success' => true, 'message' => 'Import Donor & Grant Terintegrasi berhasil.', 'created' => $created]);
+    }
+
+    public function template()
+    {
+        $headers = ['relation_no', 'donor_code', 'donor_name', 'donor_type', 'lead_applicant', 'donor_country', 'donor_contact_person', 'donor_email', 'donor_phone', 'grant_no', 'agreement_no', 'agreement_date', 'grant_name', 'grant_value', 'currency_code', 'grant_status', 'grant_start_date', 'grant_end_date', 'reporting_period', 'donor_fiscal_calendar', 'terms_conditions', 'programme_code', 'programme_name', 'project_code', 'project_name', 'project_theme', 'project_manager_pic', 'project_start_date', 'project_end_date', 'project_budget', 'project_status', 'Import Note'];
+        $year = now()->year;
+        $rows = [
+            ["KT-REL-D1-G1-P1", 'DONOR-A', 'Ford Foundation', 'Foundation', 'Environmental Funders Network', 'United States', 'Jane Smith', 'jane.smith@example.org', '+1 202 555 0100', 'GRANT-A1', 'AGR-FF-'.$year.'-001', "{$year}-01-01", 'EUDR Traceability Programme', 1000000000, 'IDR', 'active', "{$year}-01-01", "{$year}-12-31", 'Quarterly', 'JAN_DEC', 'Financial and narrative reports required every quarter.', 'PROG-EUDR', 'Sustainable Commodities', 'PROJECT-A1', 'Traceability EUDR', 'Forest Governance', 'Denny Bhatara', "{$year}-01-01", "{$year}-12-31", 600000000, 'active', 'CONTOH DATA UTAMA: donor baru + grant baru + project pertama.'],
+            ["KT-REL-D1-G1-P2", 'DONOR-A', 'Ford Foundation', 'Foundation', 'Environmental Funders Network', 'United States', 'Jane Smith', 'jane.smith@example.org', '+1 202 555 0100', 'GRANT-A1', 'AGR-FF-'.$year.'-001', "{$year}-01-01", 'EUDR Traceability Programme', 1000000000, 'IDR', 'active', "{$year}-01-01", "{$year}-12-31", 'Quarterly', 'JAN_DEC', 'Financial and narrative reports required every quarter.', 'PROG-EUDR', 'Sustainable Commodities', 'PROJECT-A2', 'Smallholder Support', 'Community Capacity', 'Rika Putri', "{$year}-04-01", "{$year}-12-31", 400000000, 'active', 'CONTOH TAMBAH PROJECT: donor dan grant sama, project_code baru.'],
+        ];
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Input Data');
+        $sheet->fromArray([$headers, ...$rows], null, 'A1');
+        $lastColumn = $sheet->getHighestColumn();
+        $sheet->getStyle("A1:{$lastColumn}1")->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
+        $sheet->getStyle("A1:{$lastColumn}1")->getFill()->setFillType('solid')->getStartColor()->setARGB('FF1F4E78');
+        foreach ([2 => 'FFDCE6F1', 3 => 'FFE2F0D9', 4 => 'FFFFF2CC', 5 => 'FFDCE6F1'] as $row => $color) {
+            $sheet->getStyle("A{$row}:{$lastColumn}{$row}")->getFill()->setFillType('solid')->getStartColor()->setARGB($color);
+        }
+        $sheet->freezePane('A2');
+        $sheet->setAutoFilter("A1:{$lastColumn}1");
+        for ($columnIndex = 1; $columnIndex <= Coordinate::columnIndexFromString($lastColumn); $columnIndex++) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($columnIndex))->setAutoSize(true);
+        }
+        $sheet->getColumnDimension($lastColumn)->setWidth(78);
+        $sheet->getStyle("{$lastColumn}1:{$lastColumn}5")->getAlignment()->setWrapText(true);
+        $instructions = $spreadsheet->createSheet();
+        $instructions->setTitle('Instructions');
+        $instructions->fromArray([
+            ['Urutan', 'Donor → Grant → Project.'],
+            ['Tambah project', 'Ulangi Donor Code dan Grant No yang sama, lalu gunakan Project Code baru.'],
+            ['Tambah grant', 'Ulangi Donor Code yang sama, lalu gunakan Grant No dan Project Code baru.'],
+            ['Tambah donor', 'Gunakan Donor Code, Grant No, dan Project Code baru.'],
+            ['Catatan', 'Semua baris berwarna adalah dummy. Hapus sebelum import data asli.'],
+        ], null, 'A1');
+        $instructions->getColumnDimension('A')->setWidth(22);
+        $instructions->getColumnDimension('B')->setWidth(100);
+        $instructions->getStyle('A1:A5')->getFont()->setBold(true);
+
+        $documentSheets = [
+            'A Donor' => [
+                ['Field', 'Contoh', 'Wajib', 'Keterangan'],
+                ['donor_code', 'DONOR-A', 'Ya', 'Kode donor unik'], ['donor_name', 'Ford Foundation', 'Ya', 'Nama funder'],
+                ['donor_type', 'Foundation', 'Ya', 'Tipe donor'], ['lead_applicant', 'Environmental Funders Network', 'Tidak', 'Lead applicant/intermediary'],
+                ['donor_country', 'United States', 'Tidak', 'Negara'], ['donor_contact_person', 'Jane Smith', 'Tidak', 'Kontak/PIC'],
+                ['donor_email', 'jane.smith@example.org', 'Tidak', 'Email'], ['donor_phone', '+1 202 555 0100', 'Tidak', 'Telepon'],
+            ],
+            'B Program Project' => [
+                ['Field', 'Contoh', 'Wajib', 'Keterangan'],
+                ['programme_code', 'PROG-EUDR', 'Tidak', 'Kode programme'], ['programme_name', 'Sustainable Commodities', 'Tidak', 'Nama programme'],
+                ['project_code', 'PROJECT-A1', 'Ya', 'Kode project unik di dalam grant'], ['project_name', 'Traceability EUDR', 'Ya', 'Nama project'],
+                ['project_theme', 'Forest Governance', 'Tidak', 'Tema project'], ['project_manager_pic', 'Denny Bhatara', 'Tidak', 'Project Manager/PIC'],
+                ['project_start_date', "{$year}-01-01", 'Tidak', 'Format YYYY-MM-DD'], ['project_end_date', "{$year}-12-31", 'Tidak', 'Format YYYY-MM-DD'],
+                ['project_budget', 600000000, 'Ya', 'Angka tanpa simbol mata uang'], ['project_status', 'active', 'Tidak', 'draft/active/closed'],
+            ],
+            'C Grant Agreement' => [
+                ['Field', 'Contoh', 'Wajib', 'Keterangan'],
+                ['grant_no', 'GRANT-A1', 'Ya', 'Nomor grant'], ['agreement_no', 'AGR-FF-'.$year.'-001', 'Tidak', 'Nomor agreement'],
+                ['agreement_date', "{$year}-01-01", 'Tidak', 'Tanggal agreement'], ['grant_name', 'EUDR Traceability Programme', 'Ya', 'Nama agreement'],
+                ['grant_value', 1000000000, 'Ya', 'Nilai hibah'], ['currency_code', 'IDR', 'Ya', 'Kode mata uang'],
+                ['grant_start_date', "{$year}-01-01", 'Ya', 'Tanggal mulai'], ['grant_end_date', "{$year}-12-31", 'Ya', 'Tanggal selesai'],
+                ['reporting_period', 'Quarterly', 'Tidak', 'Periode pelaporan'], ['donor_fiscal_calendar', 'JAN_DEC', 'Tidak', 'JAN_DEC/APR_MAR'],
+                ['terms_conditions', 'Quarterly financial and narrative reports.', 'Tidak', 'Syarat dan ketentuan'],
+            ],
+            'D Framework Workplan' => [
+                ['Field', 'Contoh', 'Wajib', 'Keterangan'], ['relation_no', 'KT-REL-D1-G1-P1', 'Ya', 'Relasi project'],
+                ['level', 'output', 'Ya', 'impact/outcome/output/activity'], ['code', 'OUT-1', 'Ya', 'Kode logframe'],
+                ['description', 'Traceability system adopted', 'Ya', 'Deskripsi output/activity'], ['indicator', '5 organizations using system', 'Tidak', 'Indikator'],
+                ['baseline', '0 organizations', 'Tidak', 'Nilai awal'], ['target', '5 organizations', 'Tidak', 'Target'],
+                ['start_date', "{$year}-02-01", 'Tidak', 'Mulai activity'], ['end_date', "{$year}-03-31", 'Tidak', 'Selesai activity'],
+            ],
+            'E Project Budget' => [
+                ['Field', 'Contoh', 'Wajib', 'Keterangan'], ['relation_no', 'KT-REL-D1-G1-P1', 'Ya', 'Relasi project'],
+                ['line_code', 'BL-001', 'Ya', 'Kode budget line'], ['description', 'Workshop and training', 'Ya', 'Uraian item belanja'],
+                ['budget_category_code', 'BCAT-100', 'Ya', 'Kategori biaya'], ['quantity', 2, 'Tidak', 'Jumlah'],
+                ['unit_price', 75000000, 'Tidak', 'Harga satuan'], ['total_amount', 150000000, 'Ya', 'Total budget'], ['coa_code', '5100', 'Tidak', 'COA biaya'],
+            ],
+            'F Donor Reporting' => [
+                ['Field', 'Contoh', 'Wajib', 'Keterangan'], ['relation_no', 'KT-REL-D1-G1-P1', 'Ya', 'Relasi grant/project'],
+                ['report_type', 'Financial Report', 'Ya', 'Tipe laporan'], ['period_label', 'Q1 '.$year, 'Ya', 'Label periode'],
+                ['due_date', "{$year}-04-15", 'Ya', 'Jatuh tempo'], ['status', 'upcoming', 'Tidak', 'Status laporan'],
+                ['reminder_days', 14, 'Tidak', 'Hari pengingat'], ['notes', 'Quarterly financial report', 'Tidak', 'Catatan'],
+            ],
+            'G Documents' => [
+                ['Document Type', 'Contoh Nama File', 'Wajib', 'Keterangan'],
+                ['Proposal', 'GRANT-A1_Proposal.pdf', 'Ya', 'Upload melalui menu Others/Documents'],
+                ['Signed Agreement', 'GRANT-A1_Signed_Agreement.pdf', 'Ya', 'Dokumen bertanda tangan'],
+                ['Workplan', 'PROJECT-A1_Workplan.xlsx', 'Ya', 'Versi final'],
+                ['Detailed Budget', 'PROJECT-A1_Detailed_Budget.xlsx', 'Ya', 'Sesuai budget line'],
+                ['Amendment', 'GRANT-A1_Amendment_01.pdf', 'Tidak', 'Jika ada perubahan kontrak'],
+            ],
+        ];
+        foreach ($documentSheets as $title => $rowsForSheet) {
+            $documentSheet = $spreadsheet->createSheet();
+            $documentSheet->setTitle($title);
+            $documentSheet->fromArray($rowsForSheet, null, 'A1');
+            $documentSheet->getStyle('A1:D1')->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
+            $documentSheet->getStyle('A1:D1')->getFill()->setFillType('solid')->getStartColor()->setARGB('FF0F766E');
+            $documentSheet->getStyle('A1:D'.count($rowsForSheet))->getAlignment()->setWrapText(true)->setVertical('center');
+            $documentSheet->freezePane('A2');
+            $documentSheet->getColumnDimension('A')->setWidth(28);
+            $documentSheet->getColumnDimension('B')->setWidth(42);
+            $documentSheet->getColumnDimension('C')->setWidth(14);
+            $documentSheet->getColumnDimension('D')->setWidth(65);
+        }
+        $spreadsheet->setActiveSheetIndex(0);
+        return response()->streamDownload(function () use ($spreadsheet) {
+            (new Xlsx($spreadsheet))->save('php://output');
+        }, 'donor-grant-integrated-template.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
     }
 
     private function syncProjectFiscalYears(Project $project, GrantAgreement $grant, ?Request $request = null): ?int

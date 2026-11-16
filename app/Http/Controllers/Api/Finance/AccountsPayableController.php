@@ -281,7 +281,9 @@ class AccountsPayableController extends Controller
         }
 
         $bank = BankAccount::findOrFail($data['bank_account_id']);
-        if (! $bank->gl_account_id) {
+        $paymentProjectId = $supplierInvoice->purchaseOrder?->purchaseRequest?->project_id;
+        $bankGlAccountId = $bank->resolveGlAccountId($paymentProjectId, $data['payment_date'], $supplierInvoice->fiscal_year_id);
+        if (! $bankGlAccountId) {
             throw ValidationException::withMessages(['bank_account_id' => 'Bank account belum memiliki GL account.']);
         }
         $apAccount = ChartOfAccount::query()->where('account_type', 'liability')->where('is_header', false)->first();
@@ -289,7 +291,7 @@ class AccountsPayableController extends Controller
             throw ValidationException::withMessages(['account' => 'COA liability/AP belum tersedia.']);
         }
 
-        $payment = DB::transaction(function () use ($supplierInvoice, $data, $bank, $apAccount) {
+        $payment = DB::transaction(function () use ($supplierInvoice, $data, $bank, $bankGlAccountId, $apAccount) {
             $invoiceRate = max((float) ($supplierInvoice->exchange_rate ?: 1), 0.000001);
             $paymentRate = max((float) ($data['exchange_rate'] ?? $invoiceRate), 0.000001);
             $functionalAmount = round((float) $data['amount'] * $paymentRate, 2);
@@ -315,7 +317,7 @@ class AccountsPayableController extends Controller
             ]);
             $lineContext = ['project_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project_id, 'donor_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project?->grantAgreement?->donor_id, 'program_id' => $supplierInvoice->purchaseOrder?->purchaseRequest?->project?->program_id];
             $journal->lines()->create(array_merge(['account_id' => $apAccount->id, 'line_description' => 'AP payment at invoice rate', 'debit' => $invoiceFunctionalAmount, 'credit' => 0, 'line_order' => 1], $lineContext));
-            $journal->lines()->create(array_merge(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank payment', 'debit' => 0, 'credit' => $functionalAmount, 'line_order' => 2], $lineContext));
+            $journal->lines()->create(array_merge(['account_id' => $bankGlAccountId, 'line_description' => 'Bank payment', 'debit' => 0, 'credit' => $functionalAmount, 'line_order' => 2], $lineContext));
             if (abs($fxGainLoss) >= 0.01 && $fxAccount) {
                 $journal->lines()->create(['account_id' => $fxAccount->id, 'line_description' => $fxGainLoss > 0 ? 'FX loss on payment' : 'FX gain on payment', 'debit' => $fxGainLoss > 0 ? $fxGainLoss : 0, 'credit' => $fxGainLoss < 0 ? abs($fxGainLoss) : 0, 'line_order' => 3]);
             }

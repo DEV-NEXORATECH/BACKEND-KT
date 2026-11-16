@@ -95,13 +95,14 @@ class JournalController extends Controller
             ->when($request->filled('budget_line_id'), fn ($query) => $query->whereHas('lines', fn ($line) => $line->where('budget_line_id', $request->integer('budget_line_id'))))
             ->when($request->filled('bank_account_id'), function ($query) use ($request) {
                 $bankAccountId = $request->integer('bank_account_id');
-                $glAccountId = BankAccount::withoutGlobalScope('fiscal_year_context')->whereKey($bankAccountId)->value('gl_account_id');
-                $query->where(function ($scope) use ($bankAccountId, $glAccountId) {
+                $bankAccount = BankAccount::withoutGlobalScope('fiscal_year_context')->with('projectCoaMappings')->find($bankAccountId);
+                $glAccountIds = collect([$bankAccount?->gl_account_id])->merge($bankAccount?->projectCoaMappings?->pluck('gl_account_id') ?? [])->filter()->unique()->values();
+                $query->where(function ($scope) use ($bankAccountId, $glAccountIds) {
                     $scope->where(function ($ob) use ($bankAccountId) {
                         $ob->where('source_type', 'bank_account_opening_balance')->where('source_id', $bankAccountId);
                     });
-                    if ($glAccountId) {
-                        $scope->orWhereHas('lines', fn ($line) => $line->where('account_id', $glAccountId));
+                    if ($glAccountIds->isNotEmpty()) {
+                        $scope->orWhereHas('lines', fn ($line) => $line->whereIn('account_id', $glAccountIds));
                     }
                 });
             })

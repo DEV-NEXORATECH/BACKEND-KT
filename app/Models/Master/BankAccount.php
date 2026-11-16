@@ -53,4 +53,38 @@ class BankAccount extends Model
         return $this->hasMany(\App\Models\Master\Project::class, 'bank_account_id');
     }
 
+    public function projectCoaMappings()
+    {
+        return $this->hasMany(\App\Models\Master\BankAccountProjectCoa::class, 'bank_account_id');
+    }
+
+    public function mappedProjects()
+    {
+        return $this->belongsToMany(\App\Models\Master\Project::class, 'bank_account_project_coas', 'bank_account_id', 'project_id');
+    }
+
+    public function mappedGlAccounts()
+    {
+        return $this->belongsToMany(\App\Models\Master\ChartOfAccount::class, 'bank_account_project_coas', 'bank_account_id', 'gl_account_id');
+    }
+
+    public function resolveGlAccountId(?int $projectId = null, $transactionDate = null, ?int $fiscalYearId = null): ?int
+    {
+        if ($projectId) {
+            $date = $transactionDate ? \Illuminate\Support\Carbon::parse($transactionDate)->toDateString() : null;
+            $mapping = $this->projectCoaMappings()
+                ->where('project_id', $projectId)
+                ->where('is_active', true)
+                ->when($fiscalYearId, fn ($query) => $query->where(fn ($inner) => $inner->whereNull('fiscal_year_id')->orWhere('fiscal_year_id', $fiscalYearId)))
+                ->when($date, fn ($query) => $query
+                    ->where(fn ($inner) => $inner->whereNull('start_date')->orWhereDate('start_date', '<=', $date))
+                    ->where(fn ($inner) => $inner->whereNull('end_date')->orWhereDate('end_date', '>=', $date)))
+                ->orderByDesc('start_date')
+                ->first();
+            if ($mapping?->gl_account_id) return (int) $mapping->gl_account_id;
+        }
+
+        return $this->gl_account_id ? (int) $this->gl_account_id : null;
+    }
+
 }

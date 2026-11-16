@@ -48,6 +48,16 @@ class ChartOfAccount extends Model
         return $this->hasMany(BankAccount::class, 'gl_account_id')->withoutGlobalScope('fiscal_year_context');
     }
 
+    public function bankAccountProjectCoas()
+    {
+        return $this->hasMany(\App\Models\Master\BankAccountProjectCoa::class, 'gl_account_id');
+    }
+
+    public function mappedBankAccounts()
+    {
+        return $this->belongsToMany(BankAccount::class, 'bank_account_project_coas', 'gl_account_id', 'bank_account_id');
+    }
+
     public function category() { return $this->belongsTo(AccountCategory::class, 'account_category_id'); }
 
 }

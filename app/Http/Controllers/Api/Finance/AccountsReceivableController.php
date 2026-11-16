@@ -252,7 +252,8 @@ class AccountsReceivableController extends Controller
         }
 
         $bank = BankAccount::findOrFail($data['bank_account_id']);
-        if (! $bank->gl_account_id) {
+        $bankGlAccountId = $bank->resolveGlAccountId($customerInvoice->project_id, $data['payment_date'], $customerInvoice->fiscal_year_id);
+        if (! $bankGlAccountId) {
             throw ValidationException::withMessages(['bank_account_id' => 'Bank account belum memiliki GL account.']);
         }
         $arAccount = ChartOfAccount::query()->where('account_type', 'asset')->where('is_header', false)->where(function ($query) {
@@ -262,7 +263,7 @@ class AccountsReceivableController extends Controller
             throw ValidationException::withMessages(['account' => 'COA asset/AR belum tersedia.']);
         }
 
-        $payment = DB::transaction(function () use ($customerInvoice, $data, $bank, $arAccount) {
+        $payment = DB::transaction(function () use ($customerInvoice, $data, $bank, $bankGlAccountId, $arAccount) {
             $invoiceRate = max((float) ($customerInvoice->exchange_rate ?: 1), 0.000001);
             $receiptRate = max((float) ($data['exchange_rate'] ?? $invoiceRate), 0.000001);
             $functionalAmount = round((float) $data['amount'] * $receiptRate, 2);
@@ -284,7 +285,7 @@ class AccountsReceivableController extends Controller
                 'exchange_rate' => $receiptRate, 'rate_date' => $data['payment_date'], 'rate_source' => 'receipt_snapshot', 'fx_gain_loss' => $fxGainLoss,
             ]);
             $lineContext = ['project_id' => $customerInvoice->project_id, 'donor_id' => $customerInvoice->donor_id, 'program_id' => $customerInvoice->program_id];
-            $journal->lines()->create(array_merge(['account_id' => $bank->gl_account_id, 'line_description' => 'Bank receipt', 'debit' => $functionalAmount, 'credit' => 0, 'line_order' => 1], $lineContext));
+            $journal->lines()->create(array_merge(['account_id' => $bankGlAccountId, 'line_description' => 'Bank receipt', 'debit' => $functionalAmount, 'credit' => 0, 'line_order' => 1], $lineContext));
             $journal->lines()->create(array_merge(['account_id' => $arAccount->id, 'line_description' => 'AR receipt at invoice rate', 'debit' => 0, 'credit' => $invoiceFunctionalAmount, 'line_order' => 2], $lineContext));
             if (abs($fxGainLoss) >= 0.01 && $fxAccount) $journal->lines()->create(['account_id' => $fxAccount->id, 'line_description' => $fxGainLoss > 0 ? 'FX gain on receipt' : 'FX loss on receipt', 'debit' => $fxGainLoss < 0 ? abs($fxGainLoss) : 0, 'credit' => $fxGainLoss > 0 ? $fxGainLoss : 0, 'line_order' => 3]);
 

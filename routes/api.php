@@ -419,6 +419,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('donor-grant-integrated', [IntegratedDonorGrantController::class, 'store'])->middleware('permission:master-data.manage');
         Route::post('donor-grant-integrated/draft', [IntegratedDonorGrantController::class, 'storeDraft'])->middleware('permission:master-data.manage');
         Route::post('donor-grant-integrated/import', [IntegratedDonorGrantController::class, 'import'])->middleware('permission:master-data.manage');
+        Route::get('donor-grant-integrated/template', [IntegratedDonorGrantController::class, 'template'])->middleware('permission:master-data.view');
         Route::get('donor-grant-integrated/export', [IntegratedDonorGrantController::class, 'export'])->middleware('permission:master-data.export');
         Route::get('donor-grant-integrated/{donor}', [IntegratedDonorGrantController::class, 'show'])->middleware('permission:master-data.view');
         Route::put('donor-grant-integrated/{donor}', [IntegratedDonorGrantController::class, 'update'])->middleware('permission:master-data.manage');
@@ -501,6 +502,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('employees/quality', [EmployeeController::class, 'quality'])->middleware('permission:master-data.view');
         Route::get('chart-of-accounts/{id}/transactions', [ChartOfAccountController::class, 'transactions'])->middleware('permission:master-data.view');
         Route::get('approval-matrices/approvers', [ApprovalMatrixController::class, 'approvers'])->middleware('permission:master-data.view');
+        Route::get('vendors/next-code', [VendorController::class, 'nextCode'])->middleware('permission:master-data.view');
 
         foreach ($masterResources as $uri => $controller) {
             Route::get("{$uri}/template", [$controller, 'template'])->middleware('permission:master-data.view');

@@ -18,6 +18,7 @@ class GrantDisbursementRequest extends Model
     protected $fillable = [
         'fiscal_year_id',
         'grant_agreement_id',
+        'project_id',
         'bank_account_id',
         'request_no',
         'period_type',
@@ -65,6 +66,11 @@ class GrantDisbursementRequest extends Model
     public function grantAgreement()
     {
         return $this->belongsTo(GrantAgreement::class, 'grant_agreement_id');
+    }
+
+    public function project()
+    {
+        return $this->belongsTo(Project::class, 'project_id')->withoutGlobalScope('fiscal_year_context');
     }
 
     public function bankAccount()
