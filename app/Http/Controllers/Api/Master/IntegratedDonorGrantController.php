@@ -753,6 +753,16 @@ class IntegratedDonorGrantController extends Controller
             $currentGrant = $donor->grantAgreements()->withoutGlobalScope('fiscal_year_context')->first();
         }
 
+        // Some older edit payloads omit grant.id. Once the grant is resolved
+        // from the donor/relation, inject its ID so both validation and the
+        // update transaction unmistakably target the same record.
+        if ($currentGrant && ! $targetGrantId) {
+            $request->merge([
+                'grant' => array_merge((array) $request->input('grant', []), ['id' => $currentGrant->id]),
+            ]);
+            $targetGrantId = $currentGrant->id;
+        }
+
         $currentProject = $currentGrant?->projects()->withoutGlobalScope('fiscal_year_context')->first();
 
         $ignoreGrantId = $currentGrant?->id;
