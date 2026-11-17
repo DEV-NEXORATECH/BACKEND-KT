@@ -832,11 +832,25 @@ abstract class BaseMasterController extends Controller
                 if ($bankCoaCode !== '') {
                     $mappingCoa = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')
                         ->where('code', $bankCoaCode)->first();
-                    if (! $mappingCoa) {
-                        $errors[] = ['row' => $rowNumber, 'message' => "COA '{$bankCoaCode}' tidak ditemukan. Import COA terlebih dahulu."];
-                        $skipped++;
-                        continue;
+                }
+                // Some exported bank files lose the COA Code cell while the
+                // imported COA name still contains the exact bank account
+                // number. Resolve that deterministic fallback during import.
+                if (! $mappingCoa) {
+                    $accountNumberForCoa = trim((string) ($payload['account_number'] ?? ''));
+                    if ($accountNumberForCoa !== '') {
+                        $mappingCoa = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')
+                            ->where('name', 'like', '%'.$accountNumberForCoa.'%')
+                            ->first();
+                        if ($mappingCoa) {
+                            $bankCoaCode = (string) $mappingCoa->code;
+                        }
                     }
+                }
+                if (! $mappingCoa && $bankCoaCode !== '') {
+                    $errors[] = ['row' => $rowNumber, 'message' => "COA '{$bankCoaCode}' tidak ditemukan. Import COA terlebih dahulu."];
+                    $skipped++;
+                    continue;
                 }
                 if ($bankProjectCode !== '') {
                     $mappingProject = \App\Models\Master\Project::withoutGlobalScope('fiscal_year_context')
