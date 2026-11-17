@@ -58,7 +58,7 @@ class UpdateChartOfAccountRequest extends FormRequest
             }
             if (! $this->filled('parent_id')) return;
             $parent = ChartOfAccount::find($this->integer('parent_id'));
-            if (! $parent?->is_header) {
+            if (! $parent || (! $parent->is_header && (int) $parent->level !== 1)) {
                 $validator->errors()->add('parent_id', 'Parent Account harus merupakan Header Account.');
             }
         });
