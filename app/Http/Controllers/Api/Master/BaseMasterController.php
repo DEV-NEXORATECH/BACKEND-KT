@@ -922,6 +922,19 @@ abstract class BaseMasterController extends Controller
                         ->where('account_number', $accNumber)
                         ->first();
 
+                // Re-import must repair an existing bank row before duplicate
+                // handling. Previously the row could be classified as a
+                // duplicate and skipped while gl_account_id stayed null.
+                if ($existingBank && $mappingCoa) {
+                    $existingBank->update([
+                        'gl_account_id' => $mappingCoa->id,
+                        'fiscal_year_id' => $payload['fiscal_year_id'] ?? $existingBank->fiscal_year_id,
+                        'is_active' => $payload['is_active'] ?? $existingBank->is_active,
+                    ]);
+                    $existingBank->refresh();
+                    $payload['gl_account_id'] = $mappingCoa->id;
+                }
+
                 // Satu nomor rekening bank fisik dapat digunakan oleh beberapa project dengan COA berbeda.
                 // Jika baris menyertakan project_code & coa_code, baris ini dipetakan ke relasi BankAccountProjectCoa.
                 // Jika tanpa project_code (misal format QuickBooks yang memisahkan baris akun bank per project/COA),
