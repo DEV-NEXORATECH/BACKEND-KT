@@ -819,6 +819,35 @@ abstract class BaseMasterController extends Controller
                 $mappingOpeningBalance = isset($payload['opening_balance']) ? (float) $payload['opening_balance'] : 0;
                 unset($payload['project_code'], $payload['start_date'], $payload['end_date']);
 
+                // A row that declares Project + COA must be imported as a
+                // complete mapping. Do not create a standalone bank account
+                // and silently lose the requested relationship.
+                $mappingProject = null;
+                $mappingCoa = null;
+                if ($bankProjectCode !== '' || $bankCoaCode !== '') {
+                    if ($bankProjectCode === '' || $bankCoaCode === '') {
+                        $errors[] = ['row' => $rowNumber, 'message' => 'Project Code / Relation No dan COA Code harus diisi bersama untuk mapping rekening.'];
+                        $skipped++;
+                        continue;
+                    }
+                    $mappingProject = \App\Models\Master\Project::withoutGlobalScope('fiscal_year_context')
+                        ->where(function ($query) use ($bankProjectCode) {
+                            $query->where('code', $bankProjectCode)
+                                ->orWhere('relation_no', $bankProjectCode)
+                                ->orWhere('name', $bankProjectCode);
+                        })->first();
+                    $mappingCoa = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')
+                        ->where('code', $bankCoaCode)->first();
+                    if (! $mappingProject || ! $mappingCoa) {
+                        $missing = [];
+                        if (! $mappingProject) $missing[] = "Project '{$bankProjectCode}'";
+                        if (! $mappingCoa) $missing[] = "COA '{$bankCoaCode}'";
+                        $errors[] = ['row' => $rowNumber, 'message' => implode(' dan ', $missing).' tidak ditemukan untuk mapping rekening. Import Integrated dan COA terlebih dahulu.'];
+                        $skipped++;
+                        continue;
+                    }
+                }
+
                 // Bank accounts require a currency at database level. If the
                 // import file omits Currency (ID), use the configured base
                 // currency (normally IDR), never a fabricated currency row.
@@ -894,15 +923,8 @@ abstract class BaseMasterController extends Controller
                 // Jika tanpa project_code (misal format QuickBooks yang memisahkan baris akun bank per project/COA),
                 // alur dilanjutkan ke pembuatan record BankAccount tersendiri selama nama akun atau COA-nya berbeda.
                 if ($existingBank && $bankProjectCode !== '' && $bankCoaCode !== '') {
-                    $project = \App\Models\Master\Project::withoutGlobalScope('fiscal_year_context')
-                        ->where(function ($query) use ($bankProjectCode) {
-                            $query->where('code', $bankProjectCode)
-                                ->orWhere('relation_no', $bankProjectCode)
-                                ->orWhere('name', $bankProjectCode);
-                        })->first();
-                    $coa = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')
-                        ->where('code', $bankCoaCode)
-                        ->first();
+                    $project = $mappingProject;
+                    $coa = $mappingCoa;
                     if ($project && $coa) {
                         \App\Models\Master\BankAccountProjectCoa::updateOrCreate(
                             [
@@ -1074,6 +1096,33 @@ abstract class BaseMasterController extends Controller
                     })->exists();
 
                 if (isset($seen[$fingerprint]) || $isExactDuplicate) {
+                    // Re-imports must repair an existing incomplete bank row.
+                    // Older imports could create the account before COA/project
+                    // resolution, leaving gl_account_id or its mapping empty.
+                    $mappingMissing = $mappingProject && $mappingCoa
+                        ? ! $existingBank->projectCoaMappings()->where('project_id', $mappingProject->id)->exists()
+                        : false;
+                    if ($existingBank && ($bankGlId && ! $existingBank->gl_account_id || $mappingMissing)) {
+                        $existingBank->update($payload);
+                        if ($mappingProject && $mappingCoa) {
+                            \App\Models\Master\BankAccountProjectCoa::updateOrCreate(
+                                ['bank_account_id' => $existingBank->id, 'project_id' => $mappingProject->id],
+                                [
+                                    'gl_account_id' => $mappingCoa->id,
+                                    'fiscal_year_id' => $payload['fiscal_year_id'] ?? $existingBank->fiscal_year_id,
+                                    'relation_no' => $payload['relation_no'] ?? ($mappingProject->relation_no ?: $mappingProject->grantAgreement?->relation_no),
+                                    'account_name' => $mappingAccountName ?: ($mappingProject->name ? "{$existingBank->bank_name} - {$mappingProject->name}" : null),
+                                    'start_date' => $mappingStartDate ?: $mappingProject->start_date,
+                                    'end_date' => $mappingEndDate ?: $mappingProject->end_date,
+                                    'opening_balance' => $mappingOpeningBalance,
+                                    'is_active' => true,
+                                ]
+                            );
+                        }
+                        $seen[$fingerprint] = true;
+                        $created++;
+                        continue;
+                    }
                     $skipped++;
                     $seen[$fingerprint] = true;
                     $errors[] = ['row' => $rowNumber, 'message' => "Duplikat rekening: {$accNumber} - {$accName} sudah terdaftar."];
@@ -1115,16 +1164,9 @@ abstract class BaseMasterController extends Controller
                 }
                 if ($this->modelClass === \App\Models\Master\BankAccount::class) {
                     $importedBankAccounts[$createdRecord->account_number] = $createdRecord;
-                    if (! empty($bankProjectCode) && ! empty($bankCoaCode)) {
-                    $project = \App\Models\Master\Project::withoutGlobalScope('fiscal_year_context')
-                            ->where(function ($query) use ($bankProjectCode) {
-                                $query->where('code', $bankProjectCode)
-                                    ->orWhere('relation_no', $bankProjectCode)
-                                    ->orWhere('name', $bankProjectCode);
-                            })->first();
-                        $coa = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')
-                            ->where('code', $bankCoaCode)
-                            ->first();
+                    if ($mappingProject && $mappingCoa) {
+                        $project = $mappingProject;
+                        $coa = $mappingCoa;
                         if ($project && $coa) {
                             \App\Models\Master\BankAccountProjectCoa::updateOrCreate(
                                 [

@@ -455,6 +455,54 @@ class IntegratedDonorGrantController extends Controller
                     );
                 }
             }
+
+            // Budget lines are part of the integrated workbook contract. The
+            // main sheet creates the donor/grant/project keys first; this
+            // sheet then resolves those keys and persists the budget rows.
+            $budgetSheet = $workbook->getSheetByName('E Project Budget');
+            if ($budgetSheet) {
+                $budgetRows = $budgetSheet->toArray(null, true, true, true);
+                $budgetHeaders = array_map(fn ($value) => strtolower(trim((string) $value)), array_shift($budgetRows) ?: []);
+                foreach ($budgetRows as $row) {
+                    $values = array_combine($budgetHeaders, array_values($row));
+                    if (! is_array($values)) continue;
+
+                    $relation = trim((string) ($values['relation_no'] ?? ''));
+                    $projectCode = trim((string) ($values['project_code'] ?? ''));
+                    $lineCode = trim((string) ($values['budget_line_code'] ?? $values['line_code'] ?? ''));
+                    if ($relation === '' || $lineCode === '' || strtolower($relation) === 'relation_no') continue;
+
+                    $project = Project::withoutGlobalScope('fiscal_year_context')
+                        ->where(function ($query) use ($relation, $projectCode) {
+                            $query->where('relation_no', $relation);
+                            if ($projectCode !== '') $query->orWhere('code', $projectCode);
+                        })->first();
+                    if (! $project) continue;
+
+                    $coaCode = trim((string) ($values['coa_code'] ?? ''));
+                    $coaId = $coaCode !== ''
+                        ? ChartOfAccount::withoutGlobalScope('fiscal_year_context')->where('code', $coaCode)->value('id')
+                        : null;
+                    $categoryValue = trim((string) ($values['budget_category_id'] ?? ''));
+                    $categoryId = $categoryValue !== '' && is_numeric($categoryValue)
+                        ? (int) $categoryValue
+                        : ($categoryValue !== '' ? BudgetCategory::query()->where('code', $categoryValue)->orWhere('name', $categoryValue)->value('id') : null);
+
+                    BudgetLine::withoutGlobalScope('fiscal_year_context')->updateOrCreate(
+                        ['project_id' => $project->id, 'line_code' => $lineCode],
+                        [
+                            'grant_agreement_id' => $project->grant_agreement_id,
+                            'relation_no' => $project->relation_no ?: $relation,
+                            'description' => trim((string) ($values['item_description'] ?? $lineCode)),
+                            'budget_category_id' => $categoryId,
+                            'total_amount' => $cleanNumber($values['total_amount'] ?? 0),
+                            'currency_id' => $project->budget_currency_id,
+                            'gl_account_id' => $coaId,
+                            'is_active' => true,
+                        ]
+                    );
+                }
+            }
             return response()->json(['success' => true, 'message' => "Import Donor & Grant Terintegrasi berhasil. {$created} baris diproses.", 'created' => $created]);
         } catch (\Throwable $exception) {
             Log::error('Import integrated donor grant failed: ' . $exception->getMessage(), [
