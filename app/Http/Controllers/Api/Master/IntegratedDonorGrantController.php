@@ -671,6 +671,7 @@ class IntegratedDonorGrantController extends Controller
                 ['grant_no', 'GRANT-A1', 'Ya', 'Nomor grant'], ['agreement_no', 'AGR-FF-'.$year.'-001', 'Tidak', 'Nomor agreement'],
                 ['agreement_date', "{$year}-01-01", 'Tidak', 'Tanggal agreement'], ['grant_name', 'EUDR Traceability Programme', 'Ya', 'Nama agreement'],
                 ['grant_value', 1000000000, 'Ya', 'Nilai hibah'], ['currency_code', 'IDR', 'Ya', 'Kode mata uang'],
+                ['bank_account_number', '1821056678', 'Tidak', 'Nomor rekening bank yang currency-nya sama dengan grant'],
                 ['grant_start_date', "{$year}-01-01", 'Ya', 'Tanggal mulai'], ['grant_end_date', "{$year}-12-31", 'Ya', 'Tanggal selesai'],
                 ['reporting_period', 'Quarterly', 'Tidak', 'Periode pelaporan'], ['donor_fiscal_calendar', 'JAN_DEC', 'Tidak', 'JAN_DEC/APR_MAR'],
                 ['terms_conditions', 'Quarterly financial and narrative reports.', 'Tidak', 'Syarat dan ketentuan'],

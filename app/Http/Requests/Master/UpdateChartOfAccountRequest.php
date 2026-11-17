@@ -25,7 +25,7 @@ class UpdateChartOfAccountRequest extends FormRequest
             'normal_balance' => 'required|in:debit,credit',
             'opening_balance' => 'nullable|numeric|min:0',
             'opening_balance_date' => 'nullable|date',
-            'level' => 'integer|in:1,2',
+            'level' => 'integer|min:1|max:10',
             'is_header' => 'boolean',
             'is_active' => 'boolean',
         ];
@@ -33,8 +33,11 @@ class UpdateChartOfAccountRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $parent = $this->filled('parent_id')
+            ? ChartOfAccount::find($this->integer('parent_id'))
+            : null;
         $this->merge([
-            'level' => $this->filled('parent_id') ? 2 : 1,
+            'level' => $parent ? ((int) $parent->level + 1) : 1,
             'is_header' => ! $this->filled('parent_id'),
             'normal_balance' => in_array($this->input('account_type'), ['asset', 'expense', 'other_expense'], true) ? 'debit' : 'credit',
         ]);
@@ -55,8 +58,8 @@ class UpdateChartOfAccountRequest extends FormRequest
             }
             if (! $this->filled('parent_id')) return;
             $parent = ChartOfAccount::find($this->integer('parent_id'));
-            if (! $parent?->is_header || (int) $parent->level !== 1) {
-                $validator->errors()->add('parent_id', 'Parent Account harus merupakan Header Account level 1.');
+            if (! $parent?->is_header) {
+                $validator->errors()->add('parent_id', 'Parent Account harus merupakan Header Account.');
             }
         });
     }

@@ -7,6 +7,7 @@ use App\Models\Procurement\GoodsReceipt;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
+use App\Models\Finance\Payment;
 use App\Models\Procurement\PoAmendment;
 use App\Models\Procurement\VendorEvaluation;
 use App\Services\Rbac\DataScopeService;
@@ -438,6 +439,56 @@ class ProcurementFulfillmentController extends Controller
         });
 
         return response()->json(['success' => true, 'message' => 'Supplier invoice berhasil dibuat.', 'data' => $this->formatInvoice($invoice)], Response::HTTP_CREATED);
+    }
+
+    public function createDirectInvoice(PurchaseRequest $purchaseRequest, Request $request): JsonResponse
+    {
+        if ($purchaseRequest->status !== 'approved') {
+            throw ValidationException::withMessages(['status' => 'Direct invoice hanya dapat dibuat dari PR approved.']);
+        }
+        if ((float) $purchaseRequest->total_amount > 2000000) {
+            throw ValidationException::withMessages(['total_amount' => 'Jalur direct hanya untuk nilai sampai Rp2.000.000.']);
+        }
+
+        $data = $request->validate([
+            'invoice_number' => ['required', 'string', 'max:80', 'unique:supplier_invoices,invoice_number'],
+            'invoice_date' => ['required', 'date'],
+            'due_date' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string'],
+            'payment_method' => ['required', 'in:cash,ebt'],
+            'bank_account_id' => ['required', 'integer', 'exists:bank_accounts,id'],
+            'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
+        ]);
+
+        $invoice = DB::transaction(function () use ($purchaseRequest, $request, $data) {
+            $invoice = SupplierInvoice::create([
+                'purchase_request_id' => $purchaseRequest->id,
+                'vendor_id' => $purchaseRequest->vendor_id,
+                'invoice_number' => $data['invoice_number'],
+                'invoice_date' => $data['invoice_date'],
+                'due_date' => $data['due_date'] ?? null,
+                'notes' => trim(($data['notes'] ?? '')."\nPayment method: ".strtoupper($data['payment_method'])),
+                'status' => 'draft',
+                'match_status' => 'unchecked',
+                'total_amount' => $purchaseRequest->total_amount,
+                'created_by' => $request->user()->id,
+            ]);
+            Payment::create([
+                'supplier_invoice_id' => $invoice->id,
+                'vendor_id' => $purchaseRequest->vendor_id,
+                'bank_account_id' => $data['bank_account_id'],
+                'payment_method_id' => $data['payment_method_id'] ?? null,
+                'payment_number' => 'DIR-PAY-'.now()->format('YmdHis').'-'.random_int(100, 999),
+                'payment_date' => $data['invoice_date'],
+                'amount' => $purchaseRequest->total_amount,
+                'reference' => $data['invoice_number'],
+                'status' => 'draft',
+                'created_by' => $request->user()->id,
+            ]);
+            return $invoice;
+        });
+
+        return response()->json(['success' => true, 'message' => 'Direct receipt/invoice berhasil dibuat.', 'data' => $this->formatInvoice($invoice->load(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']))], Response::HTTP_CREATED);
     }
 
     public function threeWayMatch(Request $request, SupplierInvoice $supplierInvoice): JsonResponse

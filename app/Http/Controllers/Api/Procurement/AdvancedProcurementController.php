@@ -18,6 +18,18 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AdvancedProcurementController extends Controller
 {
+    private function procurementThreshold(float $amount): array
+    {
+        return match (true) {
+            $amount <= 2000000 => ['process' => 'direct', 'min_quotes' => 0, 'requires_cba' => false],
+            $amount <= 10000000 => ['process' => 'direct', 'min_quotes' => 1, 'requires_cba' => false],
+            $amount <= 50000000 => ['process' => 'limited_tender', 'min_quotes' => 3, 'requires_cba' => false],
+            $amount <= 150000000 => ['process' => 'limited_tender', 'min_quotes' => 3, 'requires_cba' => true],
+            $amount <= 250000000 => ['process' => 'limited_tender', 'min_quotes' => 5, 'requires_cba' => true],
+            default => ['process' => 'open_tender', 'min_quotes' => 5, 'requires_cba' => true, 'tender_committee_size' => 5],
+        };
+    }
+
     public function rfqs(Request $request): JsonResponse
     {
         $query = $this->rfqListingQuery($request);
@@ -72,6 +84,13 @@ class AdvancedProcurementController extends Controller
             'vendor_ids' => ['required', 'array', 'min:1'],
             'vendor_ids.*' => ['integer', 'exists:vendors,id'],
         ]);
+
+        $policy = $this->procurementThreshold((float) $purchaseRequest->total_amount);
+        if (count($data['vendor_ids']) < $policy['min_quotes']) {
+            throw ValidationException::withMessages([
+                'vendor_ids' => "Nilai PR membutuhkan minimal {$policy['min_quotes']} quotation/vendor sesuai threshold procurement.",
+            ]);
+        }
 
         $rfq = DB::transaction(function () use ($purchaseRequest, $data) {
             $rfq = Rfq::create([
@@ -169,6 +188,27 @@ class AdvancedProcurementController extends Controller
 
     public function createCba(Rfq $rfq, Request $request): JsonResponse
     {
+        $rfq->loadMissing('purchaseRequest');
+        $policy = $this->procurementThreshold((float) $rfq->purchaseRequest?->total_amount);
+        if (! $policy['requires_cba']) {
+            throw ValidationException::withMessages([
+                'status' => 'CBA hanya wajib untuk nilai pengadaan di atas Rp50.000.000.',
+            ]);
+        }
+        if ($rfq->quotations()->count() < $policy['min_quotes']) {
+            throw ValidationException::withMessages([
+                'quotations' => "CBA membutuhkan minimal {$policy['min_quotes']} quotation yang tercatat.",
+            ]);
+        }
+        if (($policy['tender_committee_size'] ?? 0) === 5) {
+            $request->validate([
+                'panelist_1_name' => ['required', 'string', 'max:120'],
+                'panelist_2_name' => ['required', 'string', 'max:120'],
+                'panelist_3_name' => ['required', 'string', 'max:120'],
+                'panelist_4_name' => ['required', 'string', 'max:120'],
+                'panelist_5_name' => ['required', 'string', 'max:120'],
+            ]);
+        }
         $data = $request->validate([
             'analysis_date' => ['required', 'date'],
             'selected_quotation_id' => ['required', 'integer', 'exists:vendor_quotations,id'],
@@ -185,6 +225,10 @@ class AdvancedProcurementController extends Controller
             'panelist_2_position' => ['nullable', 'string', 'max:120'],
             'panelist_3_name' => ['nullable', 'string', 'max:120'],
             'panelist_3_position' => ['nullable', 'string', 'max:120'],
+            'panelist_4_name' => ['nullable', 'string', 'max:120'],
+            'panelist_4_position' => ['nullable', 'string', 'max:120'],
+            'panelist_5_name' => ['nullable', 'string', 'max:120'],
+            'panelist_5_position' => ['nullable', 'string', 'max:120'],
             'bid_comparison' => ['nullable', 'array'],
         ]);
 
@@ -215,6 +259,10 @@ class AdvancedProcurementController extends Controller
                     'panelist_2_position' => $data['panelist_2_position'] ?? null,
                     'panelist_3_name' => $data['panelist_3_name'] ?? null,
                     'panelist_3_position' => $data['panelist_3_position'] ?? null,
+                    'panelist_4_name' => $data['panelist_4_name'] ?? null,
+                    'panelist_4_position' => $data['panelist_4_position'] ?? null,
+                    'panelist_5_name' => $data['panelist_5_name'] ?? null,
+                    'panelist_5_position' => $data['panelist_5_position'] ?? null,
                     'bid_comparison' => $data['bid_comparison'] ?? null,
                     'status' => 'draft',
                 ],
@@ -389,6 +437,10 @@ class AdvancedProcurementController extends Controller
             'panelist_2_position' => $cba->panelist_2_position,
             'panelist_3_name' => $cba->panelist_3_name,
             'panelist_3_position' => $cba->panelist_3_position,
+            'panelist_4_name' => $cba->panelist_4_name,
+            'panelist_4_position' => $cba->panelist_4_position,
+            'panelist_5_name' => $cba->panelist_5_name,
+            'panelist_5_position' => $cba->panelist_5_position,
             'bid_comparison' => $cba->bid_comparison,
             'status' => $cba->status,
             'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('cba', $cba, request()->user()),
