@@ -824,25 +824,29 @@ abstract class BaseMasterController extends Controller
                 // and silently lose the requested relationship.
                 $mappingProject = null;
                 $mappingCoa = null;
-                if ($bankProjectCode !== '' || $bankCoaCode !== '') {
-                    if ($bankProjectCode === '' || $bankCoaCode === '') {
-                        $errors[] = ['row' => $rowNumber, 'message' => 'Project Code / Relation No dan COA Code harus diisi bersama untuk mapping rekening.'];
+                if ($bankProjectCode !== '' && $bankCoaCode === '') {
+                    $errors[] = ['row' => $rowNumber, 'message' => 'COA Code wajib diisi jika Project Code / Relation No digunakan untuk mapping rekening.'];
+                    $skipped++;
+                    continue;
+                }
+                if ($bankCoaCode !== '') {
+                    $mappingCoa = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')
+                        ->where('code', $bankCoaCode)->first();
+                    if (! $mappingCoa) {
+                        $errors[] = ['row' => $rowNumber, 'message' => "COA '{$bankCoaCode}' tidak ditemukan. Import COA terlebih dahulu."];
                         $skipped++;
                         continue;
                     }
+                }
+                if ($bankProjectCode !== '') {
                     $mappingProject = \App\Models\Master\Project::withoutGlobalScope('fiscal_year_context')
                         ->where(function ($query) use ($bankProjectCode) {
                             $query->where('code', $bankProjectCode)
                                 ->orWhere('relation_no', $bankProjectCode)
                                 ->orWhere('name', $bankProjectCode);
                         })->first();
-                    $mappingCoa = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')
-                        ->where('code', $bankCoaCode)->first();
-                    if (! $mappingProject || ! $mappingCoa) {
-                        $missing = [];
-                        if (! $mappingProject) $missing[] = "Project '{$bankProjectCode}'";
-                        if (! $mappingCoa) $missing[] = "COA '{$bankCoaCode}'";
-                        $errors[] = ['row' => $rowNumber, 'message' => implode(' dan ', $missing).' tidak ditemukan untuk mapping rekening. Import Integrated dan COA terlebih dahulu.'];
+                    if (! $mappingProject) {
+                        $errors[] = ['row' => $rowNumber, 'message' => "Project '{$bankProjectCode}' tidak ditemukan untuk mapping rekening. Import Integrated terlebih dahulu."];
                         $skipped++;
                         continue;
                     }
