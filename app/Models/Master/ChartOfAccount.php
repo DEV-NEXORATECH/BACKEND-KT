@@ -19,6 +19,7 @@ class ChartOfAccount extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'is_header' => 'boolean',
         'opening_balance' => 'decimal:2',
         'opening_balance_date' => 'date',
     ];
