@@ -800,12 +800,19 @@ abstract class BaseMasterController extends Controller
             }
 
             if ($this->modelClass === \App\Models\Master\BankAccount::class) {
-                $bankProjectCode = trim((string) ($payload['project_code'] ?? ''));
+                $bankProjectCode = trim((string) ($payload['project_code']
+                    ?? $payload['project_code_relation_no']
+                    ?? $payload['relation_no']
+                    ?? $payload['project']
+                    ?? ''));
                 // Depending on the spreadsheet header normalizer, COA Code
                 // may arrive as `coa_code` or as the model field
                 // `gl_account_id`. Treat both as an external COA code and
                 // resolve it to the real chart_of_accounts.id below.
-                $bankCoaCode = trim((string) ($payload['coa_code'] ?? $payload['gl_account_id'] ?? ''));
+                $bankCoaCode = trim((string) ($payload['coa_code']
+                    ?? $payload['co_a_code']
+                    ?? $payload['gl_account_id']
+                    ?? ''));
                 $mappingAccountName = trim((string) ($payload['account_name'] ?? ''));
                 $mappingStartDate = ! empty($payload['start_date']) ? $payload['start_date'] : null;
                 $mappingEndDate = ! empty($payload['end_date']) ? $payload['end_date'] : null;
