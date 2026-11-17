@@ -285,6 +285,36 @@ class IntegratedDonorGrantController extends Controller
                 }
             };
 
+            $decodeRows = static function ($value): array {
+                if (is_array($value)) return $value;
+                $value = trim((string) $value);
+                if ($value === '') return [];
+                $decoded = json_decode($value, true);
+                return is_array($decoded) ? array_values(array_filter($decoded, 'is_array')) : [];
+            };
+
+            $indexedRows = static function (array $values, string $prefix, array $fields, int $max = 10) use ($cleanDate): array {
+                $rows = [];
+                for ($index = 1; $index <= $max; $index++) {
+                    $row = [];
+                    $hasValue = false;
+                    foreach ($fields as $field => $aliases) {
+                        foreach ((array) $aliases as $alias) {
+                            $key = $prefix.$index.'_'.$alias;
+                            if (array_key_exists($key, $values) && trim((string) $values[$key]) !== '') {
+                                $row[$field] = in_array($field, ['start_date', 'end_date', 'due_date'], true)
+                                    ? $cleanDate($values[$key])
+                                    : trim((string) $values[$key]);
+                                $hasValue = true;
+                                break;
+                            }
+                        }
+                    }
+                    if ($hasValue) $rows[] = $row;
+                }
+                return $rows;
+            };
+
             $ignoredDonorCodes = [
                 'donor_code', 'field', 'contoh', 'urutan', 'tambah project', 'tambah grant',
                 'tambah donor', 'catatan', 'document type', 'no', 'keterangan', 'wajib'
@@ -372,7 +402,15 @@ class IntegratedDonorGrantController extends Controller
                         'total_budget' => $cleanNumber($values['project_budget'] ?? 0),
                         'status' => !empty($values['project_status']) ? trim((string) $values['project_status']) : 'draft',
                     ],
-                    'frameworks' => [], 'workplans' => [], 'deadlines' => [],
+                    'frameworks' => $decodeRows($values['framework_json'] ?? $values['framework_workplan_json'] ?? null),
+                    'workplans' => $indexedRows($values, 'workplan_', [
+                        'activity_code' => ['activity_code', 'code'], 'activity' => ['activity'], 'output_code' => ['output_code'],
+                        'start_date' => ['start_date'], 'end_date' => ['end_date'], 'status' => ['status'], 'baseline' => ['baseline'], 'notes' => ['notes'],
+                    ]),
+                    'deadlines' => $indexedRows($values, 'reporting_', [
+                        'report_type' => ['report_type', 'type'], 'period_label' => ['period_label', 'period'], 'due_date' => ['due_date'],
+                        'status' => ['status'], 'reminder_days' => ['reminder_days'], 'notes' => ['notes'],
+                    ]),
                 ];
             }
 
@@ -411,6 +449,24 @@ class IntegratedDonorGrantController extends Controller
                         array_merge($record['project'], ['program_id' => $programId, 'relation_no' => $relationNo, 'budget_currency_id' => $grant->currency_id, 'is_active' => true])
                     );
                     $this->syncProjectFiscalYears($project, $grant);
+                    $this->syncFrameworksAndWorkplans(
+                        $project,
+                        $grant,
+                        $donor,
+                        $relationNo,
+                        $record['frameworks'] ?? [],
+                        $record['workplans'] ?? [],
+                        $grant->fiscal_year_id
+                    );
+                    foreach ($record['deadlines'] ?? [] as $deadline) {
+                        $reportType = trim((string) ($deadline['report_type'] ?? ''));
+                        $dueDate = $deadline['due_date'] ?? null;
+                        if ($reportType === '' || empty($dueDate)) continue;
+                        GrantReportingDeadline::updateOrCreate(
+                            ['grant_agreement_id' => $grant->id, 'report_type' => $reportType, 'period_label' => ($deadline['period_label'] ?? null)],
+                            ['due_date' => $dueDate, 'status' => $deadline['status'] ?? 'upcoming', 'notes' => $deadline['notes'] ?? null, 'reminder_days' => (int) ($deadline['reminder_days'] ?? 7)]
+                        );
+                    }
                     $count++;
                 }
                 return $count;
@@ -425,14 +481,37 @@ class IntegratedDonorGrantController extends Controller
                 foreach ($frameworkRows as $row) {
                     $values = array_combine($frameworkHeaders, array_values($row));
                     $relation = trim((string) ($values['relation_no'] ?? ''));
-                    $code = trim((string) ($values['code'] ?? ''));
+                    $recordType = strtolower(trim((string) ($values['record_type'] ?? 'framework')));
+                    $code = trim((string) ($values['code'] ?? $values['code_output'] ?? ''));
+                    $description = trim((string) ($values['description'] ?? $values['description_activity'] ?? $code));
                     if ($relation === '' || $code === '' || strtolower($relation) === 'relation_no') continue;
                     $project = Project::withoutGlobalScope('fiscal_year_context')->where('relation_no', $relation)->first();
                     if (! $project) continue;
-                    ProjectLogframe::updateOrCreate(
+                    $logframe = ProjectLogframe::updateOrCreate(
                         ['project_id' => $project->id, 'code' => $code],
-                        ['relation_no' => $relation, 'fiscal_year_id' => $request->input('fiscal_year_id'), 'level' => $values['level'] ?? 'output', 'description' => $values['description'] ?? $code, 'indicator' => $values['indicator'] ?? null, 'baseline' => $values['baseline'] ?? null, 'target' => $values['target'] ?? null, 'period_start' => $values['start_date'] ?? null, 'period_end' => $values['end_date'] ?? null, 'is_active' => true]
+                        ['relation_no' => $relation, 'fiscal_year_id' => $request->input('fiscal_year_id'), 'level' => $values['level'] ?? 'output', 'description' => $description, 'indicator' => $values['indicator'] ?? null, 'baseline' => $values['baseline'] ?? null, 'target' => $values['target'] ?? null, 'period_start' => $values['start_date'] ?? null, 'period_end' => $values['end_date'] ?? null, 'is_active' => true]
                     );
+
+                    if ($recordType === 'workplan') {
+                        ProjectWorkplan::updateOrCreate(
+                            ['project_id' => $project->id, 'activity_code' => $code],
+                            [
+                                'relation_no' => $relation,
+                                'logframe_id' => $logframe->id,
+                                'grant_agreement_id' => $project->grant_agreement_id,
+                                'donor_id' => $project->grantAgreement?->donor_id,
+                                'fiscal_year_id' => $request->input('fiscal_year_id'),
+                                'output_code' => $values['output_code'] ?? null,
+                                'activity' => $description,
+                                'start_date' => $values['start_date'] ?? null,
+                                'end_date' => $values['end_date'] ?? null,
+                                'status' => $values['workplan_status'] ?? $values['status'] ?? 'planned',
+                                'baseline' => $values['baseline'] ?? null,
+                                'notes' => $values['notes'] ?? null,
+                                'is_active' => true,
+                            ]
+                        );
+                    }
                 }
             }
             // Process optional Donor Reporting sheet using the same fields as
