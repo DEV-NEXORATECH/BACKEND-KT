@@ -1099,10 +1099,14 @@ abstract class BaseMasterController extends Controller
                     // Re-imports must repair an existing incomplete bank row.
                     // Older imports could create the account before COA/project
                     // resolution, leaving gl_account_id or its mapping empty.
-                    $mappingMissing = $mappingProject && $mappingCoa
-                        ? ! $existingBank->projectCoaMappings()->where('project_id', $mappingProject->id)->exists()
+                    $existingMapping = $mappingProject && $mappingCoa
+                        ? $existingBank?->projectCoaMappings()->where('project_id', $mappingProject->id)->first()
+                        : null;
+                    $mappingNeedsRepair = $mappingProject && $mappingCoa
+                        ? ! $existingMapping || (int) $existingMapping->gl_account_id !== (int) $mappingCoa->id
                         : false;
-                    if ($existingBank && ($bankGlId && ! $existingBank->gl_account_id || $mappingMissing)) {
+                    $bankCoaNeedsRepair = $bankGlId && (int) ($existingBank?->gl_account_id ?? 0) !== (int) $bankGlId;
+                    if ($existingBank && ($bankCoaNeedsRepair || $mappingNeedsRepair)) {
                         $existingBank->update($payload);
                         if ($mappingProject && $mappingCoa) {
                             \App\Models\Master\BankAccountProjectCoa::updateOrCreate(
