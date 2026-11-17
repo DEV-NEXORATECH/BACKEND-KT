@@ -34,7 +34,7 @@ class UpdateChartOfAccountRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $parent = $this->filled('parent_id')
-            ? ChartOfAccount::find($this->integer('parent_id'))
+            ? ChartOfAccount::withoutGlobalScope('fiscal_year_context')->find($this->integer('parent_id'))
             : null;
         $this->merge([
             'level' => $parent ? ((int) $parent->level + 1) : 1,
@@ -57,7 +57,8 @@ class UpdateChartOfAccountRequest extends FormRequest
                 return;
             }
             if (! $this->filled('parent_id')) return;
-            $parent = ChartOfAccount::find($this->integer('parent_id'));
+            $parent = ChartOfAccount::withoutGlobalScope('fiscal_year_context')
+                ->find($this->integer('parent_id'));
             if (! $parent || (! $parent->is_header && (int) $parent->level !== 1)) {
                 $validator->errors()->add('parent_id', 'Parent Account harus merupakan Header Account.');
             }
