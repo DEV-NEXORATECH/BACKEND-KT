@@ -105,7 +105,7 @@ class ProcurementWaiverController extends Controller
             'vendor_name' => ['nullable', 'string', 'max:200'],
             'total_amount' => ['required', 'numeric', 'min:0'],
             'description' => ['required', 'string', 'max:255'],
-            'justification' => ['required', 'string'],
+            'justification' => ['nullable', 'string'],
             'attachment_name' => ['nullable', 'string', 'max:255'],
             'attachment_path' => ['nullable', 'string', 'max:255'],
             'date' => ['nullable', 'date'],
