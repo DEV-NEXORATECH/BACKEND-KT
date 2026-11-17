@@ -59,7 +59,8 @@ class BankAccountProjectCoa extends Model
 
     public function glAccount()
     {
-        return $this->belongsTo(ChartOfAccount::class, 'gl_account_id');
+        return $this->belongsTo(ChartOfAccount::class, 'gl_account_id')
+            ->withoutGlobalScope('fiscal_year_context');
     }
 
     public function fiscalYear()
