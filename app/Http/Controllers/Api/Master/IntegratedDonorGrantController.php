@@ -16,6 +16,7 @@ use App\Models\Master\ProjectWorkplan;
 use App\Models\Master\BudgetCategory;
 use App\Models\Master\ChartOfAccount;
 use App\Models\Master\GrantReportingDeadline;
+use App\Models\Master\BankAccount;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -219,7 +220,7 @@ class IntegratedDonorGrantController extends Controller
         }
         $rows = [[
             'Relation No', 'Donor Code', 'Donor Name', 'Donor Type', 'Lead Applicant / Intermediary', 'Donor Country', 'Donor Contact', 'Donor Email', 'Donor Phone',
-            'Grant No', 'Agreement No', 'Agreement Date', 'Agreement Name', 'Grant Value', 'Currency', 'Grant Status', 'Grant Start', 'Grant End', 'Reporting Period', 'Donor Fiscal Calendar', 'Terms & Conditions',
+            'Grant No', 'Agreement No', 'Agreement Date', 'Agreement Name', 'Grant Value', 'Currency', 'Bank Account Number', 'Grant Status', 'Grant Start', 'Grant End', 'Reporting Period', 'Donor Fiscal Calendar', 'Terms & Conditions',
             'Programme Code', 'Programme Name', 'Project Code', 'Project Name', 'Project Theme', 'Project Manager / PIC', 'Project Start', 'Project End', 'Project Budget',
             'Framework Count', 'Workplan Count', 'Budget Line Count', 'Reporting Deadline Count',
         ]];
@@ -231,7 +232,7 @@ class IntegratedDonorGrantController extends Controller
                         $project?->relation_no ?? $grant->relation_no,
                         $donor->code, $donor->name, $donor->type, $donor->lead_applicant, $donor->country, $donor->contact_person, $donor->email, $donor->phone,
                         $grant->grant_no, $grant->agreement_no, $grant->agreement_date, $grant->agreement_name, $grant->grant_value,
-                        $grant->currency?->code, $grant->status, optional($grant->start_date)->format('Y-m-d'), optional($grant->end_date)->format('Y-m-d'),
+                        $grant->currency?->code, $grant->bankAccount?->account_number, $grant->status, optional($grant->start_date)->format('Y-m-d'), optional($grant->end_date)->format('Y-m-d'),
                         $grant->reporting_period, $grant->donor_fiscal_calendar, $grant->terms_conditions,
                         $project?->program?->code, $project?->program?->name, $project?->code, $project?->name, $project?->theme, $project?->manager_name,
                         optional($project?->start_date)->format('Y-m-d'), optional($project?->end_date)->format('Y-m-d'), $project?->total_budget,
@@ -356,6 +357,21 @@ class IntegratedDonorGrantController extends Controller
                     $currencyId = DB::table('currencies')->value('id');
                 }
 
+                $bankAccountNumber = trim((string) ($values['bank_account_number'] ?? $values['bank_account'] ?? ''));
+                $bankAccountId = null;
+                if ($bankAccountNumber !== '') {
+                    $bankAccount = BankAccount::withoutGlobalScope('fiscal_year_context')
+                        ->where('account_number', $bankAccountNumber)->first();
+                    if (! $bankAccount) {
+                        throw new \InvalidArgumentException("Bank Account {$bankAccountNumber} tidak ditemukan.");
+                    }
+                    if ((int) $bankAccount->currency_id !== (int) $currencyId) {
+                        $bankCurrency = DB::table('currencies')->where('id', $bankAccount->currency_id)->value('code');
+                        throw new \InvalidArgumentException("Currency grant {$currencyCodeUpper} tidak cocok dengan rekening {$bankAccountNumber} ({$bankCurrency}).");
+                    }
+                    $bankAccountId = $bankAccount->id;
+                }
+
                 $grantStartDate = $cleanDate($values['grant_start_date'] ?? null, now()->toDateString());
                 $grantEndDate = $cleanDate($values['grant_end_date'] ?? null, now()->addYear()->toDateString());
                 $agreementDate = $cleanDate($values['agreement_date'] ?? null, null);
@@ -384,6 +400,7 @@ class IntegratedDonorGrantController extends Controller
                         'donor_fiscal_calendar' => !empty($values['donor_fiscal_calendar']) ? trim((string) $values['donor_fiscal_calendar']) : 'JAN_DEC',
                         'grant_value' => $cleanNumber($values['grant_value'] ?? 0),
                         'currency_id' => $currencyId,
+                        'bank_account_id' => $bankAccountId,
                         'status' => !empty($values['grant_status']) ? trim((string) $values['grant_status']) : 'draft',
                         'start_date' => $grantStartDate,
                         'end_date' => $grantEndDate,
