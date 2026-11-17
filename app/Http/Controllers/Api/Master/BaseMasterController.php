@@ -829,7 +829,7 @@ abstract class BaseMasterController extends Controller
                         ->value('id');
                 }
                 if ($bankCoaCode !== '') {
-                    $payload['gl_account_id'] = \App\Models\Master\ChartOfAccount::query()
+                    $payload['gl_account_id'] = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')
                         ->where(function ($query) use ($bankCoaCode) {
                             $query->where('code', $bankCoaCode);
                             if (is_numeric($bankCoaCode)) {
@@ -893,7 +893,9 @@ abstract class BaseMasterController extends Controller
                                 ->orWhere('relation_no', $bankProjectCode)
                                 ->orWhere('name', $bankProjectCode);
                         })->first();
-                    $coa = \App\Models\Master\ChartOfAccount::query()->where('code', $bankCoaCode)->first();
+                    $coa = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')
+                        ->where('code', $bankCoaCode)
+                        ->first();
                     if ($project && $coa) {
                         \App\Models\Master\BankAccountProjectCoa::updateOrCreate(
                             [
@@ -1107,13 +1109,15 @@ abstract class BaseMasterController extends Controller
                 if ($this->modelClass === \App\Models\Master\BankAccount::class) {
                     $importedBankAccounts[$createdRecord->account_number] = $createdRecord;
                     if (! empty($bankProjectCode) && ! empty($bankCoaCode)) {
-                        $project = \App\Models\Master\Project::withoutGlobalScope('fiscal_year_context')
+                    $project = \App\Models\Master\Project::withoutGlobalScope('fiscal_year_context')
                             ->where(function ($query) use ($bankProjectCode) {
                                 $query->where('code', $bankProjectCode)
                                     ->orWhere('relation_no', $bankProjectCode)
                                     ->orWhere('name', $bankProjectCode);
                             })->first();
-                        $coa = \App\Models\Master\ChartOfAccount::query()->where('code', $bankCoaCode)->first();
+                        $coa = \App\Models\Master\ChartOfAccount::withoutGlobalScope('fiscal_year_context')
+                            ->where('code', $bankCoaCode)
+                            ->first();
                         if ($project && $coa) {
                             \App\Models\Master\BankAccountProjectCoa::updateOrCreate(
                                 [
