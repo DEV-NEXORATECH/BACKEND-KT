@@ -402,7 +402,7 @@ class ProcurementFulfillmentController extends Controller
 
         $data = $request->validate([
             'goods_receipt_id' => ['nullable', 'integer', 'exists:goods_receipts,id'],
-            'invoice_number' => ['required', 'string', 'max:80', 'unique:supplier_invoices,invoice_number'],
+            'invoice_number' => ['nullable', 'string', 'max:80'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date'],
             'tax_id' => ['nullable', 'integer', 'exists:taxes,id'],
@@ -468,7 +468,7 @@ class ProcurementFulfillmentController extends Controller
             $invoice = SupplierInvoice::create([
                 'purchase_request_id' => $purchaseRequest->id,
                 'vendor_id' => $purchaseRequest->vendor_id,
-                'invoice_number' => $data['invoice_number'],
+                'invoice_number' => 'DIR-'.$purchaseRequest->pr_number.'-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'invoice_date' => $data['invoice_date'],
                 'due_date' => $data['due_date'] ?? null,
                 'notes' => trim(($data['notes'] ?? '')."\nPayment method: ".strtoupper($data['payment_method'])),
@@ -485,7 +485,7 @@ class ProcurementFulfillmentController extends Controller
                 'payment_number' => 'DIR-PAY-'.now()->format('YmdHis').'-'.random_int(100, 999),
                 'payment_date' => $data['invoice_date'],
                 'amount' => $purchaseRequest->total_amount,
-                'reference' => $data['invoice_number'],
+                'reference' => $invoice->invoice_number,
                 'status' => 'draft',
                 'created_by' => $request->user()->id,
             ]);

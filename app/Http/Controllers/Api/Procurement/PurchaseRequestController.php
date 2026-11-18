@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Procurement;
 use App\Http\Controllers\Controller;
 use App\Models\Budget\BudgetCommitment;
 use App\Models\Procurement\PurchaseRequest;
+use App\Models\Procurement\SupplierInvoice;
 use App\Models\Master\ProcurementItem;
 use App\Models\Master\BudgetLine;
 use App\Models\Master\Project;
@@ -39,6 +40,7 @@ class PurchaseRequestController extends Controller
         'lines.procurementItem.unitOfMeasure:id,code,name',
         'rfqs.quotations:id,rfq_id',
         'rfqs.cba:id,rfq_id,status',
+        'supplierInvoices:id,purchase_request_id,invoice_number,status,match_status,total_amount',
     ];
 
     public function pdf(Request $request, PurchaseRequest $purchaseRequest)
@@ -628,6 +630,13 @@ class PurchaseRequestController extends Controller
                 'quotation_count' => $rfq->quotations->count(),
                 'cba_id' => $rfq->cba?->id,
                 'cba_status' => $rfq->cba?->status,
+            ])->values(),
+            'supplier_invoices' => $purchaseRequest->supplierInvoices->map(fn ($invoice) => [
+                'id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'status' => $invoice->status,
+                'match_status' => $invoice->match_status,
+                'total_amount' => $invoice->total_amount,
             ])->values(),
             'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('procurement', $purchaseRequest, request()->user()),
             'decision_notes' => $purchaseRequest->decision_notes,
