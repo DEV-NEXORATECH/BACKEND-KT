@@ -186,7 +186,9 @@ class JournalController extends Controller
             $journal = Journal::withoutGlobalScope('fiscal_year_context')->create([
                 ...$payload,
                 'journal_number' => $payload['journal_number'] ?? $this->nextJournalNumber(),
-                'status' => 'draft',
+                'status' => 'posted',
+                'posted_by' => request()->user()->id,
+                'posted_at' => now(),
             ]);
 
             $this->syncLines($journal, $lines);
@@ -197,7 +199,7 @@ class JournalController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Journal berhasil dibuat.',
+            'message' => 'Journal berhasil dibuat dan langsung diposting.',
             'data' => $this->formatJournal($journal),
         ], Response::HTTP_CREATED);
     }
@@ -348,7 +350,12 @@ class JournalController extends Controller
                 $this->guardOpenPeriod($validated['journal_date']);
                 DB::transaction(function () use ($validated, &$created) {
                     $lines = $validated['lines']; unset($validated['lines']);
-                    $journal = Journal::create([...$validated, 'status' => 'draft']);
+                    $journal = Journal::create([
+                        ...$validated,
+                        'status' => 'posted',
+                        'posted_by' => request()->user()->id,
+                        'posted_at' => now(),
+                    ]);
                     $this->syncLines($journal, $lines); $created++;
                 });
             } catch (\Throwable $error) {
