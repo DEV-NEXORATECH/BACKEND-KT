@@ -987,8 +987,8 @@ class ReportsDashboardController extends Controller
         ]);
         $postedLines = $this->postedLines($period['start'], $period['end'], $projectId, $budgetLineId, $period['fiscal_year_id'], $relationNo, $grantAgreementId);
         $budgetRows = $this->applyPeriodActuals($budgetRows->all(), $postedLines);
-        $financialStatement = $this->financialStatement($postedLines, ! $projectId);
         $isScoped = $relationNo || $projectId || $grantAgreementId || $budgetLineId;
+        $financialStatement = $this->financialStatement($postedLines, ! $isScoped);
         $isProjectReport = $request->is('api/v1/reports/project');
         $scopedTransactions = $postedLines
             ->filter(fn (JournalLine $line) => $line->account?->account_type === 'expense')
@@ -1058,6 +1058,8 @@ class ReportsDashboardController extends Controller
                 $request->input('as_of', $period['end']?->toDateString()),
                 $period['fiscal_year_id'],
                 $request->integer('project_id') ?: null,
+                $relationNo,
+                $grantAgreementId,
             ),
             'budget_vs_actual' => [
                 'totals' => $this->budgetTotals($budgetRows),
@@ -1884,19 +1886,33 @@ class ReportsDashboardController extends Controller
         ];
     }
 
-    private function balanceSheetData(?string $asOf, ?int $fiscalYearId = null, ?int $projectId = null): array
+    private function balanceSheetData(?string $asOf, ?int $fiscalYearId = null, ?int $projectId = null, ?string $relationNo = null, ?string $grantAgreementId = null): array
     {
         $date = $asOf ? CarbonImmutable::parse($asOf)->endOfDay() : CarbonImmutable::now()->endOfDay();
         $lines = JournalLine::query()
             ->whereHas('journal', fn (Builder $query) => $query->where('status', 'posted')->whereDate('journal_date', '<=', $date)->when($fiscalYearId, fn (Builder $yearQuery) => $yearQuery->where('fiscal_year_id', $fiscalYearId)))
-            ->when($projectId, fn (Builder $query) => $query->where('project_id', $projectId))
+            ->when($projectId, fn (Builder $query) => $query->where(function (Builder $scope) use ($projectId) {
+                $scope->where('project_id', $projectId)
+                    ->orWhereHas('budgetLine', fn (Builder $budgetLine) => $budgetLine->where('project_id', $projectId));
+            }))
+            ->when($grantAgreementId, fn (Builder $query) => $query->where(function (Builder $scope) use ($grantAgreementId) {
+                $scope->where('grant_agreement_id', $grantAgreementId)
+                    ->orWhereHas('project', fn (Builder $project) => $project->where('grant_agreement_id', $grantAgreementId))
+                    ->orWhereHas('budgetLine', fn (Builder $budgetLine) => $budgetLine->where('grant_agreement_id', $grantAgreementId));
+            }))
+            ->when($relationNo, fn (Builder $query) => $query->where(function (Builder $scope) use ($relationNo) {
+                $scope->where('relation_no', $relationNo)
+                    ->orWhereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo))
+                    ->orWhereHas('grantAgreement', fn (Builder $grant) => $grant->where('relation_no', $relationNo))
+                    ->orWhereHas('budgetLine', fn (Builder $budgetLine) => $budgetLine->where('relation_no', $relationNo));
+            }))
             ->get();
 
         $accounts = ChartOfAccount::query()
             ->whereIn('account_type', ['asset', 'liability', 'equity', 'revenue', 'expense'])
             ->orderBy('code')
             ->get()
-            ->map(function (ChartOfAccount $account) use ($lines, $projectId) {
+            ->map(function (ChartOfAccount $account) use ($lines, $projectId, $relationNo, $grantAgreementId) {
             $items = $lines->where('account_id', $account->id);
             if (! $account || ! in_array($account->account_type, ['asset', 'liability', 'equity', 'revenue', 'expense'], true)) {
                 return null;
@@ -1905,7 +1921,7 @@ class ReportsDashboardController extends Controller
             $credit = (float) $items->sum('credit');
             // Opening balances belong to the organisation unless they have an
             // explicit project dimension. They must not leak into a project-only report.
-            $opening = $projectId ? 0.0 : (float) ($account->opening_balance ?? 0);
+            $opening = ($projectId || $relationNo || $grantAgreementId) ? 0.0 : (float) ($account->opening_balance ?? 0);
             $balance = $opening + ($account->normal_balance === 'credit' ? $credit - $debit : $debit - $credit);
             return [
                 'account_id' => $account->id,
