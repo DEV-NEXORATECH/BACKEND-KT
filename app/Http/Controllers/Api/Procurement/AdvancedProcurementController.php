@@ -23,7 +23,7 @@ class AdvancedProcurementController extends Controller
         return match (true) {
             $amount <= 2000000 => ['process' => 'direct', 'min_quotes' => 0, 'requires_cba' => false],
             $amount <= 10000000 => ['process' => 'direct', 'min_quotes' => 1, 'requires_cba' => false],
-            $amount <= 50000000 => ['process' => 'limited_tender', 'min_quotes' => 3, 'requires_cba' => false],
+            $amount <= 50000000 => ['process' => 'limited_tender', 'min_quotes' => 3, 'requires_cba' => true],
             $amount <= 150000000 => ['process' => 'limited_tender', 'min_quotes' => 3, 'requires_cba' => true],
             $amount <= 250000000 => ['process' => 'limited_tender', 'min_quotes' => 5, 'requires_cba' => true],
             default => ['process' => 'open_tender', 'min_quotes' => 5, 'requires_cba' => true, 'tender_committee_size' => 5],
@@ -192,7 +192,7 @@ class AdvancedProcurementController extends Controller
         $policy = $this->procurementThreshold((float) $rfq->purchaseRequest?->total_amount);
         if (! $policy['requires_cba']) {
             throw ValidationException::withMessages([
-                'status' => 'CBA hanya wajib untuk nilai pengadaan di atas Rp50.000.000.',
+                'status' => 'CBA hanya wajib untuk nilai pengadaan mulai Rp10.000.001.',
             ]);
         }
         if ($rfq->quotations()->count() < $policy['min_quotes']) {

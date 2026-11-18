@@ -224,6 +224,10 @@ class ProcurementFulfillmentController extends Controller
             throw ValidationException::withMessages(['status' => 'PO hanya dapat dibuat dari PR approved.']);
         }
 
+        if ((float) $purchaseRequest->total_amount > 10000000) {
+            throw ValidationException::withMessages(['status' => 'PR di atas Rp10.000.000 wajib melalui RFQ, quotation, dan CBA sebelum PO/Contract.']);
+        }
+
         $data = $request->validate([
             'po_number' => ['nullable', 'string', 'max:80', 'unique:purchase_orders,po_number'],
             'po_date' => ['required', 'date'],

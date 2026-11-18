@@ -90,6 +90,11 @@ class PurchaseRequest extends Model
         return $this->belongsTo(Vendor::class);
     }
 
+    public function rfqs(): HasMany
+    {
+        return $this->hasMany(Rfq::class);
+    }
+
     public function submittedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'submitted_by');

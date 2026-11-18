@@ -37,6 +37,8 @@ class PurchaseRequestController extends Controller
         'lines.budgetLine.grantAgreement.donor:id,code,name',
         'lines.procurementItem:id,code,name,item_type,unit_of_measure_id,default_unit_price',
         'lines.procurementItem.unitOfMeasure:id,code,name',
+        'rfqs.quotations:id,rfq_id',
+        'rfqs.cba:id,rfq_id,status',
     ];
 
     public function pdf(Request $request, PurchaseRequest $purchaseRequest)
@@ -621,6 +623,12 @@ class PurchaseRequestController extends Controller
             ] : null,
             'justification' => $purchaseRequest->justification,
             'status' => $purchaseRequest->status,
+            'rfqs' => $purchaseRequest->rfqs->map(fn ($rfq) => [
+                'id' => $rfq->id,
+                'quotation_count' => $rfq->quotations->count(),
+                'cba_id' => $rfq->cba?->id,
+                'cba_status' => $rfq->cba?->status,
+            ])->values(),
             'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('procurement', $purchaseRequest, request()->user()),
             'decision_notes' => $purchaseRequest->decision_notes,
             'total_amount' => $purchaseRequest->total_amount,
