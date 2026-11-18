@@ -128,7 +128,7 @@ class AdvancedProcurementController extends Controller
             return $rfq->load(['purchaseRequest:id,pr_number,status', 'vendors:id,code,name', 'quotations.vendor:id,code,name', 'cba.selectedVendor:id,code,name']);
         });
 
-        return response()->json(['success' => true, 'message' => 'RFQ berhasil dibuat dan vendor diundang.', 'data' => $this->formatRfq($rfq)], Response::HTTP_CREATED);
+        return response()->json(['success' => true, 'message' => 'RFQ berhasil dibuat sebagai dokumen internal; tidak dikirim ke vendor melalui sistem.', 'data' => $this->formatRfq($rfq)], Response::HTTP_CREATED);
     }
 
     public function submitQuotation(Rfq $rfq, Request $request): JsonResponse
@@ -346,6 +346,59 @@ class AdvancedProcurementController extends Controller
             'status' => $po->status,
             'total_amount' => $po->total_amount,
             'lines' => $po->lines,
+        ]], Response::HTTP_CREATED);
+    }
+
+    public function createPoFromRfq(Rfq $rfq, Request $request): JsonResponse
+    {
+        $rfq->load(['purchaseRequest.lines', 'quotations']);
+        $amount = (float) ($rfq->purchaseRequest?->total_amount ?? 0);
+        $policy = $this->procurementThreshold($amount);
+        if ($amount <= 2000000 || $policy['requires_cba']) {
+            throw ValidationException::withMessages(['status' => 'Threshold ini tidak menggunakan jalur PO langsung dari RFQ.']);
+        }
+        if ($rfq->quotations()->count() < $policy['min_quotes']) {
+            throw ValidationException::withMessages(['quotations' => "Minimal {$policy['min_quotes']} quotation harus tercatat sebelum PO/Contract."]);
+        }
+        $data = $request->validate([
+            'selected_quotation_id' => ['required', 'integer', 'exists:vendor_quotations,id'],
+            'justification_of_decision' => ['required', 'string', 'max:2000'],
+            'po_date' => ['required', 'date'],
+            'contract_number' => ['nullable', 'string', 'max:80'],
+            'contract_date' => ['nullable', 'date'],
+            'terms' => ['nullable', 'string'],
+        ]);
+        $quotation = $rfq->quotations()->whereKey($data['selected_quotation_id'])->firstOrFail();
+        $pr = $rfq->purchaseRequest;
+        $po = DB::transaction(function () use ($rfq, $pr, $quotation, $data) {
+            $po = PurchaseOrder::create([
+                'purchase_request_id' => $pr->id,
+                'rfq_id' => $rfq->id,
+                'vendor_id' => $quotation->vendor_id,
+                'po_number' => $this->nextPoNumber(),
+                'contract_number' => $data['contract_number'] ?? null,
+                'po_date' => $data['po_date'],
+                'contract_date' => $data['contract_date'] ?? null,
+                'terms' => trim(($data['terms'] ?? '')."\nJustification of decision: ".$data['justification_of_decision']),
+                'status' => 'draft',
+                'created_by' => request()->user()->id,
+            ]);
+            foreach ($pr->lines as $line) {
+                $po->lines()->create([
+                    'purchase_request_line_id' => $line->id,
+                    'budget_line_id' => $line->budget_line_id,
+                    'item_description' => $line->item_description,
+                    'quantity' => $line->quantity,
+                    'unit_price' => $line->unit_price,
+                    'total_amount' => $line->total_amount,
+                    'line_order' => $line->line_order,
+                ]);
+            }
+            return $po->load(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']);
+        });
+        return response()->json(['success' => true, 'message' => 'PO/Contract berhasil dibuat dari RFQ.', 'data' => [
+            'id' => $po->id, 'po_number' => $po->po_number, 'contract_number' => $po->contract_number,
+            'vendor_name' => $po->vendor?->name, 'status' => $po->status, 'total_amount' => $po->total_amount, 'lines' => $po->lines,
         ]], Response::HTTP_CREATED);
     }
 

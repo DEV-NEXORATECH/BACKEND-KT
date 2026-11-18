@@ -285,6 +285,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('cba/{cba}/submit', [AdvancedProcurementController::class, 'submitCba'])->middleware('permission:procurement.cba.approve');
         Route::post('cba/{cba}/approve', [AdvancedProcurementController::class, 'approveCba'])->middleware('permission:procurement.cba.approve');
         Route::post('cba/{cba}/purchase-orders', [AdvancedProcurementController::class, 'createPoFromCba'])->middleware('permission:procurement.po.create');
+        Route::post('rfqs/{rfq}/purchase-orders', [AdvancedProcurementController::class, 'createPoFromRfq'])->middleware('permission:procurement.po.create');
         Route::get('scns', [SupplierContractNotificationController::class, 'index'])->middleware('permission:procurement.pr.view');
         Route::get('scns/{supplierContractNotification}', [SupplierContractNotificationController::class, 'show'])->middleware('permission:procurement.pr.view');
         Route::put('scns/{supplierContractNotification}', [SupplierContractNotificationController::class, 'update'])->middleware('permission:procurement.pr.create');
