@@ -40,6 +40,21 @@ abstract class BaseMasterController extends Controller
             // exposed as operational Budget Line master data or dropdowns.
             if ($this->modelClass === \App\Models\Master\BudgetLine::class) {
                 $query->where('line_code', 'not like', 'AI-ALERT-%');
+
+                // Budget detail pages are scoped by the relation/project/grant
+                // in the URL. Apply all three dimensions at database level so
+                // unrelated budget lines cannot leak into the detail page.
+                $query
+                    ->when($request->filled('project_id'), fn ($builder) => $builder->where('project_id', $request->integer('project_id')))
+                    ->when($request->filled('grant_agreement_id'), fn ($builder) => $builder->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+                    ->when($request->filled('relation_no'), function ($builder) use ($request) {
+                        $relationNo = trim((string) $request->query('relation_no'));
+                        $builder->where(function ($scope) use ($relationNo) {
+                            $scope->where('relation_no', $relationNo)
+                                ->orWhereHas('project', fn ($project) => $project->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo))
+                                ->orWhereHas('grantAgreement', fn ($grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo));
+                        });
+                    });
             }
 
             // An explicitly selected fiscal year must isolate period-specific
@@ -129,7 +144,7 @@ abstract class BaseMasterController extends Controller
             }
 
             $perPage = (int) $request->query('per_page', 10);
-            if ($perPage > 100 || $perPage < 1) {
+            if ($perPage > 500 || $perPage < 1) {
                 $perPage = 10;
             }
 
