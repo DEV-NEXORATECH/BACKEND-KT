@@ -16,6 +16,7 @@ use App\Models\Master\ChartOfAccount;
 use App\Models\Master\FiscalYear;
 use App\Models\Master\GrantReportingDeadline;
 use App\Models\Budget\ForecastEntry;
+use App\Models\Budget\ForecastRule;
 use App\Models\Procurement\PurchaseOrder;
 use App\Models\Procurement\PurchaseRequest;
 use App\Models\Procurement\SupplierInvoice;
@@ -1451,6 +1452,49 @@ class ReportsDashboardController extends Controller
             ->latest('period_date')->limit(500)->get();
 
         return response()->json(['success' => true, 'data' => $entries]);
+    }
+
+    public function forecastRules(Request $request): JsonResponse
+    {
+        $rules = ForecastRule::query()
+            ->when($request->filled('fiscal_year_id'), fn (Builder $q) => $q->where('fiscal_year_id', $request->integer('fiscal_year_id')))
+            ->when($request->filled('grant_agreement_id'), fn (Builder $q) => $q->where('grant_agreement_id', $request->integer('grant_agreement_id')))
+            ->when($request->filled('project_id'), fn (Builder $q) => $q->where('project_id', $request->integer('project_id')))
+            ->when($request->filled('relation_no'), fn (Builder $q) => $q->where('relation_no', $request->string('relation_no')->trim()->toString()))
+            ->orderBy('cost_category')->get();
+
+        return response()->json(['success' => true, 'data' => $rules]);
+    }
+
+    public function storeForecastRules(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
+            'grant_agreement_id' => 'nullable|integer|exists:grant_agreements,id',
+            'project_id' => 'nullable|integer|exists:projects,id',
+            'relation_no' => 'nullable|string|max:100',
+            'rules' => 'required|array',
+            'rules.*.cost_category' => 'required|string|max:255',
+            'rules.*.direction' => 'required|in:increase,decrease',
+            'rules.*.mode' => 'required|in:percentage,idr',
+            'rules.*.value' => 'required|numeric|min:0',
+        ]);
+
+        $scope = collect($data)->only(['fiscal_year_id', 'grant_agreement_id', 'project_id', 'relation_no'])->all();
+        $scope['created_by'] = $request->user()?->id;
+        $saved = collect($data['rules'])->map(function (array $rule) use ($scope) {
+            $query = ForecastRule::query();
+            foreach ($scope as $key => $value) {
+                if ($key === 'created_by') continue;
+                $value === null ? $query->whereNull($key) : $query->where($key, $value);
+            }
+            $entry = $query->where('cost_category', $rule['cost_category'])->first() ?? new ForecastRule();
+            $entry->fill(array_merge($scope, $rule));
+            $entry->save();
+            return $entry;
+        });
+
+        return response()->json(['success' => true, 'data' => $saved->values()]);
     }
 
     public function storeForecastEntry(Request $request): JsonResponse
