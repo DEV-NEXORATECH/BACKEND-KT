@@ -129,16 +129,16 @@ class GrantDisbursementRequestController extends Controller
     public function baseline(Request $request)
     {
         $validated = $request->validate([
-            'grant_agreement_id' => ['required', 'integer', 'exists:grant_agreements,id'],
+            'grant_agreement_id' => ['nullable', 'integer', 'exists:grant_agreements,id'],
             'quarter' => ['nullable', 'in:Q1,Q2,Q3,Q4'],
             'relation_no' => ['nullable', 'string', 'max:100'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
         ]);
-        $grantId = (int) $validated['grant_agreement_id'];
+        $grantId = ! empty($validated['grant_agreement_id']) ? (int) $validated['grant_agreement_id'] : null;
         $quarter = $validated['quarter'] ?? 'Q1';
 
-        $grant = GrantAgreement::query()
+        $grant = $grantId ? GrantAgreement::query()
             ->withoutGlobalScope('fiscal_year_context')
             ->with([
                 'fiscalYear:id,year,name',
@@ -147,8 +147,8 @@ class GrantDisbursementRequestController extends Controller
                 'bankAccount',
                 'projects' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context'),
             ])
-            ->findOrFail($grantId);
-        if ($request->filled('fiscal_year_id')) {
+            ->findOrFail($grantId) : null;
+        if ($grant && $request->filled('fiscal_year_id')) {
             $selectedFiscalYear = \App\Models\Master\FiscalYear::query()->find($request->integer('fiscal_year_id'));
             $matchesFiscalYear = (int) $grant->fiscal_year_id === $request->integer('fiscal_year_id')
                 || (! $grant->fiscal_year_id && $selectedFiscalYear
@@ -160,7 +160,7 @@ class GrantDisbursementRequestController extends Controller
                 ]);
             }
         }
-        if ($request->filled('relation_no')) {
+        if ($grant && $request->filled('relation_no')) {
             $relationNo = trim((string) $request->input('relation_no'));
             $matchesRelation = ($grant->relation_no && strcasecmp($grant->relation_no, $relationNo) === 0)
                 || $grant->projects()->where('relation_no', $relationNo)->exists();
@@ -174,7 +174,24 @@ class GrantDisbursementRequestController extends Controller
 
         $budgetLines = BudgetLine::withoutGlobalScope('fiscal_year_context')
             ->with(['activity', 'glAccount', 'currency', 'project' => fn ($q) => $q->withoutGlobalScope('fiscal_year_context')->select(['id', 'relation_no'])])
-            ->where('grant_agreement_id', $grantId)
+            ->when($grantId, fn ($q) => $q->where('grant_agreement_id', $grantId))
+            ->when($request->filled('fiscal_year_id'), function ($q) use ($request) {
+                $fiscalYearId = $request->integer('fiscal_year_id');
+                $q->where(function ($scope) use ($fiscalYearId) {
+                    $scope->where('fiscal_year_id', $fiscalYearId)
+                        ->orWhereNull('fiscal_year_id')
+                        ->orWhereHas('project', fn ($project) => $project->withoutGlobalScope('fiscal_year_context')->where('fiscal_year_id', $fiscalYearId))
+                        ->orWhereHas('grantAgreement', fn ($grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('fiscal_year_id', $fiscalYearId));
+                });
+            })
+            ->when($request->filled('relation_no'), function ($q) use ($request) {
+                $relationNo = trim((string) $request->input('relation_no'));
+                $q->where(function ($scope) use ($relationNo) {
+                    $scope->where('relation_no', $relationNo)
+                        ->orWhereHas('project', fn ($project) => $project->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo))
+                        ->orWhereHas('grantAgreement', fn ($grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo));
+                });
+            })
             ->when($request->filled('project_id'), fn ($q) => $q->where('project_id', $request->integer('project_id')))
             ->where('is_active', true)
             ->orderBy('id')
@@ -188,7 +205,7 @@ class GrantDisbursementRequestController extends Controller
             ->groupBy('budget_line_id')
             ->pluck('actual_amount', 'budget_line_id');
 
-        $contractRate = (float) ($grant->exchange_rate_contract ?: 1);
+        $contractRate = (float) ($grant?->exchange_rate_contract ?: 1);
 
         $items = $budgetLines->map(function ($line) use ($quarter, $contractRate, $grant, $historicalActuals) {
             $allocations = is_array($line->period_allocations) ? $line->period_allocations : [];
@@ -207,7 +224,7 @@ class GrantDisbursementRequestController extends Controller
 
             return [
                 'budget_line_id' => $line->id,
-                'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: $grant->relation_no),
+                'relation_no' => $line->relation_no ?: ($line->project?->relation_no ?: $grant?->relation_no),
                 'line_code' => $line->line_code,
                 'description' => $line->description,
                 'sub_output_code' => $line->sub_output_code,
@@ -231,16 +248,16 @@ class GrantDisbursementRequestController extends Controller
         return response()->json([
             'success' => true,
             'grant' => [
-                'id' => $grant->id,
-                'fiscal_year_id' => $grant->fiscal_year_id,
-                'fiscal_year' => $grant->fiscalYear?->year,
-                'relation_no' => $grant->relation_no,
-                'grant_no' => $grant->grant_no,
-                'agreement_name' => $grant->agreement_name,
-                'donor_name' => $grant->donor->name ?? '—',
-                'currency_code' => $grant->currency->code ?? 'IDR',
+                'id' => $grant?->id,
+                'fiscal_year_id' => $grant?->fiscal_year_id,
+                'fiscal_year' => $grant?->fiscalYear?->year,
+                'relation_no' => $grant?->relation_no,
+                'grant_no' => $grant?->grant_no,
+                'agreement_name' => $grant?->agreement_name,
+                'donor_name' => $grant?->donor?->name ?? '—',
+                'currency_code' => $grant?->currency?->code ?? 'IDR',
                 'contract_fx_rate' => $contractRate,
-                'bank_account' => $grant->bankAccount ? [
+                'bank_account' => $grant?->bankAccount ? [
                     'id' => $grant->bankAccount->id,
                     'bank_name' => $grant->bankAccount->bank_name,
                     'account_number' => $grant->bankAccount->account_number,
