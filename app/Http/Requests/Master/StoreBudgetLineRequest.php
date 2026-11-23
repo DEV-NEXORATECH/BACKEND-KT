@@ -25,6 +25,7 @@ class StoreBudgetLineRequest extends FormRequest
             'grant_agreement_id' => 'nullable|integer|exists:grant_agreements,id',
             'project_id' => 'nullable|integer|exists:projects,id',
             'relation_no' => 'nullable|string|max:100',
+            'budget_name' => 'nullable|required_without_all:relation_no,grant_agreement_id,project_id|string|max:150',
             'activity_id' => 'nullable|integer|exists:activities,id',
             'sub_output_code' => 'nullable|string|max:80',
             'budget_category_id' => 'required|integer|exists:budget_categories,id',

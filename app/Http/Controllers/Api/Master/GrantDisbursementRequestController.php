@@ -205,9 +205,21 @@ class GrantDisbursementRequestController extends Controller
             ->groupBy('budget_line_id')
             ->pluck('actual_amount', 'budget_line_id');
 
+        $historicalActualsByMonth = JournalLine::query()
+            ->with('journal:id,journal_date')
+            ->whereIn('budget_line_id', $budgetLines->pluck('id'))
+            ->whereHas('account', fn ($query) => $query->withoutGlobalScope('fiscal_year_context')->where('account_type', 'expense'))
+            ->whereHas('journal', fn ($query) => $query->withoutGlobalScope('fiscal_year_context')->where('status', 'posted')->when($request->filled('fiscal_year_id'), fn ($yearQuery) => $yearQuery->where('fiscal_year_id', $request->integer('fiscal_year_id'))))
+            ->get()
+            ->groupBy('budget_line_id')
+            ->map(fn ($lines) => $lines->groupBy(fn ($line) => $line->journal?->journal_date?->format('n'))
+                ->map(fn ($monthLines) => round($monthLines->sum(fn ($line) => (float) $line->debit - (float) $line->credit), 2))
+                ->all())
+            ->all();
+
         $contractRate = (float) ($grant?->exchange_rate_contract ?: 1);
 
-        $items = $budgetLines->map(function ($line) use ($quarter, $contractRate, $grant, $historicalActuals) {
+        $items = $budgetLines->map(function ($line) use ($quarter, $contractRate, $grant, $historicalActuals, $historicalActualsByMonth) {
             $allocations = is_array($line->period_allocations) ? $line->period_allocations : [];
 
             // Extract quarterly budget allocation if specified, otherwise 1/4 of total
@@ -221,6 +233,7 @@ class GrantDisbursementRequestController extends Controller
             // Historical expense must follow the accounting ledger. Draft or
             // unposted expense requests are intentionally excluded.
             $historicalExpense = (float) ($historicalActuals[$line->id] ?? 0);
+            $actualsByMonth = $historicalActualsByMonth[$line->id] ?? [];
 
             return [
                 'budget_line_id' => $line->id,
@@ -241,6 +254,7 @@ class GrantDisbursementRequestController extends Controller
                 'adjustment_idr' => 0,
                 'forecast_amount' => round($proposalBudget, 2),
                 'monthly_allocations' => collect($allocations)->only(['B1','B2','B3','B4','B5','B6','B7','B8','B9','B10','B11','B12'])->map(fn ($value) => is_numeric($value) ? round((float) $value, 2) : 0)->all(),
+                'monthly_actuals' => collect(range(1, 12))->mapWithKeys(fn ($month) => ["B{$month}" => (float) ($actualsByMonth[$month] ?? 0)])->all(),
                 'notes' => '',
             ];
         });

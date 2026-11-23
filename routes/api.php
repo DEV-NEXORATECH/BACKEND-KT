@@ -157,6 +157,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/v1/reports/{report}/pdf', [ReportsDashboardController::class, 'exportPdf'])->middleware('permission:reports.export');
     Route::get('/v1/reports/fx-adjustments', [ReportsDashboardController::class, 'fxAdjustments'])->middleware('permission:reports.view');
     Route::get('/v1/reports/forecast', [ReportsDashboardController::class, 'forecast'])->middleware('permission:reports.view');
+    Route::get('/v1/reports/forecast/rules', [ReportsDashboardController::class, 'forecastRules'])->middleware('permission:reports.view');
+    Route::put('/v1/reports/forecast/rules', [ReportsDashboardController::class, 'storeForecastRules'])->middleware('permission:reports.view');
     Route::get('/v1/reports/forecast/entries', [ReportsDashboardController::class, 'forecastEntries'])->middleware('permission:reports.view');
     Route::post('/v1/reports/forecast/entries', [ReportsDashboardController::class, 'storeForecastEntry'])->middleware('permission:reports.view');
     Route::get('/v1/reports/custom/options', [CustomReportController::class, 'options'])->middleware('permission:reports.view');
