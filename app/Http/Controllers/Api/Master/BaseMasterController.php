@@ -41,6 +41,25 @@ abstract class BaseMasterController extends Controller
             if ($this->modelClass === \App\Models\Master\BudgetLine::class) {
                 $query->where('line_code', 'not like', 'AI-ALERT-%');
 
+                // Do not expose orphan rows as a fake relation in Budget
+                // Overview. The frontend used to label these rows "Belum
+                // tersedia" and then sent that display text back as a real
+                // relation_no, opening a broken detail page.
+                if (! $request->filled('relation_no')
+                    && ! $request->filled('project_id')
+                    && ! $request->filled('grant_agreement_id')) {
+                    $query->where(function ($validBudgetScope) {
+                        $validBudgetScope->where(function ($relation) {
+                            $relation->whereNotNull('relation_no')->where('relation_no', '<>', '');
+                        })
+                            ->orWhere(function ($standalone) {
+                                $standalone->whereNotNull('budget_name')->where('budget_name', '<>', '');
+                            })
+                            ->orWhereNotNull('project_id')
+                            ->orWhereNotNull('grant_agreement_id');
+                    });
+                }
+
                 // Budget detail pages are scoped by the relation/project/grant
                 // in the URL. Apply all three dimensions at database level so
                 // unrelated budget lines cannot leak into the detail page.

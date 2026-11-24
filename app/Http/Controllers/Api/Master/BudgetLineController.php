@@ -44,6 +44,23 @@ class BudgetLineController extends BaseMasterController
 
     public function index(Request $request): JsonResponse
     {
+        $relationNo = trim((string) $request->query('relation_no', ''));
+        if (in_array(mb_strtolower($relationNo), ['belum tersedia', 'tanpa nomor relasi'], true)) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Nomor relasi placeholder diabaikan.',
+                'data' => [],
+                'meta' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => min(max((int) $request->query('per_page', 10), 1), 500),
+                    'total' => 0,
+                    'from' => null,
+                    'to' => null,
+                ],
+            ]);
+        }
+
         $filters = $request->validate([
             'project_id' => 'nullable|integer|exists:projects,id',
             'grant_agreement_id' => 'nullable|integer|exists:grant_agreements,id',

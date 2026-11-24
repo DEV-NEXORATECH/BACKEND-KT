@@ -79,4 +79,41 @@ class StandaloneBudgetGroupingTest extends TestCase
 
         $this->assertSame(2, BudgetLine::query()->count());
     }
+
+    public function test_budget_overview_hides_orphans_and_placeholder_relation_does_not_query_them(): void
+    {
+        $role = Role::create(['name' => 'Budget Manager', 'slug' => 'budget-manager']);
+        foreach (['master-data.view', 'budget.view'] as $slug) {
+            $permission = Permission::firstOrCreate(['slug' => $slug], ['name' => $slug]);
+            $role->permissions()->syncWithoutDetaching([$permission->id]);
+        }
+        $user = User::factory()->create(['role_id' => $role->id]);
+        $category = BudgetCategory::create([
+            'code' => 'CAT-ORPHAN',
+            'name' => 'Orphan',
+            'is_active' => true,
+        ]);
+
+        BudgetLine::create([
+            'line_code' => 'ORPHAN-001',
+            'description' => 'Invalid budget without a scope',
+            'budget_category_id' => $category->id,
+            'quantity' => 1,
+            'unit_price' => 100,
+            'total_amount' => 100,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($user, 'sanctum');
+
+        $this->getJson('/api/v1/master/budget-lines?per_page=500')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 0)
+            ->assertJsonCount(0, 'data');
+
+        $this->getJson('/api/v1/master/budget-lines?relation_no='.urlencode('Belum tersedia'))
+            ->assertOk()
+            ->assertJsonPath('meta.total', 0)
+            ->assertJsonCount(0, 'data');
+    }
 }
