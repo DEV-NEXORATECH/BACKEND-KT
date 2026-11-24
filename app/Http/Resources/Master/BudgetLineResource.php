@@ -13,6 +13,15 @@ class BudgetLineResource extends JsonResource
     public function toArray(Request $request): array
     {
         $data = parent::toArray($request);
+        // The Budget Overview groups rows by relation_no. A standalone budget
+        // intentionally has no donor/project relation, so expose its own name
+        // as the API grouping key while keeping the database relation_no NULL.
+        if (blank($data['relation_no'] ?? null) && filled($data['budget_name'] ?? null)) {
+            $data['relation_no'] = $data['budget_name'];
+            $data['is_standalone'] = true;
+        } else {
+            $data['is_standalone'] = false;
+        }
         $bank = $this->project?->bankAccount
             ?: $this->grantAgreement?->bankAccount
             ?: $this->project?->grantAgreement?->bankAccount;

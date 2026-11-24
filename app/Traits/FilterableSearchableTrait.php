@@ -90,6 +90,12 @@ trait FilterableSearchableTrait
                         if (\Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), $filterCol)) {
                             $query->where(function (Builder $scope) use ($relationVal) {
                                 $scope->where($this->getTable().'.relation_no', $relationVal);
+                                if (\Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), 'budget_name')) {
+                                    $scope->orWhere(function (Builder $standalone) use ($relationVal) {
+                                        $standalone->whereNull($this->getTable().'.relation_no')
+                                            ->where($this->getTable().'.budget_name', $relationVal);
+                                    });
+                                }
                                 if (method_exists($this, 'project')) {
                                     $scope->orWhere(function (Builder $fallback) use ($relationVal) {
                                         $fallback->whereNull($this->getTable().'.relation_no')

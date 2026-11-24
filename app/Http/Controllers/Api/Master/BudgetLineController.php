@@ -20,7 +20,7 @@ class BudgetLineController extends BaseMasterController
     protected string $resourceClass = BudgetLineResource::class;
     protected string $storeRequestClass = StoreBudgetLineRequest::class;
     protected string $updateRequestClass = UpdateBudgetLineRequest::class;
-    protected array $searchableColumns = ['line_code', 'description'];
+    protected array $searchableColumns = ['line_code', 'description', 'budget_name'];
     protected array $defaultWith = ['fiscalYear', 'grantAgreement.bankAccount.glAccount', 'project.bankAccount.glAccount', 'project.grantAgreement.bankAccount.glAccount', 'activity', 'budgetCategory', 'unitOfMeasure', 'glAccount', 'currency'];
 
     protected function defaultRelations(): array
@@ -45,7 +45,8 @@ class BudgetLineController extends BaseMasterController
         $filters = $request->validate([
             'project_id' => 'nullable|integer|exists:projects,id',
             'grant_agreement_id' => 'nullable|integer|exists:grant_agreements,id',
-            'relation_no' => 'nullable|string|max:100',
+            'relation_no' => 'nullable|string|max:150',
+            'budget_name' => 'nullable|string|max:150',
         ]);
 
         if (! empty($filters['project_id']) && ! empty($filters['relation_no'])) {

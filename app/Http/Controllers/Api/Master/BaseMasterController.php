@@ -51,6 +51,10 @@ abstract class BaseMasterController extends Controller
                         $relationNo = trim((string) $request->query('relation_no'));
                         $builder->where(function ($scope) use ($relationNo) {
                             $scope->where('relation_no', $relationNo)
+                                ->orWhere(function ($standalone) use ($relationNo) {
+                                    $standalone->whereNull('relation_no')
+                                        ->where('budget_name', $relationNo);
+                                })
                                 ->orWhereHas('project', fn ($project) => $project->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo))
                                 ->orWhereHas('grantAgreement', fn ($grant) => $grant->withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo));
                         });
