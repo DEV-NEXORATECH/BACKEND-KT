@@ -7,6 +7,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -26,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
 
         $middleware->api(prepend: [
+            \App\Http\Middleware\NormalizeEmptyQueryParameters::class,
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
 
@@ -65,6 +67,20 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (QueryException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
+                $sqlState = $e->errorInfo[0] ?? null;
+                $driverCode = $e->errorInfo[1] ?? null;
+
+                Log::error('Database query failed while handling an API request.', [
+                    'method' => $request->method(),
+                    'path' => $request->path(),
+                    'route' => $request->route()?->getName(),
+                    'user_id' => $request->user()?->getAuthIdentifier(),
+                    'connection' => $e->getConnectionName(),
+                    'sql_state' => $sqlState,
+                    'driver_code' => $driverCode,
+                    'exception' => $e,
+                ]);
+
                 // MySQL Foreign Key Constraint violation (1451 / 1452)
                 if (str_contains($e->getMessage(), '1451') || str_contains($e->getMessage(), 'foreign key constraint fails')) {
                     return response()->json([
@@ -76,6 +92,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'success' => false,
                     'message' => 'Terjadi kesalahan pada database.',
+                    'error_code' => 'DATABASE_QUERY_ERROR',
                     'debug' => config('app.debug') ? $e->getMessage() : null,
                 ], 500);
             }
