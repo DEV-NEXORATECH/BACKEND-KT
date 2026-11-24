@@ -21,16 +21,18 @@ class BudgetLineController extends BaseMasterController
     protected string $storeRequestClass = StoreBudgetLineRequest::class;
     protected string $updateRequestClass = UpdateBudgetLineRequest::class;
     protected array $searchableColumns = ['line_code', 'description', 'budget_name'];
-    protected array $defaultWith = ['fiscalYear', 'grantAgreement.bankAccount.glAccount', 'project.bankAccount.glAccount', 'project.grantAgreement.bankAccount.glAccount', 'activity', 'budgetCategory', 'unitOfMeasure', 'glAccount', 'currency'];
+    protected array $defaultWith = ['fiscalYear', 'grantAgreement.donor', 'grantAgreement.bankAccount.glAccount', 'project.bankAccount.glAccount', 'project.grantAgreement.donor', 'project.grantAgreement.bankAccount.glAccount', 'activity', 'budgetCategory', 'unitOfMeasure', 'glAccount', 'currency'];
 
     protected function defaultRelations(): array
     {
         return [
             'fiscalYear',
             'grantAgreement' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
+            'grantAgreement.donor',
             'grantAgreement.bankAccount.glAccount',
             'project' => fn ($query) => $query->withoutGlobalScope('fiscal_year_context'),
             'project.bankAccount.glAccount',
+            'project.grantAgreement.donor',
             'project.grantAgreement.bankAccount.glAccount',
             'activity',
             'budgetCategory',

@@ -27,6 +27,16 @@ class BudgetLineResource extends JsonResource
             ?: $this->project?->grantAgreement?->bankAccount;
         $bankGlAccountId = $bank?->resolveGlAccountId($this->project_id, null, $this->fiscal_year_id);
         $bankGlAccount = $bankGlAccountId ? \App\Models\Master\ChartOfAccount::find($bankGlAccountId) : null;
+        $grantAgreement = $this->grantAgreement ?: $this->project?->grantAgreement;
+        $donor = $grantAgreement?->donor;
+
+        // Give the overview one stable donor field regardless of whether the
+        // budget line points directly to a grant or reaches it via a project.
+        $data['donor'] = $donor ? [
+            'id' => $donor->id,
+            'code' => $donor->code,
+            'name' => $donor->name,
+        ] : null;
 
         $data['bank_account'] = $bank ? [
             'id' => $bank->id,

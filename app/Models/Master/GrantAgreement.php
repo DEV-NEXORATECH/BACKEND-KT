@@ -41,7 +41,11 @@ class GrantAgreement extends Model
 
     public function donor()
     {
-        return $this->belongsTo(\App\Models\Master\Donor::class, 'donor_id');
+        // A grant keeps its donor even when the donor master was created in a
+        // different fiscal-year context. The parent grant already controls
+        // which budget is visible, so this relation must not disappear here.
+        return $this->belongsTo(\App\Models\Master\Donor::class, 'donor_id')
+            ->withoutGlobalScope('fiscal_year_context');
     }
 
     public function fundingSource()
