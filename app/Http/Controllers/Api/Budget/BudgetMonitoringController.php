@@ -62,6 +62,14 @@ class BudgetMonitoringController extends Controller
         $filters['budget_line_ids'] = $query->pluck('id')->all();
 
         $items = $service->summary($filters);
+        $tableItems = $items->filter(function (array $item) use ($request) {
+            $term = strtolower(trim((string) $request->input('search', '')));
+            if ($term !== '' && ! str_contains(strtolower(implode(' ', array_filter([$item['line_code'] ?? null, $item['description'] ?? null, $item['project']['name'] ?? null, $item['donor']['name'] ?? null]))), $term)) return false;
+            if ($request->filled('status') && ($item['status'] ?? null) !== $request->input('status')) return false;
+            if ($request->filled('donor_id') && (int) ($item['donor']['id'] ?? 0) !== $request->integer('donor_id')) return false;
+            if ($request->filled('program_id') && (int) ($item['program']['id'] ?? 0) !== $request->integer('program_id')) return false;
+            return true;
+        })->values();
 
         $totals = [
             'relation_no' => $filters['relation_no'] ?? null,
@@ -271,7 +279,13 @@ class BudgetMonitoringController extends Controller
                 'budget_line_id' => $filters['budget_line_id'] ?? null,
                 'fiscal_year_id' => $filters['fiscal_year_id'] ?? null,
             ],
-            'data' => $items->values(),
+            'data' => $tableItems->forPage(max(1, (int) $request->input('page', 1)), min(100, max(1, (int) $request->input('per_page', 10))))->values(),
+            'meta' => [
+                'current_page' => max(1, (int) $request->input('page', 1)),
+                'per_page' => min(100, max(1, (int) $request->input('per_page', 10))),
+                'total' => $tableItems->count(),
+                'last_page' => max(1, (int) ceil($tableItems->count() / min(100, max(1, (int) $request->input('per_page', 10))))),
+            ],
             'by_line' => $items->values(),
             'by_activity' => $byActivity,
             'by_sub_output' => $bySubOutput,

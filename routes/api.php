@@ -244,6 +244,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('v1/procurement')->group(function () {
         Route::get('processes/options', [ProcurementFulfillmentController::class, 'processOptions'])->middleware('permission:procurement.po.view');
+        Route::get('workflow-review', [ProcurementFulfillmentController::class, 'workflowReview'])->middleware('permission:procurement.po.view');
         Route::get('goods-receipts', [ProcurementFulfillmentController::class, 'goodsReceipts'])->middleware('permission:procurement.grn.view');
         Route::get('goods-receipts/{goodsReceipt}', [ProcurementFulfillmentController::class, 'showGoodsReceipt'])->middleware('permission:procurement.grn.view');
         Route::put('goods-receipts/{goodsReceipt}', [ProcurementFulfillmentController::class, 'updateGoodsReceipt'])->middleware('permission:procurement.grn.create');
@@ -284,6 +285,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('rfqs/{rfq}/close', [AdvancedProcurementController::class, 'closeRfq'])->middleware('permission:procurement.rfq.create');
         Route::post('rfqs/{rfq}/cancel', [AdvancedProcurementController::class, 'cancelRfq'])->middleware('permission:procurement.rfq.create');
         Route::post('rfqs/{rfq}/cba', [AdvancedProcurementController::class, 'createCba'])->middleware('permission:procurement.cba.create');
+        Route::post('purchase-requests/{purchaseRequest}/cba', [AdvancedProcurementController::class, 'createCbaFromPurchaseRequest'])->middleware('permission:procurement.cba.create');
         Route::post('cba/{cba}/submit', [AdvancedProcurementController::class, 'submitCba'])->middleware('permission:procurement.cba.approve');
         Route::post('cba/{cba}/approve', [AdvancedProcurementController::class, 'approveCba'])->middleware('permission:procurement.cba.approve');
         Route::post('cba/{cba}/purchase-orders', [AdvancedProcurementController::class, 'createPoFromCba'])->middleware('permission:procurement.po.create');
@@ -396,6 +398,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('requests/template', [ExpenseRequestController::class, 'template'])->middleware('permission:expense.view');
         Route::post('requests/import', [ExpenseRequestController::class, 'import'])->middleware('permission:expense.create');
         Route::get('dashboard', [ExpenseRequestController::class, 'dashboard'])->middleware('permission:expense.view');
+        Route::get('monitoring', [ExpenseRequestController::class, 'monitoring'])->middleware('permission:expense.view');
         Route::get('requests', [ExpenseRequestController::class, 'index'])->middleware('permission:expense.view');
         Route::post('requests', [ExpenseRequestController::class, 'store'])->middleware('permission:expense.create');
         Route::get('requests/{expenseRequest}', [ExpenseRequestController::class, 'show'])->middleware('permission:expense.view');

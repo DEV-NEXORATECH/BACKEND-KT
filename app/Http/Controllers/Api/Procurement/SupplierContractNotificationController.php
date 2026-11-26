@@ -14,11 +14,14 @@ class SupplierContractNotificationController extends Controller
     {
         $query = SupplierContractNotification::with(['fiscalYear:id,year,name','vendor:id,code,name','purchaseRequest:id,pr_number','purchaseOrder:id,po_number']);
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
-        $items = $query->latest('id')->get()->map(function ($item) {
+        $query->when($request->filled('search'), fn ($q) => $q->where(function ($nested) use ($request) { $term = '%'.$request->query('search').'%'; $nested->where('scn_number', 'like', $term)->orWhere('subject', 'like', $term); }));
+        $query->when($request->filled('status'), fn ($q) => $q->where('status', $request->query('status')));
+        $rows = $query->latest('id')->when($request->has('page') || $request->has('per_page'), fn ($q) => $q->paginate(min(100, max(1, (int) $request->query('per_page', 10)))), fn ($q) => $q->get());
+        $items = collect($rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? $rows->items() : $rows)->map(function ($item) {
             $item->setAttribute('approval_progress', app(ApprovalWorkflowService::class)->progressFor('scn', $item, request()->user()));
             return $item;
         });
-        return response()->json(['success' => true, 'data' => $items]);
+        return response()->json(['success' => true, 'data' => $items, 'meta' => $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total()] : null]);
     }
     public function show(SupplierContractNotification $supplierContractNotification): JsonResponse { $item = $supplierContractNotification->load(['vendor:id,code,name','purchaseRequest:id,pr_number','purchaseOrder:id,po_number']); $item->setAttribute('approval_progress', app(ApprovalWorkflowService::class)->progressFor('scn', $item, request()->user())); return response()->json(['success'=>true,'data'=>$item]); }
     public function update(Request $request, SupplierContractNotification $supplierContractNotification): JsonResponse { if ($supplierContractNotification->status !== 'draft') throw ValidationException::withMessages(['status'=>'SCN hanya dapat diubah saat draft.']); $data=$request->validate(['notification_date'=>['sometimes','date'],'completion_date'=>['nullable','date'],'subject'=>['sometimes','string','max:200'],'notes'=>['nullable','string'],'supplier_reference_number'=>['nullable','string','max:100'],'receiving_location'=>['nullable','string','max:255'],'donor_name'=>['nullable','string','max:255'],'remarks'=>['nullable','string'],'acceptable_for_payment'=>['nullable','boolean'],'receipt_by_name'=>['nullable','string','max:255'],'receipt_by_position'=>['nullable','string','max:255'],'requester_name'=>['nullable','string','max:255'],'requester_position'=>['nullable','string','max:255'],'service_lines'=>['nullable','array']]); $supplierContractNotification->update($data); return response()->json(['success'=>true,'message'=>'SCN berhasil diperbarui.','data'=>$supplierContractNotification->fresh(['vendor:id,code,name','purchaseRequest:id,pr_number','purchaseOrder:id,po_number'])]); }

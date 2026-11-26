@@ -63,9 +63,19 @@ class AccountsReceivableController extends Controller
             'organization_id',
             []
         );
-        $invoices = $query->latest('id')->get();
+        $query->when($request->filled('search'), function ($builder) use ($request) {
+            $term = '%'.$request->query('search').'%';
+            $builder->where(function ($nested) use ($term) {
+                $nested->where('invoice_number', 'like', $term)
+                    ->orWhere('description', 'like', $term)
+                    ->orWhereHas('customer', fn ($customer) => $customer->where('name', 'like', $term));
+            });
+        });
+        $query->when($request->filled('status') && $request->query('status') !== 'ALL', fn ($builder) => $builder->where('status', $request->query('status')));
+        $invoices = $query->latest('id')->when($request->has('page') || $request->has('per_page'), fn ($builder) => $builder->paginate(min(100, max(1, (int) $request->query('per_page', 10)))), fn ($builder) => $builder->get());
+        $rows = $invoices instanceof \Illuminate\Pagination\LengthAwarePaginator ? $invoices->items() : $invoices;
 
-        return response()->json(['success' => true, 'data' => $invoices->map(fn (CustomerInvoice $invoice) => $this->formatInvoice($invoice))]);
+        return response()->json(['success' => true, 'data' => collect($rows)->map(fn (CustomerInvoice $invoice) => $this->formatInvoice($invoice))->values(), 'meta' => $invoices instanceof \Illuminate\Pagination\LengthAwarePaginator ? ['current_page' => $invoices->currentPage(), 'last_page' => $invoices->lastPage(), 'per_page' => $invoices->perPage(), 'total' => $invoices->total()] : null]);
     }
 
     public function storeInvoice(Request $request): JsonResponse

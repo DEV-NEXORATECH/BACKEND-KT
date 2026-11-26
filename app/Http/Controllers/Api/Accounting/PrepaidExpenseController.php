@@ -27,7 +27,20 @@ class PrepaidExpenseController extends Controller
         $rows = $query
             ->when($request->filled('search'), fn ($q) => $q->where(fn ($x) => $x->where('reference', 'like', '%'.$request->search.'%')->orWhere('description', 'like', '%'.$request->search.'%')->orWhere('relation_no', 'like', '%'.$request->search.'%')))
             ->when($request->filled('relation_no'), fn ($q) => $q->where('relation_no', trim((string) $request->query('relation_no'))))
-            ->latest()->paginate(min(100, max(1, (int) $request->get('per_page', 10))));
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->query('status')))
+            ->when($request->query('tab') === 'active', fn ($q) => $q->where(function ($scope) {
+                $scope->whereIn('status', ['active', 'eligible', 'eligible_transaction', 'scheduled'])
+                    ->orWhereColumn('total_amount', '>', 'amortized_amount');
+            }))
+            ->when($request->query('tab') === 'accrued', fn ($q) => $q->where(function ($scope) {
+                $scope->whereIn('status', ['accrued', 'accrual', 'posted', 'amortized', 'completed'])
+                    ->orWhereColumn('amortized_amount', '>', '0');
+            }))
+            ->when($request->query('sort') === 'oldest', fn ($q) => $q->oldest('created_at'))
+            ->when($request->query('sort') === 'highest', fn ($q) => $q->orderByDesc('total_amount'))
+            ->when($request->query('sort') === 'lowest', fn ($q) => $q->orderBy('total_amount'))
+            ->when(! in_array($request->query('sort'), ['oldest', 'highest', 'lowest'], true), fn ($q) => $q->latest())
+            ->paginate(min(100, max(1, (int) $request->get('per_page', 10))));
         return response()->json(['success' => true, 'data' => $rows->items(), 'meta' => ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'total' => $rows->total()]]);
     }
 

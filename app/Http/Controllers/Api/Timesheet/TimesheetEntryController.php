@@ -89,37 +89,96 @@ class TimesheetEntryController extends Controller
             ->when($request->filled('employee_id'), fn (Builder $query) => $query->where('employee_id', $request->integer('employee_id')))
             ->when($request->filled('task_type'), fn (Builder $query) => $query->where('task_type', $request->string('task_type')))
             ->when($request->filled('rate_scheme'), fn (Builder $query) => $query->where('rate_scheme', $request->string('rate_scheme')))
+            ->when($request->has('is_billable') && $request->input('is_billable') !== '', fn (Builder $query) => $query->where('is_billable', $request->boolean('is_billable')))
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('entry_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('entry_date', '<=', $request->string('end_date')))
-            ->latest('entry_date')
-            ->latest('id')
-            ->get();
+            ->when($request->filled('search'), function (Builder $query) use ($request) {
+                $term = '%'.$request->string('search').'%';
+                $query->where(function (Builder $nested) use ($term) {
+                    $nested->where('description', 'like', $term)
+                        ->orWhereHas('employee', fn ($employee) => $employee->where('name', 'like', $term))
+                        ->orWhereHas('project', fn ($project) => $project->where('name', 'like', $term))
+                        ->orWhereHas('activity', fn ($activity) => $activity->where('name', 'like', $term));
+                });
+            })
+            ->when($request->query('sort') === 'date:asc' || $request->query('sort') === 'created_at:asc', fn (Builder $query) => $query->oldest('entry_date')->oldest('id'), fn (Builder $query) => $query->latest('entry_date')->latest('id'));
+
+        $allEntries = (clone $entries)->get();
+        $paginated = $request->has('page') || $request->has('per_page')
+            ? $entries->paginate(min(100, max(1, (int) $request->query('per_page', 10))))
+            : null;
+        $rows = $paginated ? $paginated->items() : $allEntries;
+        $groupByEmployee = $request->string('group_by')->toString() === 'employee';
+        $employeeRows = $allEntries->groupBy(fn (TimesheetEntry $entry) => $entry->employee_id ?: 'unassigned')
+            ->map(function ($group) {
+                $first = $group->first();
+                $approved = $group->whereIn('status', ['approved', 'posted'])->count();
+                return [
+                    'name' => $first?->employee?->name ?? 'Unassigned',
+                    'employee_code' => $first?->employee?->employee_id_number ?? ($first?->employee_id ? 'ID-'.$first->employee_id : 'ID-'),
+                    'entries' => $group->count(),
+                    'hours' => round((float) $group->sum('hours'), 2),
+                    'approved' => $approved,
+                    'submitted' => $group->where('status', 'submitted')->count(),
+                    'draft' => $group->where('status', 'draft')->count(),
+                ];
+            })->values()->sortBy('name')->values();
+        $projectRows = $allEntries->groupBy(fn (TimesheetEntry $entry) => $entry->project_id ?: 'general')->map(function ($group) {
+            $first = $group->first();
+            return ['name' => $first?->project?->name ?? 'General / Operasional', 'code' => $first?->project?->code ?? ($first?->project_id ? 'PROJECT-'.$first->project_id : 'GENERAL'), 'entries' => $group->count(), 'hours' => round((float) $group->sum('hours'), 2), 'staffCount' => $group->pluck('employee_id')->filter()->unique()->count()];
+        })->values()->sortBy('name')->values();
+        $groupMeta = null;
+        if ($groupByEmployee) {
+            $minHours = $request->string('min_hours')->toString();
+            if ($minHours === 'gt40') $employeeRows = $employeeRows->filter(fn ($row) => $row['hours'] >= 40)->values();
+            if ($minHours === 'lt40') $employeeRows = $employeeRows->filter(fn ($row) => $row['hours'] < 40)->values();
+            $sort = $request->string('sort')->toString();
+            if ($sort === 'hours:desc') $employeeRows = $employeeRows->sortByDesc('hours')->values();
+            elseif ($sort === 'hours:asc') $employeeRows = $employeeRows->sortBy('hours')->values();
+            elseif ($sort === 'entries:desc') $employeeRows = $employeeRows->sortByDesc('entries')->values();
+            elseif ($sort === 'name:desc') $employeeRows = $employeeRows->sortByDesc('name')->values();
+            $groupPage = max(1, (int) $request->query('page', 1));
+            $groupPerPage = min(100, max(1, (int) $request->query('per_page', 10)));
+            $rows = $employeeRows->forPage($groupPage, $groupPerPage)->values();
+            $groupMeta = [
+                'current_page' => $groupPage,
+                'last_page' => max(1, (int) ceil($employeeRows->count() / $groupPerPage)),
+                'per_page' => $groupPerPage,
+                'total' => $employeeRows->count(),
+            ];
+        } elseif ($request->string('group_by')->toString() === 'project') {
+            $groupPage = max(1, (int) $request->query('page', 1));
+            $groupPerPage = min(100, max(1, (int) $request->query('per_page', 10)));
+            $rows = $projectRows->forPage($groupPage, $groupPerPage)->values();
+            $groupMeta = ['current_page' => $groupPage, 'last_page' => max(1, (int) ceil($projectRows->count() / $groupPerPage)), 'per_page' => $groupPerPage, 'total' => $projectRows->count()];
+        }
 
         $totals = [
-            'hours' => round((float) $entries->sum('hours'), 2),
-            'billable_hours' => round((float) $entries->sum(fn (TimesheetEntry $e) => (float) ($e->billable_hours ?? ($e->is_billable ? $e->hours : 0))), 2),
-            'calculated_amount' => round((float) $entries->sum('calculated_amount'), 2),
-            'entries' => $entries->count(),
-            'by_employee' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->employee?->name ?? 'Unassigned')->map(fn ($rows, $label) => [
+            'hours' => round((float) $allEntries->sum('hours'), 2),
+            'billable_hours' => round((float) $allEntries->sum(fn (TimesheetEntry $e) => (float) ($e->billable_hours ?? ($e->is_billable ? $e->hours : 0))), 2),
+            'calculated_amount' => round((float) $allEntries->sum('calculated_amount'), 2),
+            'entries' => $allEntries->count(),
+            'by_employee' => $allEntries->groupBy(fn (TimesheetEntry $entry) => $entry->employee?->name ?? 'Unassigned')->map(fn ($rows, $label) => [
                 'label' => $label,
                 'hours' => round((float) $rows->sum('hours'), 2),
                 'billable_hours' => round((float) $rows->sum(fn ($r) => (float) ($r->billable_hours ?? $r->hours)), 2),
                 'amount' => round((float) $rows->sum('calculated_amount'), 2),
                 'entries' => $rows->count(),
+                'approved' => $rows->whereIn('status', ['approved', 'posted'])->count(),
             ])->values(),
-            'by_project' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->project?->name ?? 'Unassigned')->map(fn ($rows, $label) => [
+            'by_project' => $allEntries->groupBy(fn (TimesheetEntry $entry) => $entry->project?->name ?? 'Unassigned')->map(fn ($rows, $label) => [
                 'label' => $label,
                 'hours' => round((float) $rows->sum('hours'), 2),
                 'amount' => round((float) $rows->sum('calculated_amount'), 2),
                 'entries' => $rows->count(),
             ])->values(),
-            'by_donor' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->donor?->name ?? 'Unassigned')->map(fn ($rows, $label) => [
+            'by_donor' => $allEntries->groupBy(fn (TimesheetEntry $entry) => $entry->donor?->name ?? 'Unassigned')->map(fn ($rows, $label) => [
                 'label' => $label,
                 'hours' => round((float) $rows->sum('hours'), 2),
                 'amount' => round((float) $rows->sum('calculated_amount'), 2),
                 'entries' => $rows->count(),
             ])->values(),
-            'by_rate_scheme' => $entries->groupBy(fn (TimesheetEntry $entry) => $entry->rate_scheme ?? 'daily_capped_8h')->map(fn ($rows, $scheme) => [
+            'by_rate_scheme' => $allEntries->groupBy(fn (TimesheetEntry $entry) => $entry->rate_scheme ?? 'daily_capped_8h')->map(fn ($rows, $scheme) => [
                 'scheme' => $scheme,
                 'hours' => round((float) $rows->sum('hours'), 2),
                 'billable_hours' => round((float) $rows->sum(fn ($r) => (float) ($r->billable_hours ?? $r->hours)), 2),
@@ -128,7 +187,8 @@ class TimesheetEntryController extends Controller
             ])->values(),
         ];
 
-        return response()->json(['success' => true, 'totals' => $totals, 'data' => $entries->map(fn (TimesheetEntry $entry) => $this->format($entry))]);
+        $groupByProject = $request->string('group_by')->toString() === 'project';
+        return response()->json(['success' => true, 'totals' => $totals, 'data' => $groupByEmployee || $groupByProject ? $rows : collect($rows)->map(fn (TimesheetEntry $entry) => $this->format($entry))->values(), 'meta' => $groupMeta ?: ($paginated ? ['current_page' => $paginated->currentPage(), 'last_page' => $paginated->lastPage(), 'per_page' => $paginated->perPage(), 'total' => $paginated->total()] : null)]);
     }
 
     public function store(Request $request, TimesheetCalculationService $calculationService): JsonResponse

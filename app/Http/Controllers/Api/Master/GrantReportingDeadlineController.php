@@ -56,7 +56,11 @@ class GrantReportingDeadlineController extends Controller
         }
 
         if ($request->filled('report_type') && $request->input('report_type') !== 'ALL') {
-            $query->where('report_type', $request->input('report_type'));
+            if ($request->input('report_type') === 'other') {
+                $query->whereNotIn('report_type', ['Financial Report', 'Narrative Report']);
+            } else {
+                $query->where('report_type', $request->input('report_type'));
+            }
         }
 
         if ($request->filled('year')) {

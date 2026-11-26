@@ -81,6 +81,7 @@ class JournalController extends Controller
             'budget_line_id' => ['nullable', 'integer', 'exists:budget_lines,id'],
             'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
             'fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'],
+            'sort' => ['nullable', 'in:newest,oldest,number_asc,amount_high,amount_low'],
         ]);
         $fetchAll = $request->boolean('all') || $request->query('per_page') === 'all';
         $perPage = (int) $request->query('per_page', 10);
@@ -136,7 +137,14 @@ class JournalController extends Controller
             ['accounting.journal.view', 'accounting.journal.review', 'accounting.journal.post']
         );
 
-        $ordered = $query->latest('journal_date')->latest('id');
+        $sort = (string) $request->query('sort', 'newest');
+        $ordered = match ($sort) {
+            'oldest' => $query->orderBy('journal_date')->orderBy('id'),
+            'number_asc' => $query->orderBy('journal_number')->orderBy('id'),
+            'amount_high' => $query->orderByDesc('total_debit')->orderByDesc('id'),
+            'amount_low' => $query->orderBy('total_debit')->orderBy('id'),
+            default => $query->latest('journal_date')->latest('id'),
+        };
 
         if ($fetchAll) {
             $collection = $ordered->get();

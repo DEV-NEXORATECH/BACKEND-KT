@@ -75,24 +75,43 @@ class TaxTransactionController extends Controller
             ->when($request->filled('start_date'), fn (Builder $query) => $query->whereDate('transaction_date', '>=', $request->string('start_date')))
             ->when($request->filled('end_date'), fn (Builder $query) => $query->whereDate('transaction_date', '<=', $request->string('end_date')))
             ->when($request->filled('tax_id'), fn (Builder $query) => $query->where('tax_id', $request->integer('tax_id')))
+            ->when($request->filled('tax_code'), fn (Builder $query) => $query->whereHas('tax', fn (Builder $taxQuery) => $taxQuery->where('code', $request->string('tax_code'))))
             ->when($request->filled('direction'), fn (Builder $query) => $query->where('direction', $request->string('direction')))
-            ->when($request->filled('tax_type'), fn (Builder $query) => $query->whereHas('tax', fn (Builder $taxQuery) => $taxQuery->where('tax_type', $request->string('tax_type'))))
+            ->when($request->filled('tax_type'), function (Builder $query) use ($request) {
+                $taxType = strtoupper((string) $request->string('tax_type'));
+                $query->whereHas('tax', fn (Builder $taxQuery) => $taxQuery
+                    ->whereRaw('UPPER(tax_type) = ?', [$taxType])
+                    ->orWhereRaw('UPPER(tax_type) LIKE ?', [$taxType.'%']));
+            })
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->string('status')))
+            ->when($request->filled('status_in'), fn (Builder $query) => $query->whereIn('status', array_filter(explode(',', (string) $request->query('status_in')))))
             ->when($request->filled('q'), fn (Builder $query) => $query->where(function (Builder $search) use ($request) {
                 $term = '%'.$request->string('q').'%';
                 $search->where('reference', 'like', $term)->orWhere('npwp', 'like', $term)->orWhere('e_faktur_reference', 'like', $term)->orWhere('e_bupot_reference', 'like', $term);
             }));
+
+        $query->when($request->query('document') === 'e_faktur', fn (Builder $builder) => $builder->where(function (Builder $scope) {
+            $scope->whereNotNull('e_faktur_reference')->orWhereNotNull('e_faktur_number')->orWhere('reference', 'like', '%faktur%');
+        }));
+        $query->when($request->query('document') === 'e_bupot', fn (Builder $builder) => $builder->where(function (Builder $scope) {
+            $scope->whereNotNull('e_bupot_reference')->orWhereNotNull('e_bupot_number')->orWhere('reference', 'like', '%bupot%');
+        }));
             
         $query->when($request->filled('source_type'), fn (Builder $builder) => $builder->where('source_type', $request->string('source_type')))
             ->when($request->filled('source_id'), fn (Builder $builder) => $builder->where('source_id', $request->integer('source_id')));
 
         app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null, []);
 
-        $items = $query->latest('transaction_date')
-            ->latest('id')
-            ->get();
+        $sort = $request->query('sort', 'newest');
+        $items = $query
+            ->when($sort === 'oldest', fn (Builder $builder) => $builder->oldest('transaction_date')->oldest('id'))
+            ->when($sort === 'amount_desc', fn (Builder $builder) => $builder->orderByDesc('tax_amount')->orderByDesc('id'))
+            ->when($sort === 'amount_asc', fn (Builder $builder) => $builder->orderBy('tax_amount')->orderBy('id'))
+            ->when(! in_array($sort, ['oldest', 'amount_desc', 'amount_asc'], true), fn (Builder $builder) => $builder->latest('transaction_date')->latest('id'))
+            ->when($request->has('page') || $request->has('per_page'), fn ($builder) => $builder->paginate(min(100, max(1, (int) $request->query('per_page', 10))), ['*'], 'page', max(1, (int) $request->query('page', 1))), fn ($builder) => $builder->get());
+        $rows = $items instanceof \Illuminate\Pagination\LengthAwarePaginator ? $items->items() : $items;
 
-        return response()->json(['success' => true, 'data' => $items->map(fn (TaxTransaction $item) => $this->format($item))]);
+        return response()->json(['success' => true, 'data' => collect($rows)->map(fn (TaxTransaction $item) => $this->format($item)), 'meta' => $items instanceof \Illuminate\Pagination\LengthAwarePaginator ? ['current_page' => $items->currentPage(), 'last_page' => $items->lastPage(), 'per_page' => $items->perPage(), 'total' => $items->total()] : null]);
     }
 
     public function store(Request $request): JsonResponse
@@ -325,6 +344,21 @@ class TaxTransactionController extends Controller
         $vatOutput = (float) $items->filter(fn (TaxTransaction $item) => strtoupper((string) $item->tax?->tax_type) === 'PPN' && $item->direction === 'sales')->sum('tax_amount');
         $withholdingPayable = (float) $items->filter(fn (TaxTransaction $item) => $item->direction === 'withholding_out' || str_starts_with(strtoupper((string) $item->tax?->tax_type), 'PPH'))->sum('tax_amount');
 
+        $rows = $items->when($request->filled('search'), function ($rows) use ($request) {
+            $needle = strtolower(trim((string) $request->input('search')));
+            return $rows->filter(fn (TaxTransaction $item) => collect([$item->reference, $item->notes, $item->tax?->name, $item->tax?->code, $item->tax?->tax_type, $item->direction, $item->status])->contains(fn ($value) => str_contains(strtolower((string) $value), $needle)));
+        })->sort(function (TaxTransaction $a, TaxTransaction $b) use ($request) {
+            return match ($request->input('sort', 'newest')) {
+                'oldest' => strcmp((string) $a->transaction_date, (string) $b->transaction_date),
+                'amount_high' => (float) $b->tax_amount <=> (float) $a->tax_amount,
+                'amount_low' => (float) $a->tax_amount <=> (float) $b->tax_amount,
+                default => strcmp((string) $b->transaction_date, (string) $a->transaction_date),
+            };
+        })->values();
+        $perPage = min(max((int) $request->input('per_page', 10), 1), 100);
+        $page = max(1, (int) $request->input('page', 1));
+        $total = $rows->count();
+
         return response()->json([
             'success' => true,
             'totals' => [
@@ -338,7 +372,8 @@ class TaxTransactionController extends Controller
             ],
             'by_type' => $byType,
             'by_direction' => $byDirection,
-            'data' => $items->sortByDesc('transaction_date')->values()->map(fn (TaxTransaction $item) => $this->format($item))->all(),
+            'data' => $rows->forPage($page, $perPage)->map(fn (TaxTransaction $item) => $this->format($item))->values()->all(),
+            'meta' => ['current_page' => $page, 'per_page' => $perPage, 'total' => $total, 'last_page' => max(1, (int) ceil($total / $perPage))],
         ]);
     }
 

@@ -41,6 +41,24 @@ class GeneralLedgerController extends Controller
                 'running_balance' => round($balances[$accountId], 2),
             ];
         });
-        return response()->json(['success' => true, 'data' => $data, 'totals' => ['debit' => round((float) $rows->sum('debit'), 2), 'credit' => round((float) $rows->sum('credit'), 2), 'closing_balance' => round((float) $rows->sum('debit') - (float) $rows->sum('credit'), 2)]]);
+        $data = $data->filter(function (array $row) use ($request) {
+            $search = trim((string) $request->input('search', ''));
+            if ($search === '') return true;
+            return collect([$row['date'], $row['journal_number'], $row['reference'], $row['account_code'], $row['account_name'], $row['description']])
+                ->contains(fn ($value) => str_contains(strtolower((string) $value), strtolower($search)));
+        })->values();
+        $sort = $request->input('sort', 'newest');
+        $data = $data->sort(function (array $a, array $b) use ($sort) {
+            if ($sort === 'oldest') return strcmp((string) $a['date'], (string) $b['date']);
+            if ($sort === 'account') return strcmp((string) $a['account_code'], (string) $b['account_code']);
+            if ($sort === 'debit_high') return (float) $b['debit'] <=> (float) $a['debit'];
+            if ($sort === 'credit_high') return (float) $b['credit'] <=> (float) $a['credit'];
+            if ($sort === 'balance_high') return (float) $b['running_balance'] <=> (float) $a['running_balance'];
+            return strcmp((string) $b['date'], (string) $a['date']);
+        })->values();
+        $perPage = min(max((int) $request->input('per_page', 10), 1), 100);
+        $page = max(1, (int) $request->input('page', 1));
+        $total = $data->count();
+        return response()->json(['success' => true, 'data' => $data->forPage($page, $perPage)->values(), 'totals' => ['debit' => round((float) $rows->sum('debit'), 2), 'credit' => round((float) $rows->sum('credit'), 2), 'closing_balance' => round((float) $rows->sum('debit') - (float) $rows->sum('credit'), 2)], 'meta' => ['current_page' => $page, 'per_page' => $perPage, 'total' => $total, 'last_page' => max(1, (int) ceil($total / $perPage))]]);
     }
 }

@@ -63,8 +63,20 @@ class ProjectWorkplanController extends Controller
                         });
                 });
             })
-            ->orderByRaw('COALESCE(start_date, "9999-12-31") ASC')->orderBy('id', 'asc')->get();
-        return response()->json(['success' => true, 'scope' => ['relation_no' => $relationNo ?: null, 'project_id' => $filters['project_id'] ?? null], 'data' => $rows]);
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $term = '%'.trim((string) $request->input('search')).'%';
+                $q->where(function ($scope) use ($term) {
+                    $scope->where('activity', 'like', $term)->orWhere('output_code', 'like', $term)->orWhere('activity_code', 'like', $term)->orWhere('responsible', 'like', $term);
+                });
+            })
+            ->when($request->filled('status') && $request->input('status') !== 'ALL', fn ($q) => $q->where('status', $request->input('status')));
+        $sort = $request->input('sort', 'newest');
+        $query->orderBy($sort === 'oldest' ? 'start_date' : ($sort === 'name' ? 'activity' : 'start_date'), $sort === 'oldest' || $sort === 'name' ? 'asc' : 'desc')->orderBy('id', 'asc');
+        $rows = $request->has('page') || $request->has('per_page')
+            ? $query->paginate(min(100, max(1, (int) $request->input('per_page', 10))))
+            : $query->get();
+        $items = $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? $rows->items() : $rows;
+        return response()->json(['success' => true, 'scope' => ['relation_no' => $relationNo ?: null, 'project_id' => $filters['project_id'] ?? null], 'data' => $items, 'meta' => $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total()] : null]);
     }
 
     public function store(Request $request)

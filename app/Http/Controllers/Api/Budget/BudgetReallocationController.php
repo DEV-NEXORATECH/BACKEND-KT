@@ -24,6 +24,7 @@ class BudgetReallocationController extends Controller
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'relation_no' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'in:draft,submitted,approved,rejected,applied'],
+            'search' => ['nullable', 'string', 'max:100'],
         ]);
 
         $query = BudgetReallocation::query()
@@ -36,10 +37,12 @@ class BudgetReallocationController extends Controller
                     (SELECT NULLIF(relation_no, '') FROM projects WHERE projects.id = budget_lines.project_id AND deleted_at IS NULL),
                     (SELECT relation_no FROM grant_agreements WHERE grant_agreements.id = budget_lines.grant_agreement_id AND deleted_at IS NULL)) = ?", [$relationNo]);
             }));
+        $query->when($filters['search'] ?? null, fn (Builder $query, $term) => $query->where(function (Builder $search) use ($term) { $search->where('reference', 'like', "%{$term}%")->orWhere('reason', 'like', "%{$term}%"); }));
         app(DataScopeService::class)->applyScope($query, $request->user(), 'created_by', 'project_id', null, []);
-        $rows = $query->latest()->get();
+        $rows = $query->latest()->when($request->has('page') || $request->has('per_page'), fn ($builder) => $builder->paginate(min(100, max(1, (int) $request->query('per_page', 10)))), fn ($builder) => $builder->get());
+        $items = $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? $rows->items() : $rows;
 
-        return response()->json(['success' => true, 'data' => $rows]);
+        return response()->json(['success' => true, 'data' => $items, 'meta' => $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total()] : null]);
     }
 
     public function store(Request $request, BudgetMonitoringService $budget): JsonResponse

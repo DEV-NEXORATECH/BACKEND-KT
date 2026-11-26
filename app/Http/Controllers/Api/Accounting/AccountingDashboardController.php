@@ -162,10 +162,46 @@ class AccountingDashboardController extends Controller
                 ];
             })->values();
 
+        $pageCollection = function ($rows, string $prefix) use ($request) {
+            $rows = collect($rows)->values();
+            $search = mb_strtolower(trim((string) $request->input($prefix.'_search', '')));
+            $status = (string) $request->input($prefix.'_status', 'ALL');
+            $currency = (string) $request->input($prefix.'_currency', 'ALL');
+            if ($search !== '' || $status !== 'ALL' || $currency !== 'ALL') {
+                $rows = $rows->filter(function ($row) use ($search, $status, $currency, $prefix) {
+                    if ($status !== 'ALL') {
+                        $rowStatus = $prefix === 'budget'
+                            ? (((float) ($row['available'] ?? 0) < 0 || (float) ($row['actual'] ?? 0) > (float) ($row['budget'] ?? 0)) ? 'OVER' : 'ON_TRACK')
+                            : (string) ($row['status'] ?? '');
+                        if (strtolower($rowStatus) !== strtolower($status)) return false;
+                    }
+                    if ($currency !== 'ALL' && (string) ($row['currency'] ?? 'IDR') !== $currency) return false;
+                    if ($search === '') return true;
+                    return str_contains(mb_strtolower(implode(' ', array_map(static fn ($value) => is_scalar($value) ? (string) $value : '', $row))), $search);
+                })->values();
+            }
+            $sort = (string) $request->input($prefix.'_sort', 'newest');
+            $rows = match ($sort) {
+                'oldest' => $rows->sortBy(fn ($row) => (string) ($row['date'] ?? ''))->values(),
+                'highest' => $rows->sortByDesc(fn ($row) => (float) ($row['balance'] ?? $row['amount'] ?? $row['budget'] ?? 0))->values(),
+                'lowest' => $rows->sortBy(fn ($row) => (float) ($row['balance'] ?? $row['amount'] ?? $row['budget'] ?? 0))->values(),
+                'name' => $rows->sortBy(fn ($row) => strtolower((string) ($row['project_name'] ?? $row['bank_name'] ?? $row['description'] ?? '')))->values(),
+                default => $rows->sortByDesc(fn ($row) => (string) ($row['date'] ?? $row['id'] ?? ''))->values(),
+            };
+            $page = max(1, (int) $request->input($prefix.'_page', 1));
+            $perPage = min(100, max(1, (int) $request->input($prefix.'_per_page', 10)));
+            $total = $rows->count();
+            return [$rows->forPage($page, $perPage)->values(), ['current_page' => $page, 'per_page' => $perPage, 'total' => $total, 'last_page' => max(1, (int) ceil($total / $perPage))]];
+        };
+        [$cashPage, $cashMeta] = $pageCollection($cash, 'cash');
+        [$recentPage, $recentMeta] = $pageCollection($recent, 'recent');
+        [$budgetPage, $budgetMeta] = $pageCollection($budget, 'budget');
+
         return response()->json([
             'success' => true,
             'period' => ['start_date' => $start, 'end_date' => $end, 'ytd_start_date' => $yearStart],
-            'cash_and_bank' => $cash,
+            'cash_and_bank' => $cashPage,
+            'cash_and_bank_meta' => $cashMeta,
             'income' => [
                 'current_period' => $income($periodLines),
                 'ytd' => $income($ytdLines),
@@ -181,8 +217,10 @@ class AccountingDashboardController extends Controller
             'accounts_receivable' => ['total_outstanding' => round((float) $ar->sum('outstanding_amount'), 2), 'items' => $ar],
             'unreconciled_bank_transactions' => ['count' => BankTransaction::query()->whereNotIn('status', ['reconciled', 'excluded'])->count(), 'items' => $unreconciled],
             'pending_journals' => ['count' => Journal::query()->whereIn('status', ['submitted', 'reviewed'])->count(), 'items' => $pending],
-            'budget_vs_actual' => $budget,
-            'recent_transactions' => $recent,
+            'budget_vs_actual' => $budgetPage,
+            'budget_vs_actual_meta' => $budgetMeta,
+            'recent_transactions' => $recentPage,
+            'recent_transactions_meta' => $recentMeta,
         ]);
     }
 }

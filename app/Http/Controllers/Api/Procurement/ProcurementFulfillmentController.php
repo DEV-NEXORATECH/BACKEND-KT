@@ -68,11 +68,37 @@ class ProcurementFulfillmentController extends Controller
         ]]);
     }
 
+    public function workflowReview(Request $request): JsonResponse
+    {
+        $term = trim((string) $request->query('search', ''));
+        $prQuery = PurchaseRequest::query()->whereNotIn('status', ['draft', 'cancelled']);
+        $invoiceQuery = SupplierInvoice::query()->whereIn('status', ['draft', 'open']);
+        app(DataScopeService::class)->applyRelatedProjectScope($prQuery, $request->user(), 'created_by', 'project');
+        app(DataScopeService::class)->applyRelatedProjectScope($invoiceQuery, $request->user(), 'created_by', 'purchaseOrder.purchaseRequest');
+        if ($term !== '') { $prQuery->where('pr_number', 'like', "%{$term}%"); $invoiceQuery->where('invoice_number', 'like', "%{$term}%"); }
+        $items = $prQuery->latest('id')->get()->map(fn ($row) => ['id' => $row->id, 'ref' => $row->pr_number ?: '-', 'kind' => 'Purchase Request', 'status' => $row->status ?: '-'])->concat($invoiceQuery->latest('id')->get()->map(fn ($row) => ['id' => $row->id, 'ref' => $row->invoice_number ?: '-', 'kind' => 'Supplier Invoice', 'status' => $row->status ?: '-']))->sortByDesc('ref')->values();
+        $meta = null; $rows = $items;
+        if ($request->has('page') || $request->has('per_page')) { $perPage = min(100, max(1, (int) $request->query('per_page', 10))); $page = max(1, (int) $request->query('page', 1)); $meta = ['current_page' => $page, 'last_page' => max(1, (int) ceil($items->count() / $perPage)), 'per_page' => $perPage, 'total' => $items->count()]; $rows = $items->forPage($page, $perPage)->values(); }
+        return response()->json(['success' => true, 'data' => $rows, 'meta' => $meta]);
+    }
+
     public function goodsReceipts(Request $request): JsonResponse
     {
         $query = GoodsReceipt::with($this->grnRelations());
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseOrder.purchaseRequest');
-        return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn (GoodsReceipt $grn) => $this->formatGrn($grn))]);
+        $query->when($request->filled('search'), function ($q) use ($request) {
+            $search = '%'.trim((string) $request->input('search')).'%';
+            $q->where(function ($scope) use ($search) {
+                $scope->where('grn_number', 'like', $search)->orWhere('description', 'like', $search)->orWhere('remarks', 'like', $search)
+                    ->orWhereHas('purchaseOrder', fn ($po) => $po->where('po_number', 'like', $search));
+            });
+        })->when($request->input('status') === 'completed', fn ($q) => $q->whereIn('status', ['received', 'completed', 'approved']))
+            ->when($request->input('status') === 'pending', fn ($q) => $q->whereNotIn('status', ['received', 'completed', 'approved']));
+        $sort = $request->input('sort', 'newest');
+        $rows = $query->orderBy($sort === 'oldest' ? 'receipt_date' : 'id', $sort === 'oldest' ? 'asc' : 'desc')
+            ->when($request->has('page') || $request->has('per_page'), fn ($q) => $q->paginate(min(100, max(1, (int) $request->query('per_page', 10)))), fn ($q) => $q->get());
+        $items = $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? $rows->items() : $rows;
+        return response()->json(['success' => true, 'data' => collect($items)->map(fn (GoodsReceipt $grn) => $this->formatGrn($grn)), 'meta' => $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total()] : null]);
     }
 
     public function showGoodsReceipt(Request $request, GoodsReceipt $goodsReceipt): JsonResponse
@@ -120,7 +146,19 @@ class ProcurementFulfillmentController extends Controller
     {
         $query = SupplierInvoice::with(['purchaseOrder:id,po_number', 'vendor:id,code,name']);
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseOrder.purchaseRequest');
-        return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn ($invoice) => ['id' => $invoice->id, 'invoice_number' => $invoice->invoice_number, 'invoice_date' => $invoice->invoice_date?->toDateString(), 'purchase_order' => $invoice->purchaseOrder?->po_number, 'vendor' => $invoice->vendor?->name, 'match_status' => $invoice->match_status, 'status' => $invoice->status, 'total_amount' => $invoice->total_amount])]);
+        $query->when($request->filled('search'), function ($q) use ($request) {
+            $search = '%'.trim((string) $request->input('search')).'%';
+            $q->where(function ($scope) use ($search) {
+                $scope->where('invoice_number', 'like', $search)->orWhere('notes', 'like', $search)->orWhere('vendor_name', 'like', $search)
+                    ->orWhereHas('purchaseOrder', fn ($po) => $po->where('po_number', 'like', $search));
+            });
+        })->when($request->input('status') === 'completed', fn ($q) => $q->whereIn('status', ['paid', 'completed', 'approved', 'matched']))
+            ->when($request->input('status') === 'pending', fn ($q) => $q->whereNotIn('status', ['paid', 'completed', 'approved', 'matched']));
+        $sort = $request->input('sort', 'newest');
+        $rows = $query->orderBy($sort === 'oldest' ? 'invoice_date' : 'id', $sort === 'oldest' ? 'asc' : 'desc')
+            ->when($request->has('page') || $request->has('per_page'), fn ($q) => $q->paginate(min(100, max(1, (int) $request->query('per_page', 10)))), fn ($q) => $q->get());
+        $items = $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? $rows->items() : $rows;
+        return response()->json(['success' => true, 'data' => collect($items)->map(fn ($invoice) => ['id' => $invoice->id, 'invoice_number' => $invoice->invoice_number, 'invoice_date' => $invoice->invoice_date?->toDateString(), 'purchase_order' => $invoice->purchaseOrder?->po_number, 'vendor' => $invoice->vendor?->name, 'match_status' => $invoice->match_status, 'status' => $invoice->status, 'total_amount' => $invoice->total_amount]), 'meta' => $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total()] : null]);
     }
 
     public function showSupplierInvoice(Request $request, SupplierInvoice $supplierInvoice): JsonResponse
@@ -159,9 +197,22 @@ class ProcurementFulfillmentController extends Controller
     {
         $query = PurchaseOrder::with(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']);
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
+        $query->when($request->filled('search'), function ($q) use ($request) {
+            $search = '%'.trim((string) $request->input('search')).'%';
+            $q->where(function ($scope) use ($search) {
+                $scope->where('po_number', 'like', $search)->orWhere('description', 'like', $search)->orWhere('supplier_company_name', 'like', $search)
+                    ->orWhereHas('purchaseRequest', fn ($pr) => $pr->where('pr_number', 'like', $search));
+            });
+        })->when($request->input('status') === 'completed', fn ($q) => $q->whereIn('status', ['completed', 'received', 'approved']))
+            ->when($request->input('status') === 'pending', fn ($q) => $q->whereNotIn('status', ['completed', 'received', 'approved']));
+        $sort = $request->input('sort', 'newest');
+        $rows = $query->orderBy($sort === 'oldest' ? 'po_date' : 'id', $sort === 'oldest' ? 'asc' : 'desc')
+            ->when($request->has('page') || $request->has('per_page'), fn ($q) => $q->paginate(min(100, max(1, (int) $request->query('per_page', 10)))), fn ($q) => $q->get());
+        $items = $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? $rows->items() : $rows;
         return response()->json([
             'success' => true,
-            'data' => $query->latest('id')->get()->map(fn ($po) => $this->formatPo($po)),
+            'data' => collect($items)->map(fn ($po) => $this->formatPo($po)),
+            'meta' => $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total()] : null,
         ]);
     }
 

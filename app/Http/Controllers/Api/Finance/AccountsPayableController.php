@@ -35,11 +35,26 @@ class AccountsPayableController extends Controller
             []
         );
 
-        $invoices = $query->latest('id')->get();
+        $query->when($request->filled('search'), function ($builder) use ($request) {
+            $term = '%'.$request->query('search').'%';
+            $builder->where(function ($nested) use ($term) {
+                $nested->where('invoice_number', 'like', $term)
+                    ->orWhere('reference_number', 'like', $term)
+                    ->orWhereHas('vendor', fn ($vendor) => $vendor->where('name', 'like', $term));
+            });
+        });
+        $query->when($request->filled('status') && $request->query('status') !== 'ALL', fn ($builder) => $builder->where('status', $request->query('status')));
+
+        $invoices = $query->latest('id')->when($request->has('page') || $request->has('per_page'), fn ($builder) => $builder->paginate(min(100, max(1, (int) $request->query('per_page', 10)))), fn ($builder) => $builder->get());
+        $rows = $invoices instanceof \Illuminate\Pagination\LengthAwarePaginator ? $invoices->items() : $invoices;
 
         return response()->json([
             'success' => true,
-            'data' => $invoices->map(fn (SupplierInvoice $invoice) => $this->formatInvoice($invoice)),
+            'data' => collect($rows)->map(fn (SupplierInvoice $invoice) => $this->formatInvoice($invoice))->values(),
+            'meta' => $invoices instanceof \Illuminate\Pagination\LengthAwarePaginator ? [
+                'current_page' => $invoices->currentPage(), 'last_page' => $invoices->lastPage(),
+                'per_page' => $invoices->perPage(), 'total' => $invoices->total(),
+            ] : null,
         ]);
     }
 
@@ -374,7 +389,9 @@ class AccountsPayableController extends Controller
     {
         $query = Payment::with(['supplierInvoice:id,invoice_number', 'bankAccount:id,bank_name,account_number']);
         app(\App\Services\Rbac\DataScopeService::class)->applyScope($query, $request->user(), 'created_by', null, null);
-        return response()->json(['success' => true, 'data' => $query->latest('id')->get()]);
+        $rows = $query->latest('id')->when($request->has('page') || $request->has('per_page'), fn ($builder) => $builder->paginate(min(100, max(1, (int) $request->query('per_page', 10)))), fn ($builder) => $builder->get());
+        $items = $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? $rows->items() : $rows;
+        return response()->json(['success' => true, 'data' => collect($items)->values(), 'meta' => $rows instanceof \Illuminate\Pagination\LengthAwarePaginator ? ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total()] : null]);
     }
 
     public function bankTransactions(Request $request): JsonResponse
@@ -410,6 +427,11 @@ class AccountsPayableController extends Controller
                     ->orWhereHas('payment.journal.lines', fn ($l) => $l->where('relation_no', 'like', "%{$relFilter}%"));
             });
         }
+        if ($request->filled('status') && $request->query('status') !== 'ALL') $query->where('status', $request->query('status'));
+        if ($request->filled('search')) {
+            $term = '%'.$request->query('search').'%';
+            $query->where(function ($q) use ($term) { $q->where('reference', 'like', $term)->orWhere('description', 'like', $term); });
+        }
         if (! app(\App\Services\Rbac\DataScopeService::class)->canAccessAll($request->user())) {
             $query->where(function ($scoped) use ($request) {
                 $scoped->where('created_by', $request->user()->id)
@@ -417,7 +439,18 @@ class AccountsPayableController extends Controller
             });
         }
 
-        $transactions = $query->latest('transaction_date')->latest('id')->get();
+        $paginator = null;
+        if ($request->has('page') || $request->has('per_page')) {
+            $perPage = min(100, max(1, (int) $request->query('per_page', 10)));
+            $paginator = ($request->query('sort') === 'oldest'
+                ? $query->orderBy('transaction_date')->orderBy('id')
+                : $query->latest('transaction_date')->latest('id'))->paginate($perPage);
+            $transactions = collect($paginator->items());
+        } else {
+            $transactions = ($request->query('sort') === 'oldest'
+                ? $query->orderBy('transaction_date')->orderBy('id')
+                : $query->latest('transaction_date')->latest('id'))->get();
+        }
         $references = $transactions->pluck('reference')->filter()->unique()->values();
         $refJournals = $references->isNotEmpty()
             ? \App\Models\Accounting\Journal::with([
@@ -474,7 +507,8 @@ class AccountsPayableController extends Controller
             ];
         });
 
-        return response()->json(['success' => true, 'data' => $rows]);
+        $meta = $paginator ? ['current_page' => $paginator->currentPage(), 'last_page' => $paginator->lastPage(), 'per_page' => $paginator->perPage(), 'total' => $paginator->total()] : null;
+        return response()->json(['success' => true, 'data' => $rows, 'meta' => $meta]);
     }
 
     /** Queue of imported statement lines that still need a finance decision. */

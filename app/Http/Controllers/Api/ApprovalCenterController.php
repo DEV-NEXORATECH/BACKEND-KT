@@ -602,11 +602,24 @@ class ApprovalCenterController extends Controller
             }
             return $item;
         })->sortByDesc('created_at')->values();
+        if ($request->filled('search')) {
+            $term = strtolower((string) $request->query('search'));
+            $sortedItems = $sortedItems->filter(fn (array $item) => str_contains(strtolower(implode(' ', array_map(fn ($value) => is_scalar($value) ? (string) $value : '', [$item['reference_number'] ?? '', $item['module_label'] ?? '', $item['title_summary'] ?? '', $item['requester_name'] ?? '', $item['project_name'] ?? '']))), $term))->values();
+        }
+        $meta = null;
+        $responseItems = $sortedItems;
+        if ($request->has('page') || $request->has('per_page')) {
+            $perPage = min(100, max(1, (int) $request->query('per_page', 10)));
+            $page = max(1, (int) $request->query('page', 1));
+            $responseItems = $sortedItems->forPage($page, $perPage)->values();
+            $meta = ['current_page' => $page, 'last_page' => max(1, (int) ceil($sortedItems->count() / $perPage)), 'per_page' => $perPage, 'total' => $sortedItems->count()];
+        }
 
         return response()->json([
             'success' => true,
             'count' => $sortedItems->count(),
-            'data' => $sortedItems,
+            'data' => $responseItems,
+            'meta' => $meta,
         ]);
     }
 

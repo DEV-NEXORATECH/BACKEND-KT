@@ -34,14 +34,41 @@ class AdvancedProcurementController extends Controller
     {
         $query = $this->rfqListingQuery($request);
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
-        return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn (Rfq $rfq) => $this->formatRfq($rfq))]);
+        return $this->rfqResponse($query, $request);
     }
 
     public function cbas(Request $request): JsonResponse
     {
         $query = $this->rfqListingQuery($request)->whereHas('quotations');
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
-        return response()->json(['success' => true, 'data' => $query->latest('id')->get()->map(fn (Rfq $rfq) => $this->formatRfq($rfq))]);
+        $rfqRows = $query->latest('id')->get()->map(fn (Rfq $rfq) => $this->formatRfq($rfq));
+        $standalone = ComparativeBidAnalysis::with(['purchaseRequest.lines', 'selectedVendor:id,code,name', 'selectedQuotation'])
+            ->whereNull('rfq_id')
+            ->whereNotNull('purchase_request_id')
+            ->when($request->filled('fiscal_year_id'), fn ($q) => $q->whereHas('purchaseRequest', fn ($pr) => $pr->where('fiscal_year_id', (int) $request->query('fiscal_year_id'))))
+            ->get()
+            ->map(function (ComparativeBidAnalysis $cba) {
+                return [
+                    'id' => null,
+                    'rfq_number' => null,
+                    'rfq_date' => $cba->analysis_date?->toDateString(),
+                    'purchase_request' => $cba->purchaseRequest,
+                    'quotations' => [],
+                    'cba' => $this->formatCba($cba),
+                ];
+            });
+        $items = $rfqRows->concat($standalone)->sortByDesc('rfq_date')->values();
+        return response()->json(['success' => true, 'data' => $items, 'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => $items->count(), 'total' => $items->count()]]);
+    }
+
+    private function rfqResponse($query, Request $request): JsonResponse
+    {
+        $query = $request->query('sort') === 'oldest' ? $query->oldest('id') : $query->latest('id');
+        $rows = $request->has('page') || $request->has('per_page')
+            ? $query->paginate(min(100, max(1, (int) $request->query('per_page', 10))))
+            : null;
+        $items = $rows ? $rows->items() : $query->get();
+        return response()->json(['success' => true, 'data' => collect($items)->map(fn (Rfq $rfq) => $this->formatRfq($rfq)), 'meta' => $rows ? ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total()] : null]);
     }
 
     private function rfqListingQuery(Request $request)
@@ -272,6 +299,32 @@ class AdvancedProcurementController extends Controller
         return response()->json(['success' => true, 'message' => 'CBA berhasil dibuat.', 'data' => $this->formatCba($cba)], Response::HTTP_CREATED);
     }
 
+    public function createCbaFromPurchaseRequest(PurchaseRequest $purchaseRequest, Request $request): JsonResponse
+    {
+        if ($purchaseRequest->status !== 'approved') {
+            throw ValidationException::withMessages(['status' => 'CBA hanya dapat dibuat dari PR approved.']);
+        }
+
+        $data = $request->validate([
+            'analysis_date' => ['required', 'date'],
+            'selection_reason' => ['required', 'string'],
+            'remarks' => ['nullable', 'string'],
+            'bidding_results' => ['nullable', 'string'],
+            'prepared_by' => ['nullable', 'string', 'max:120'],
+            'prepared_by_position' => ['nullable', 'string', 'max:120'],
+            'budget_holder_name' => ['nullable', 'string', 'max:120'],
+            'budget_holder_position' => ['nullable', 'string', 'max:120'],
+            'bid_comparison' => ['nullable', 'array'],
+        ]);
+
+        $cba = ComparativeBidAnalysis::updateOrCreate(
+            ['purchase_request_id' => $purchaseRequest->id, 'rfq_id' => null],
+            [...$data, 'cba_number' => $this->nextCbaNumber(), 'status' => 'draft', 'created_by' => $request->user()->id],
+        );
+
+        return response()->json(['success' => true, 'message' => 'CBA berhasil dibuat dari PR. RFQ dapat diproses paralel.', 'data' => $this->formatCba($cba->load('purchaseRequest'))], Response::HTTP_CREATED);
+    }
+
     public function submitCba(Request $request, ComparativeBidAnalysis $cba, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($cba->status !== 'draft') throw ValidationException::withMessages(['status' => 'Hanya CBA draft yang dapat diajukan approval.']);
@@ -471,8 +524,9 @@ class AdvancedProcurementController extends Controller
             'fiscal_year' => $cba->rfq?->fiscalYear?->only(['id', 'year', 'name']),
             'cba_number' => $cba->cba_number,
             'rfq_id' => $cba->rfq_id,
+            'purchase_request_id' => $cba->purchase_request_id,
             'rfq_number' => $cba->rfq?->rfq_number,
-            'pr_number' => $cba->rfq?->purchaseRequest?->pr_number,
+            'pr_number' => $cba->rfq?->purchaseRequest?->pr_number ?? $cba->purchaseRequest?->pr_number,
             'analysis_date' => $cba->analysis_date?->toDateString(),
             'selected_vendor_id' => $cba->selected_vendor_id,
             'selected_vendor_name' => $cba->selectedVendor?->name,

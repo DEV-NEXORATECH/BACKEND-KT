@@ -37,7 +37,10 @@ class ProcurementWaiverController extends Controller
         }
 
         if ($request->filled('status')) {
-            $query->where('status', $request->query('status'));
+            $status = $request->query('status');
+            $status === 'completed'
+                ? $query->whereIn('status', ['approved', 'completed'])
+                : ($status === 'pending' ? $query->whereNotIn('status', ['approved', 'completed']) : $query->where('status', $status));
         }
 
         $sort = $request->query('sort', 'newest');

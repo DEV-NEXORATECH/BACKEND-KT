@@ -19,6 +19,10 @@ class ProjectLogframeController extends Controller
             'project_id' => 'nullable|integer|exists:projects,id',
             'relation_no' => 'nullable|string|max:100',
             'fiscal_year_id' => 'nullable|integer|exists:fiscal_years,id',
+            'search' => 'nullable|string|max:150',
+            'sort' => 'nullable|in:newest,oldest,code',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
         $relationNo = trim((string) ($filters['relation_no'] ?? ''));
@@ -43,12 +47,26 @@ class ProjectLogframeController extends Controller
                 $builder->where(function ($scope) use ($fiscalYearId) {
                     $scope->whereNull('fiscal_year_id')->orWhere('fiscal_year_id', $fiscalYearId);
                 });
+            })
+            ->when($filters['search'] ?? null, function ($builder, $search) {
+                $builder->where(function ($scope) use ($search) {
+                    $scope->where('code', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%")
+                        ->orWhere('indicator', 'like', "%{$search}%");
+                });
             });
+
+        $sort = $filters['sort'] ?? 'newest';
+        $query = $sort === 'oldest' ? $query->oldest('code') : ($sort === 'code' ? $query->orderBy('code') : $query->latest());
+        $rows = $request->has('page') || $request->has('per_page')
+            ? $query->paginate((int) ($filters['per_page'] ?? 10))
+            : null;
 
         return response()->json([
             'success' => true,
             'scope' => ['relation_no' => $relationNo ?: null, 'project_id' => $filters['project_id'] ?? null],
-            'data' => $query->latest()->get(),
+            'data' => $rows ? $rows->items() : $query->get(),
+            'meta' => $rows ? ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total(), 'from' => $rows->firstItem(), 'to' => $rows->lastItem()] : null,
         ]);
     }
 

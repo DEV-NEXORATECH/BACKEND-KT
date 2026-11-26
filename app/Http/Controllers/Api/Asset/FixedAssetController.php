@@ -37,28 +37,55 @@ class FixedAssetController extends Controller
             []
         );
 
-        $assets = $query
+        $query = $query
             ->when($request->filled('status'), fn (Builder $q) => $q->where('status', $request->string('status')))
             ->when($request->filled('project_id'), fn (Builder $q) => $q->where('project_id', $request->integer('project_id')))
             ->when($request->filled('relation_no'), fn (Builder $q) => $q->whereHas('project', fn (Builder $project) => $project->withoutGlobalScope('fiscal_year_context')->where('relation_no', trim((string) $request->query('relation_no')))))
-            ->latest('id')
-            ->get();
+            ->when($request->filled('search'), function (Builder $q) use ($request) {
+                $search = trim((string) $request->input('search'));
+                $q->where(function (Builder $scope) use ($search) {
+                    $scope->where('asset_code', 'like', "%{$search}%")
+                        ->orWhere('asset_name', 'like', "%{$search}%")
+                        ->orWhere('location', 'like', "%{$search}%")
+                        ->orWhereHas('category', fn (Builder $category) => $category->where('name', 'like', "%{$search}%"));
+                });
+            });
+
+        $sort = $request->input('sort', 'newest');
+        $query->orderBy($sort === 'oldest' ? 'acquisition_date' : ($sort === 'name' ? 'asset_name' : 'id'), $sort === 'oldest' || $sort === 'name' ? 'asc' : 'desc');
+        $totalsQuery = clone $query;
+        $totalsRow = $totalsQuery->reorder()->selectRaw('COALESCE(SUM(acquisition_cost), 0) as acquisition_cost, COALESCE(SUM(accumulated_depreciation), 0) as accumulated_depreciation, COALESCE(SUM(net_book_value), 0) as net_book_value, COUNT(*) as assets')->first();
+        $reviewCount = (clone $query)->reorder()
+            ->where(function (Builder $q) {
+                $q->where('status', 'draft')
+                    ->orWhere(function (Builder $stale) {
+                        $stale->whereIn('status', ['active', 'transferred'])
+                            ->where('updated_at', '<', now()->subYear());
+                    });
+            })->count();
 
         $totals = [
-            'acquisition_cost' => round((float) $assets->sum('acquisition_cost'), 2),
-            'accumulated_depreciation' => round((float) $assets->sum('accumulated_depreciation'), 2),
-            'net_book_value' => round((float) $assets->sum('net_book_value'), 2),
-            'assets' => $assets->count(),
+            'acquisition_cost' => round((float) ($totalsRow->acquisition_cost ?? 0), 2),
+            'accumulated_depreciation' => round((float) ($totalsRow->accumulated_depreciation ?? 0), 2),
+            'net_book_value' => round((float) ($totalsRow->net_book_value ?? 0), 2),
+            'assets' => (int) ($totalsRow->assets ?? 0),
             // Until a dedicated review_due_date is introduced, draft assets and
             // active/transferred assets not updated for one year form the review queue.
-            'due_for_review' => $assets->filter(fn (FixedAsset $asset) =>
-                $asset->status === 'draft'
-                || (in_array($asset->status, ['active', 'transferred'], true)
-                    && $asset->updated_at?->lt(now()->subYear()))
-            )->count(),
+            'due_for_review' => $reviewCount,
         ];
 
-        return response()->json(['success' => true, 'totals' => $totals, 'data' => $assets->map(fn (FixedAsset $asset) => $this->format($asset))]);
+        $paginator = $query->paginate(min(max((int) $request->input('per_page', 10), 1), 100));
+        return response()->json([
+            'success' => true,
+            'totals' => $totals,
+            'data' => collect($paginator->items())->map(fn (FixedAsset $asset) => $this->format($asset))->values(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+            ],
+        ]);
     }
 
     public function export(Request $request)

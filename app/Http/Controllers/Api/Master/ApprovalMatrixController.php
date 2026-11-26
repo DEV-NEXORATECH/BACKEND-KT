@@ -29,6 +29,13 @@ class ApprovalMatrixController extends BaseMasterController
             ->withoutGlobalScope('fiscal_year_context')
             ->with($this->defaultWith);
 
+        if ($request->filled('module')) {
+            $query->where('module', $request->query('module'));
+        }
+        if ($request->filled('approver_title')) {
+            $query->where('approver_title', $request->query('approver_title'));
+        }
+
         if ($request->filled('fiscal_year_id')) {
             $rawYear = $request->query('fiscal_year_id');
             if ($rawYear === 'global') {
@@ -59,7 +66,10 @@ class ApprovalMatrixController extends BaseMasterController
             $query->applyFilters($request, $this->searchableColumns);
         }
 
-        $query->orderBy('module')->orderBy('level')->orderBy('min_amount')->orderBy('id');
+        $sortBy = $request->query('sort_by', 'level');
+        $sortColumn = in_array($sortBy, ['level', 'min_amount', 'created_at'], true) ? $sortBy : 'level';
+        $sortDirection = strtolower($request->query('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
+        $query->orderBy($sortColumn, $sortDirection)->orderBy('id');
 
         if ($request->boolean('options') || $request->query('paginate') === 'false') {
             $items = $query->get();

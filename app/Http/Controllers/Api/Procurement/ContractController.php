@@ -65,12 +65,21 @@ class ContractController extends Controller
         $perPage = (int) $request->query('per_page', 100);
         $perPage = $perPage < 1 || $perPage > 200 ? 100 : $perPage;
 
+        $summaryQuery = clone $query;
+        $summary = [
+            'total' => (clone $summaryQuery)->count(),
+            'active' => (clone $summaryQuery)->where('status', 'active')->count(),
+            'expiring_soon' => (clone $summaryQuery)->where('status', 'active')->whereNotNull('end_date')->whereBetween('end_date', [now()->toDateString(), now()->addDays(60)->toDateString()])->count(),
+            'total_value' => (float) (clone $summaryQuery)->whereIn('status', ['active', 'draft'])->sum('total_value'),
+        ];
+
         $contracts = $query->paginate($perPage);
 
         return response()->json([
             'success' => true,
             'message' => 'Daftar kontrak berhasil dimuat.',
             'data' => $contracts->items(),
+            'summary' => $summary,
             'meta' => [
                 'current_page' => $contracts->currentPage(),
                 'last_page' => $contracts->lastPage(),

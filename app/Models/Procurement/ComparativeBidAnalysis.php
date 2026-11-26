@@ -13,7 +13,7 @@ class ComparativeBidAnalysis extends Model
     use SoftDeletes, AuditTrailTrait;
 
     protected $fillable = [
-        'rfq_id', 'cba_number', 'analysis_date', 'selected_vendor_id', 'selected_quotation_id',
+        'rfq_id', 'purchase_request_id', 'cba_number', 'analysis_date', 'selected_vendor_id', 'selected_quotation_id',
         'selection_reason', 'remarks', 'bidding_results', 'prepared_by', 'prepared_by_position',
         'budget_holder_name', 'budget_holder_position', 'panelist_1_name', 'panelist_1_position',
         'panelist_2_name', 'panelist_2_position', 'panelist_3_name', 'panelist_3_position',
@@ -25,6 +25,7 @@ class ComparativeBidAnalysis extends Model
     protected $casts = ['analysis_date' => 'date', 'approved_at' => 'datetime', 'attachments' => 'array', 'bid_comparison' => 'array'];
 
     public function rfq(): BelongsTo { return $this->belongsTo(Rfq::class, 'rfq_id'); }
+    public function purchaseRequest(): BelongsTo { return $this->belongsTo(PurchaseRequest::class, 'purchase_request_id'); }
     public function selectedVendor(): BelongsTo { return $this->belongsTo(Vendor::class, 'selected_vendor_id'); }
     public function selectedQuotation(): BelongsTo { return $this->belongsTo(VendorQuotation::class, 'selected_quotation_id'); }
 }

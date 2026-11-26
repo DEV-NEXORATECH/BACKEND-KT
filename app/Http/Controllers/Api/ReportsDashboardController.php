@@ -46,6 +46,9 @@ class ReportsDashboardController extends Controller
         $fiscalYearId = $request->integer('fiscal_year_id') ?: null;
         $startDate = $request->input('start_date');
         $endDate = $request->input('end_date');
+        $recentSearch = trim((string) $request->input('recent_search', ''));
+        $recentPage = max(1, (int) $request->input('recent_page', 1));
+        $recentPerPage = min(max((int) $request->input('recent_per_page', 10), 1), 100);
 
         $requests = PurchaseRequest::query()
             ->when($projectId, fn ($q) => $q->where('project_id', $projectId))
@@ -58,7 +61,10 @@ class ReportsDashboardController extends Controller
             ->when($fiscalYearId, fn ($q) => $q->where('fiscal_year_id', $fiscalYearId))
             ->when($startDate, fn ($q) => $q->whereDate('po_date', '>=', $startDate))
             ->when($endDate, fn ($q) => $q->whereDate('po_date', '<=', $endDate))
-            ->with(['vendor:id,code,name', 'purchaseRequest:id,pr_number,project_id', 'purchaseRequest.project:id,code,name'])->latest('id')->limit(100)->get();
+            ->when($recentSearch !== '', fn ($q) => $q->where(function ($s) use ($recentSearch) { $s->where('po_number', 'like', "%{$recentSearch}%")->orWhereHas('vendor', fn ($v) => $v->where('name', 'like', "%{$recentSearch}%"))->orWhere('status', 'like', "%{$recentSearch}%"); }))
+            ->with(['vendor:id,code,name', 'purchaseRequest:id,pr_number,project_id', 'purchaseRequest.project:id,code,name'])->latest('id');
+        $ordersTotal = (clone $orders)->count();
+        $orders = $orders->forPage($recentPage, $recentPerPage)->get();
         $invoices = SupplierInvoice::query()->with([
             'vendor:id,code,name',
             'purchaseOrder:id,po_number,purchase_request_id',
@@ -70,7 +76,10 @@ class ReportsDashboardController extends Controller
             ->when($projectId, fn ($q) => $q->whereHas('purchaseOrder.purchaseRequest', fn ($r) => $r->where('project_id', $projectId)))
             ->when($startDate, fn ($q) => $q->whereDate('invoice_date', '>=', $startDate))
             ->when($endDate, fn ($q) => $q->whereDate('invoice_date', '<=', $endDate))
-            ->latest('id')->limit(100)->get();
+            ->when($recentSearch !== '', fn ($q) => $q->where(function ($s) use ($recentSearch) { $s->where('invoice_number', 'like', "%{$recentSearch}%")->orWhereHas('vendor', fn ($v) => $v->where('name', 'like', "%{$recentSearch}%"))->orWhere('status', 'like', "%{$recentSearch}%"); }))
+            ->latest('id');
+        $invoicesTotal = (clone $invoices)->count();
+        $invoices = $invoices->forPage($recentPage, $recentPerPage)->get();
 
         $rfqsCount = \Illuminate\Support\Facades\Schema::hasTable('rfqs')
             ? \Illuminate\Support\Facades\DB::table('rfqs')
@@ -119,9 +128,9 @@ class ReportsDashboardController extends Controller
             ['stage' => 'Purchase Requests (PR)', 'code' => 'PR', 'count' => $requests->count(), 'total_amount' => $totalPrAmount, 'color' => '#3b82f6'],
             ['stage' => 'Requests for Quotation (RFQ)', 'code' => 'RFQ', 'count' => $rfqsCount, 'total_amount' => 0, 'color' => '#6366f1'],
             ['stage' => 'Comparative Bid Analyses (CBA)', 'code' => 'CBA', 'count' => $cbaCount, 'total_amount' => 0, 'color' => '#8b5cf6'],
-            ['stage' => 'Purchase Orders (PO)', 'code' => 'PO', 'count' => $orders->count(), 'total_amount' => $totalPoAmount, 'color' => '#059669'],
+            ['stage' => 'Purchase Orders (PO)', 'code' => 'PO', 'count' => $ordersTotal, 'total_amount' => $totalPoAmount, 'color' => '#059669'],
             ['stage' => 'Goods Receipt Notes (GRN)', 'code' => 'GRN', 'count' => $grnCount, 'total_amount' => 0, 'color' => '#10b981'],
-            ['stage' => 'Supplier Invoices', 'code' => 'INV', 'count' => $invoices->count(), 'total_amount' => (float) $invoices->sum('total_amount'), 'color' => '#d97706'],
+            ['stage' => 'Supplier Invoices', 'code' => 'INV', 'count' => $invoicesTotal, 'total_amount' => (float) SupplierInvoice::query()->when($projectId, fn ($q) => $q->whereHas('purchaseOrder.purchaseRequest', fn ($r) => $r->where('project_id', $projectId)))->when($startDate, fn ($q) => $q->whereDate('invoice_date', '>=', $startDate))->when($endDate, fn ($q) => $q->whereDate('invoice_date', '<=', $endDate))->sum('total_amount'), 'color' => '#d97706'],
         ];
 
         // 4.2 Dashboard - 6 KPI Pipeline Statuses
@@ -222,7 +231,7 @@ class ReportsDashboardController extends Controller
                 ->map(fn ($r) => ['id' => $r->id, 'code' => $r->code, 'name' => $r->name, 'committed' => round((float) $r->committed, 2)]);
         }
 
-        $supplierSpend = \Illuminate\Support\Facades\DB::table('supplier_invoices as si')
+        $supplierSpendQuery = \Illuminate\Support\Facades\DB::table('supplier_invoices as si')
             ->leftJoin('vendors as v', 'v.id', '=', 'si.vendor_id')
             ->leftJoin('purchase_orders as po', 'po.id', '=', 'si.purchase_order_id')
             ->leftJoin('purchase_requests as pr', 'pr.id', '=', 'po.purchase_request_id')
@@ -233,11 +242,12 @@ class ReportsDashboardController extends Controller
             ->when($fiscalYearId, fn ($q) => $q->where('si.fiscal_year_id', $fiscalYearId))
             ->when($startDate, fn ($q) => $q->whereDate('si.invoice_date', '>=', $startDate))
             ->when($endDate, fn ($q) => $q->whereDate('si.invoice_date', '<=', $endDate))
+            ->when($request->filled('supplier_search'), fn ($q) => $q->where(function ($s) use ($request) { $needle = '%'.trim((string) $request->input('supplier_search')).'%'; $s->where('v.name', 'like', $needle)->orWhere('v.code', 'like', $needle); }))
             ->selectRaw('si.vendor_id, v.name as vendor_name, v.code as vendor_code, COUNT(si.id) as invoice_count, MAX(si.invoice_date) as last_invoice_date, SUM(si.total_amount) as total_spend, SUM(si.paid_amount) as total_paid, COALESCE(MAX(d.name), MAX(ga.agreement_name), MAX(p.name), \'Operational Funds\') as fund_source')
             ->groupBy('si.vendor_id', 'v.name', 'v.code')
-            ->orderByDesc('total_spend')
-            ->limit(10)
-            ->get()
+            ->orderBy($request->input('supplier_sort') === 'name_asc' ? 'v.name' : 'total_spend', $request->input('supplier_sort') === 'name_asc' ? 'asc' : 'desc');
+        $supplierPaginator = $supplierSpendQuery->paginate(min(max((int) $request->input('supplier_per_page', 10), 1), 100), ['*'], 'supplier_page', max(1, (int) $request->input('supplier_page', 1)));
+        $supplierSpend = collect($supplierPaginator->items())
             ->map(fn ($item) => [
                 'vendor_id' => $item->vendor_id,
                 'vendor_name' => $item->vendor_name ?? 'Unknown Vendor',
@@ -254,11 +264,11 @@ class ReportsDashboardController extends Controller
             'success' => true,
             'summary' => [
                 'total_pr' => $requests->count(),
-                'total_po' => $orders->count(),
+                'total_po' => $ordersTotal,
                 'total_po_value' => $totalPoAmount,
-                'total_invoices' => $invoices->count(),
-                'total_invoice_value' => (float) $invoices->sum('total_amount'),
-                'total_spend' => (float) $invoices->sum('paid_amount'),
+                'total_invoices' => $invoicesTotal,
+                'total_invoice_value' => (float) SupplierInvoice::query()->when($projectId, fn ($q) => $q->whereHas('purchaseOrder.purchaseRequest', fn ($r) => $r->where('project_id', $projectId)))->when($startDate, fn ($q) => $q->whereDate('invoice_date', '>=', $startDate))->when($endDate, fn ($q) => $q->whereDate('invoice_date', '<=', $endDate))->sum('total_amount'),
+                'total_spend' => (float) SupplierInvoice::query()->when($projectId, fn ($q) => $q->whereHas('purchaseOrder.purchaseRequest', fn ($r) => $r->where('project_id', $projectId)))->when($startDate, fn ($q) => $q->whereDate('invoice_date', '>=', $startDate))->when($endDate, fn ($q) => $q->whereDate('invoice_date', '<=', $endDate))->sum('paid_amount'),
             ],
             'pipeline' => $pipeline,
             'pipeline_status' => $pipelineStatus,
@@ -267,10 +277,19 @@ class ReportsDashboardController extends Controller
                 'by_donor' => $committedByDonor,
             ],
             'supplier_spend' => $supplierSpend,
+            'supplier_spend_meta' => [
+                'current_page' => $supplierPaginator->currentPage(), 'per_page' => $supplierPaginator->perPage(),
+                'total' => $supplierPaginator->total(), 'last_page' => $supplierPaginator->lastPage(),
+            ],
             'procurement' => [
                 'requests' => $requests,
                 'orders' => $orders,
                 'invoices' => $invoices,
+            ],
+            'recent_meta' => [
+                'current_page' => $recentPage, 'per_page' => $recentPerPage,
+                'orders_total' => $ordersTotal, 'orders_last_page' => max(1, (int) ceil($ordersTotal / $recentPerPage)),
+                'invoices_total' => $invoicesTotal, 'invoices_last_page' => max(1, (int) ceil($invoicesTotal / $recentPerPage)),
             ],
         ]);
     }
@@ -638,6 +657,15 @@ class ReportsDashboardController extends Controller
             ];
         })->values()->all();
         $totalCashBalance = collect($cashPositions)->sum('balance');
+        $cashOutput = collect($cashPositions);
+        $cashMeta = null;
+        if ($request->has('cash_page') || $request->has('cash_per_page')) {
+            $cashPage = max(1, (int) $request->input('cash_page', 1));
+            $cashPerPage = min(100, max(1, (int) $request->input('cash_per_page', 10)));
+            $cashTotal = $cashOutput->count();
+            $cashOutput = $cashOutput->forPage($cashPage, $cashPerPage)->values();
+            $cashMeta = ['current_page' => $cashPage, 'per_page' => $cashPerPage, 'total' => $cashTotal, 'last_page' => max(1, (int) ceil($cashTotal / $cashPerPage))];
+        }
 
         $upcomingDeadlines = GrantReportingDeadline::query()
             ->with(['grantAgreement:id,fiscal_year_id,grant_no,relation_no,agreement_name,donor_id', 'grantAgreement.fiscalYear:id,year,name', 'grantAgreement.donor:id,name,code'])
@@ -786,6 +814,21 @@ class ReportsDashboardController extends Controller
 
         $endingSoon = $grantSummaries->filter(fn (array $grant) => $grant['end_date'] && $grant['end_date'] >= now()->toDateString() && $grant['end_date'] <= now()->addDays(60)->toDateString())->count();
         $reportingSoon = $grantSummaries->filter(fn (array $grant) => $grant['reporting_deadline'] && $grant['reporting_deadline'] >= now()->toDateString() && $grant['reporting_deadline'] <= now()->addDays(60)->toDateString())->count();
+        $grantOutput = $grantSummaries;
+        $grantMeta = null;
+        if ($request->has('page') || $request->has('per_page')) {
+            $term = strtolower(trim((string) $request->input('search', '')));
+            if ($term !== '') {
+                $grantOutput = $grantOutput->filter(fn (array $grant) => str_contains(strtolower(implode(' ', array_filter([$grant['grant_no'], $grant['agreement_name'], $grant['donor_name'], $grant['relation_no']]))), $term))->values();
+            }
+            $sort = $request->input('sort', 'newest');
+            $grantOutput = $sort === 'oldest' ? $grantOutput->sortBy('start_date')->values() : $grantOutput->sortByDesc('start_date')->values();
+            $perPage = min(100, max(1, (int) $request->input('per_page', 10)));
+            $page = max(1, (int) $request->input('page', 1));
+            $total = $grantOutput->count();
+            $grantOutput = $grantOutput->forPage($page, $perPage)->values();
+            $grantMeta = ['current_page' => $page, 'last_page' => max(1, (int) ceil($total / $perPage)), 'per_page' => $perPage, 'total' => $total];
+        }
 
         return response()->json([
             'success' => true,
@@ -812,8 +855,10 @@ class ReportsDashboardController extends Controller
                 'reporting_due_soon' => $dueSoonCount,
             ],
             'donors' => $donorSummaries,
-            'grants' => $grantSummaries,
-            'cash_positions' => $cashPositions,
+            'grants' => $grantOutput,
+            'grants_meta' => $grantMeta,
+            'cash_positions' => $cashOutput,
+            'cash_positions_meta' => $cashMeta,
             'upcoming_deadlines' => $upcomingDeadlines,
         ]);
     }
@@ -929,6 +974,22 @@ class ReportsDashboardController extends Controller
                     'balance' => round((float) ($bankBalances[$bank?->id] ?? 0), 2),
                 ];
             }))->values()->all();
+        $tableKey = in_array($request->input('table'), ['bva', 'expenditures', 'banking'], true) ? $request->input('table') : null;
+        $tableSource = $tableKey === 'bva' ? collect($bva) : ($tableKey === 'expenditures' ? collect($expenditures) : collect($linkedBanking));
+        $tableSearch = trim((string) $request->input('search', ''));
+        $tableStatus = trim((string) $request->input('status', ''));
+        if ($tableKey) {
+            $tableSource = $tableSource->filter(function (array $row) use ($tableSearch, $tableStatus) {
+                if ($tableStatus !== '' && strtoupper($tableStatus) !== 'ALL' && strtolower((string) ($row['status'] ?? '')) !== strtolower($tableStatus)) return false;
+                if ($tableSearch === '') return true;
+                $haystack = collect([$row['project'] ?? null, $row['grant'] ?? null, $row['description'] ?? null, $row['reference'] ?? null, $row['account'] ?? null, $row['account_code'] ?? null, $row['relation_no'] ?? null, $row['bank_name'] ?? null, $row['account_number'] ?? null])->filter()->implode(' ');
+                return str_contains(strtolower($haystack), strtolower($tableSearch));
+            })->values();
+        }
+        $tablePerPage = min(100, max(1, (int) $request->input('per_page', 10)));
+        $tablePage = max(1, (int) $request->input('page', 1));
+        $tableTotal = $tableSource->count();
+        $tableData = $tableKey ? $tableSource->forPage($tablePage, $tablePerPage)->values()->all() : [];
         return response()->json([
             'success' => true,
             'relation_no' => $request->input('relation_no'),
@@ -961,6 +1022,13 @@ class ReportsDashboardController extends Controller
             'expenditures' => $expenditures,
             'deadlines' => $deadlines,
             'banking' => $linkedBanking,
+            'table_data' => $tableData,
+            'table_meta' => $tableKey ? [
+                'current_page' => $tablePage,
+                'last_page' => max(1, (int) ceil($tableTotal / $tablePerPage)),
+                'per_page' => $tablePerPage,
+                'total' => $tableTotal,
+            ] : null,
         ]);
     }
 
@@ -1042,6 +1110,31 @@ class ReportsDashboardController extends Controller
             })
             ->values()
             ->all();
+        $projectTransactionsMeta = null;
+        if ($isProjectReport) {
+            $transactionRows = collect($scopedTransactions);
+            if ($request->filled('search')) {
+                $needle = strtolower(trim((string) $request->input('search')));
+                $transactionRows = $transactionRows->filter(fn (array $row) => collect([$row['reference'] ?? '', $row['description'] ?? '', $row['project'] ?? '', $row['relation_no'] ?? '', $row['grant_agreement'] ?? '', $row['grant_no'] ?? '', $row['status'] ?? ''])->contains(fn ($value) => str_contains(strtolower((string) $value), $needle)));
+            }
+            $sort = $request->input('sort', 'newest');
+            $transactionRows = $transactionRows->sort(function (array $a, array $b) use ($sort) {
+                if ($sort === 'amount_high') return (float) ($b['amount'] ?? 0) <=> (float) ($a['amount'] ?? 0);
+                if ($sort === 'amount_low') return (float) ($a['amount'] ?? 0) <=> (float) ($b['amount'] ?? 0);
+                return strcmp((string) ($b['date'] ?? ''), (string) ($a['date'] ?? ''));
+            })->values();
+            $perPage = min(max((int) $request->input('per_page', 10), 1), 100);
+            $page = max(1, (int) $request->input('page', 1));
+            $total = $transactionRows->count();
+            $scopedTransactions = $transactionRows->forPage($page, $perPage)->values()->all();
+            $projectTransactionsMeta = ['current_page' => $page, 'per_page' => $perPage, 'total' => $total, 'last_page' => max(1, (int) ceil($total / $perPage))];
+        }
+
+        $paginatedTransactions = $this->recentTransactions(
+            $period['start'],
+            $period['end'],
+            ($request->is('api/v1/reports/management') || $request->is('api/v1/reports/budget')) ? $request : null,
+        );
 
         return response()->json([
             'success' => true,
@@ -1061,6 +1154,10 @@ class ReportsDashboardController extends Controller
                 $request->integer('project_id') ?: null,
                 $relationNo,
                 $grantAgreementId,
+                $request->input('table_page'),
+                $request->input('table_per_page'),
+                $request->input('table_search'),
+                $request->input('table_sort'),
             ),
             'budget_vs_actual' => [
                 'totals' => $this->budgetTotals($budgetRows),
@@ -1098,7 +1195,9 @@ class ReportsDashboardController extends Controller
             'cash_advance_settlement' => $this->cashAdvanceSettlementReport($request, $period),
             'recent_transactions' => ($isScoped || $isProjectReport)
                 ? $scopedTransactions
-                : $this->recentTransactions($period['start'], $period['end']),
+                : $paginatedTransactions['data'],
+            'recent_transactions_meta' => ($isScoped || $isProjectReport) ? null : $paginatedTransactions['meta'],
+            'project_transactions_meta' => $projectTransactionsMeta,
         ]);
     }
 
@@ -1449,7 +1548,17 @@ class ReportsDashboardController extends Controller
                         ->orWhereHas('project', fn (Builder $project) => $project->where('relation_no', $relationNo));
                 });
             })
-            ->latest('period_date')->limit(500)->get();
+            ->when($request->filled('search'), function (Builder $query) use ($request) {
+                $term = '%'.trim((string) $request->input('search')).'%';
+                $query->where(function (Builder $scope) use ($term) { $scope->where('reference', 'like', $term)->orWhere('notes', 'like', $term); });
+            });
+        $sort = $request->input('sort', 'newest');
+        $query = $sort === 'oldest' ? $entries->oldest('period_date')->oldest('id') : $entries->latest('period_date')->latest('id');
+        if ($request->has('page') || $request->has('per_page')) {
+            $paginator = $query->paginate(min(100, max(1, (int) $request->input('per_page', 10))));
+            return response()->json(['success' => true, 'data' => $paginator->items(), 'meta' => ['current_page' => $paginator->currentPage(), 'per_page' => $paginator->perPage(), 'total' => $paginator->total(), 'last_page' => $paginator->lastPage()]]);
+        }
+        $entries = $query->limit(500)->get();
 
         return response()->json(['success' => true, 'data' => $entries]);
     }
@@ -1811,9 +1920,9 @@ class ReportsDashboardController extends Controller
         ];
     }
 
-    private function recentTransactions(?CarbonInterface $start, ?CarbonInterface $end): array
+    private function recentTransactions(?CarbonInterface $start, ?CarbonInterface $end, ?Request $request = null): array
     {
-        return Journal::query()
+        $query = Journal::query()
             ->with(['lines.account:id,code,name,account_type', 'lines.project:id,code,name,relation_no', 'lines.grantAgreement:id,relation_no', 'lines.budgetLine:id,relation_no,project_id', 'lines.budgetLine.project:id,code,name,relation_no'])
             // The dashboard's Recent Transactions list is an activity feed,
             // so it must also show journals waiting for approval/posting.
@@ -1821,11 +1930,28 @@ class ReportsDashboardController extends Controller
             ->whereNotIn('status', ['voided', 'cancelled', 'rejected'])
             ->when($start, fn (Builder $query) => $query->whereDate('journal_date', '>=', $start))
             ->when($end, fn (Builder $query) => $query->whereDate('journal_date', '<=', $end))
-            ->latest('journal_date')
-            ->latest('id')
-            ->limit(8)
-            ->get()
-            ->map(function (Journal $journal) {
+            ->when($request?->filled('search'), function (Builder $query) use ($request) {
+                $search = trim((string) $request->input('search'));
+                $query->where(function (Builder $scope) use ($search) {
+                    $scope->where('reference', 'like', "%{$search}%")
+                        ->orWhere('journal_number', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%")
+                        ->orWhere('status', 'like', "%{$search}%");
+                });
+            });
+
+        $sort = $request?->input('sort', 'newest');
+        if ($sort === 'amount_high' || $sort === 'amount_low') {
+            // Amount is derived from journal lines, so sorting by amount is finalized after mapping.
+            $query->latest('journal_date')->latest('id');
+        } else {
+            $query->latest('journal_date')->latest('id');
+        }
+
+        $isPaginated = $request !== null;
+        $perPage = $isPaginated ? min(max((int) $request->input('per_page', 10), 1), 100) : 8;
+        $paginator = $isPaginated ? $query->paginate($perPage) : $query->limit($perPage)->get();
+        $rows = collect($isPaginated ? $paginator->items() : $paginator)->map(function (Journal $journal) {
                 $debit = (float) $journal->lines->sum('debit');
                 $expense = (float) $journal->lines
                     ->filter(fn (JournalLine $line) => $line->account?->account_type === 'expense')
@@ -1860,8 +1986,21 @@ class ReportsDashboardController extends Controller
                         'relation_no' => $project->relation_no,
                     ])->all(),
                 ];
-            })
-            ->all();
+            })->values();
+
+        if ($isPaginated && in_array($sort, ['amount_high', 'amount_low'], true)) {
+            $rows = $rows->sortBy(fn (array $row) => (float) ($row['amount'] ?? 0), SORT_NUMERIC, $sort === 'amount_high')->values();
+        }
+
+        return [
+            'data' => $rows->all(),
+            'meta' => $isPaginated ? [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+            ] : null,
+        ];
     }
 
     private function financialStatement($postedLines, bool $includeOpeningBalances = true): array
@@ -1930,7 +2069,7 @@ class ReportsDashboardController extends Controller
         ];
     }
 
-    private function balanceSheetData(?string $asOf, ?int $fiscalYearId = null, ?int $projectId = null, ?string $relationNo = null, ?string $grantAgreementId = null): array
+    private function balanceSheetData(?string $asOf, ?int $fiscalYearId = null, ?int $projectId = null, ?string $relationNo = null, ?string $grantAgreementId = null, $page = null, $perPage = null, ?string $search = null, ?string $sort = null): array
     {
         $date = $asOf ? CarbonImmutable::parse($asOf)->endOfDay() : CarbonImmutable::now()->endOfDay();
         $lines = JournalLine::query()
@@ -1997,9 +2136,21 @@ class ReportsDashboardController extends Controller
             'asset_count' => $fixedAssets->count(),
         ];
         $balanceAccounts = $accounts->whereIn('account_type', ['asset', 'liability', 'equity'])->values();
+        $accountsMeta = null;
+        if ($page !== null && $perPage !== null) {
+            if (trim((string) $search) !== '') {
+                $needle = strtolower(trim((string) $search));
+                $balanceAccounts = $balanceAccounts->filter(fn ($row) => str_contains(strtolower(($row['code'] ?? '').' '.($row['name'] ?? '').' '.($row['account_type'] ?? '')), $needle))->values();
+            }
+            $balanceAccounts = $sort === 'oldest' ? $balanceAccounts->sortBy('code')->values() : $balanceAccounts->sortByDesc('code')->values();
+            $page = max(1, (int) $page); $perPage = min(max((int) $perPage, 1), 100); $total = $balanceAccounts->count();
+            $balanceAccounts = $balanceAccounts->forPage($page, $perPage)->values();
+            $accountsMeta = ['current_page' => $page, 'per_page' => $perPage, 'total' => $total, 'last_page' => max(1, (int) ceil($total / $perPage))];
+        }
 
         return [
             'accounts' => $balanceAccounts->all(),
+            'accounts_meta' => $accountsMeta,
             'assets' => $balanceAccounts->where('account_type', 'asset')->values()->all(),
             'liabilities' => $balanceAccounts->where('account_type', 'liability')->values()->all(),
             'equity' => $balanceAccounts->where('account_type', 'equity')->values()->all(),
@@ -2114,6 +2265,11 @@ class ReportsDashboardController extends Controller
         $ap = $this->apAging($asOf);
         $ar = $this->arAging($asOf);
         $staff = $this->staffAging($asOf);
+        $staffRows = collect($staff);
+        if ($request->filled('search')) $staffRows = $staffRows->filter(fn ($row) => str_contains(strtolower(implode(' ', [$row['reference'] ?? '', $row['staff'] ?? '', $row['project'] ?? '', $row['bucket'] ?? ''])), strtolower($request->query('search'))))->values();
+        if ($request->filled('bucket')) $staffRows = $staffRows->where('bucket', $request->query('bucket'))->values();
+        $staffMeta = null;
+        if ($request->has('page') || $request->has('per_page')) { $perPage = min(100, max(1, (int) $request->query('per_page', 10))); $page = max(1, (int) $request->query('page', 1)); $staffMeta = ['current_page' => $page, 'last_page' => max(1, (int) ceil($staffRows->count() / $perPage)), 'per_page' => $perPage, 'total' => $staffRows->count()]; $staffRows = $staffRows->forPage($page, $perPage)->values(); }
 
         return response()->json([
             'success' => true,
@@ -2154,7 +2310,8 @@ class ReportsDashboardController extends Controller
             ],
             'staff' => [
                 'total_outstanding' => round((float) collect($staff)->sum('outstanding'), 2),
-                'rows' => $staff,
+                'rows' => $staffRows,
+                'meta' => $staffMeta,
             ],
         ]);
     }
@@ -2181,7 +2338,18 @@ class ReportsDashboardController extends Controller
     public function cashBankReport(Request $request): JsonResponse
     {
         $period = $this->period($request);
-        $accounts = \App\Models\Master\BankAccount::query()->with('currency:id,code')->get()->map(function ($acc) use ($period) {
+        $accountQuery = \App\Models\Master\BankAccount::query()->with('currency:id,code');
+        $search = trim((string) $request->input('search', ''));
+        if ($search !== '') {
+            $accountQuery->where(function ($q) use ($search) {
+                $q->where('bank_name', 'like', "%{$search}%")
+                    ->orWhere('account_name', 'like', "%{$search}%")
+                    ->orWhere('account_number', 'like', "%{$search}%");
+            });
+        }
+        $accountQuery->orderBy('bank_name', $request->input('sort') === 'oldest' ? 'desc' : 'asc');
+        $accountPaginator = $accountQuery->paginate((int) $request->input('per_page', 10), ['*'], 'page', (int) $request->input('page', 1));
+        $accounts = collect($accountPaginator->items())->map(function ($acc) use ($period) {
             $opening = (float) BankTransaction::query()
                 ->where('bank_account_id', $acc->id)
                 ->when($period['start'], fn ($q) => $q->whereDate('transaction_date', '<', $period['start']))
@@ -2237,14 +2405,33 @@ class ReportsDashboardController extends Controller
                 'status' => $tx->status,
             ]);
 
+        $aggregateTransactions = BankTransaction::query()
+            ->when($period['start'], fn ($q) => $q->whereDate('transaction_date', '>=', $period['start']))
+            ->when($period['end'], fn ($q) => $q->whereDate('transaction_date', '<=', $period['end']))
+            ->selectRaw('COALESCE(SUM(debit), 0) as inflow, COALESCE(SUM(credit), 0) as outflow')
+            ->first();
+        $openingTotal = (float) BankTransaction::query()
+            ->when($period['start'], fn ($q) => $q->whereDate('transaction_date', '<', $period['start']))
+            ->selectRaw('COALESCE(SUM(debit - credit), 0) as balance')->value('balance');
+        $unreconciledTotal = (int) BankTransaction::query()
+            ->whereNotIn('status', ['reconciled', 'matched', 'excluded'])->count();
+        $totalInflow = (float) ($aggregateTransactions->inflow ?? 0);
+        $totalOutflow = (float) ($aggregateTransactions->outflow ?? 0);
+
         return response()->json([
             'success' => true,
             'period' => $period['label'],
-            'total_liquidity' => round($accounts->sum('closing_balance'), 2),
-            'total_inflow' => round($accounts->sum('total_inflow'), 2),
-            'total_outflow' => round($accounts->sum('total_outflow'), 2),
-            'unreconciled_count' => $accounts->sum('unreconciled_transactions'),
+            'total_liquidity' => round($openingTotal + $totalInflow - $totalOutflow, 2),
+            'total_inflow' => round($totalInflow, 2),
+            'total_outflow' => round($totalOutflow, 2),
+            'unreconciled_count' => $unreconciledTotal,
             'accounts' => $accounts,
+            'accounts_meta' => [
+                'current_page' => $accountPaginator->currentPage(),
+                'per_page' => $accountPaginator->perPage(),
+                'total' => $accountPaginator->total(),
+                'last_page' => $accountPaginator->lastPage(),
+            ],
             'recent_transactions' => $recentTransactions,
         ]);
     }

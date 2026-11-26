@@ -44,10 +44,39 @@ class ExpenseRequestController extends Controller
             ->when($request->filled('program_id'), fn ($query) => $query->where('program_id', $request->integer('program_id')))
             ->when($request->filled('project_id'), fn ($query) => $query->where('project_id', $request->integer('project_id')))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->query('status')))
-            ->latest('id')
-            ->get();
+            ->when($request->filled('status_in'), fn ($query) => $query->whereIn('status', array_filter(explode(',', (string) $request->query('status_in')))))
+            ->when($request->filled('expense_type'), fn ($query) => $query->where('expense_type', $request->query('expense_type')))
+            ->when($request->boolean('open_cash_advance'), fn ($query) => $query->where(function ($nested) {
+                $nested->whereNull('settlement_status')->orWhereNotIn('settlement_status', ['settled', 'closed']);
+            }))
+            ->when($request->boolean('settlement_open'), fn ($query) => $query->where('expense_type', 'cash_advance')->whereIn('status', ['posted', 'paid'])->where(function ($nested) {
+                $nested->whereNull('settlement_state')->orWhere('settlement_state', '!=', 'settled');
+            }))
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = '%'.$request->query('search').'%';
+                $query->where(function ($nested) use ($search) {
+                    $nested->where('request_number', 'like', $search)
+                        ->orWhere('description', 'like', $search);
+                });
+            })
+            ->when($request->input('sort') === 'oldest', fn ($query) => $query->oldest('request_date')->oldest('id'), fn ($query) => $query->latest('request_date')->latest('id'))
+            ->when($request->has('page') || $request->has('per_page'), function ($query) use ($request) {
+                return $query->paginate(min(100, max(1, (int) $request->query('per_page', 10))));
+            }, fn ($query) => $query->get());
 
-        return response()->json(['success' => true, 'data' => $items->map(fn (ExpenseRequest $expense) => $this->format($expense))]);
+        $isPaginated = $items instanceof \Illuminate\Pagination\LengthAwarePaginator;
+        $rows = $isPaginated ? $items->items() : $items;
+
+        return response()->json([
+            'success' => true,
+            'data' => collect($rows)->map(fn (ExpenseRequest $expense) => $this->format($expense))->values(),
+            'meta' => $isPaginated ? [
+                'current_page' => $items->currentPage(),
+                'last_page' => $items->lastPage(),
+                'per_page' => $items->perPage(),
+                'total' => $items->total(),
+            ] : null,
+        ]);
     }
 
     public function show(Request $request, ExpenseRequest $expenseRequest): JsonResponse
@@ -81,13 +110,55 @@ class ExpenseRequestController extends Controller
                 'total_requests' => (clone $query)->count(),
                 'pending_approval' => (clone $query)->whereIn('status', ['submitted', 'verified'])->count(),
                 'total_spending' => $amount((clone $query)->whereIn('status', ['posted', 'paid'])),
+                'paid_amount' => (float) (clone $query)->sum('paid_amount'),
                 'outstanding_advances' => $amount($openAdvances),
                 'overdue_settlement' => $overdue->count(),
                 'overdue_settlement_amount' => $amount($overdue),
                 'reimbursement_requests' => (clone $query)->where('expense_type', 'reimbursement')->count(),
                 'cash_advance_requests' => $cashAdvances->count(),
+                'by_status' => (clone $query)->select('status', DB::raw('COUNT(*) as total'))->groupBy('status')->pluck('total', 'status'),
             ],
         ]);
+    }
+
+    public function monitoring(Request $request): JsonResponse
+    {
+        $query = ExpenseRequest::query()
+            ->when(! $this->canAccessAll($request), fn ($builder) => $builder->where('requester_id', $request->user()->id))
+            ->when($request->filled('fiscal_year_id'), fn ($builder) => $builder->where('fiscal_year_id', $request->integer('fiscal_year_id')))
+            ->when($request->filled('search'), function ($builder) use ($request) {
+                $term = '%'.trim((string) $request->input('search')).'%';
+                $builder->whereHas('project', fn ($project) => $project->where('name', 'like', $term)->orWhere('code', 'like', $term));
+            })
+            ->when($request->input('flag_filter') === 'flagged', fn ($builder) => $builder->where(function ($scope) {
+                $scope->where('category_mismatch_flag', true)->orWhereIn('status', ['returned', 'returned_for_revision', 'rejected'])
+                    ->orWhere(fn ($overdue) => $overdue->where('expense_type', 'cash_advance')->whereNotNull('settlement_due_date')->whereDate('settlement_due_date', '<', today())->whereNotIn('settlement_status', ['settled', 'closed']));
+            }))
+            ->when($request->input('flag_filter') === 'clear', fn ($builder) => $builder->where('category_mismatch_flag', false)->whereNotIn('status', ['returned', 'returned_for_revision', 'rejected']))
+            ->selectRaw('project_id, COUNT(*) as request_count, COALESCE(SUM(total_amount), 0) as committed, COALESCE(SUM(paid_amount), 0) as paid, SUM(CASE WHEN category_mismatch_flag = 1 OR status IN (\'returned\', \'returned_for_revision\', \'rejected\') OR (expense_type = \'cash_advance\' AND settlement_due_date < ? AND settlement_status NOT IN (\'settled\', \'closed\')) THEN 1 ELSE 0 END) as flags', [today()->toDateString()])
+            ->with('project:id,code,name')
+            ->groupBy('project_id');
+
+        $sort = $request->input('sort', 'newest');
+        if ($sort === 'amount_high') $query->orderByDesc('committed');
+        elseif ($sort === 'amount_low') $query->orderBy('committed');
+        elseif ($sort === 'project') $query->orderBy('project_id');
+        else $query->orderByDesc('project_id');
+
+        $paginator = $query->paginate(min(100, max(1, (int) $request->input('per_page', 10))));
+        $rows = collect($paginator->items())->map(fn ($row) => [
+            'project' => $row->project?->name ?? 'Unassigned',
+            'project_code' => $row->project?->code,
+            'count' => (int) $row->request_count,
+            'committed' => (float) $row->committed,
+            'paid' => (float) $row->paid,
+            'flags' => (int) $row->flags,
+        ])->values();
+
+        return response()->json(['success' => true, 'data' => $rows, 'meta' => [
+            'current_page' => $paginator->currentPage(), 'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(), 'total' => $paginator->total(),
+        ]]);
     }
 
     public function store(Request $request): JsonResponse

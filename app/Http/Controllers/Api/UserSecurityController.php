@@ -55,7 +55,23 @@ class UserSecurityController extends Controller
     public function users(Request $request): JsonResponse
     {
         abort_unless($request->user()->hasPermission('user.manage'), 403);
-        return response()->json(['success' => true, 'data' => User::query()->with('role.permissions:id,slug')->orderBy('name')->get(['id','name','email','role_id','employee_id','worker_type','external_party_name','contract_reference','is_active','must_change_password'])->map(fn (User $user) => [
+        $query = User::query()->with('role.permissions:id,slug')
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = trim((string) $request->input('search'));
+                $query->where(function ($scope) use ($search) {
+                    $scope->where('name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('worker_type', 'like', "%{$search}%")
+                        ->orWhereHas('role', fn ($role) => $role->where('name', 'like', "%{$search}%"));
+                });
+            })
+            ->when($request->filled('status') && $request->input('status') !== 'all', fn ($q) => $q->where('is_active', $request->input('status') === 'active'))
+            ->when($request->filled('worker_type') && $request->input('worker_type') !== 'all', fn ($q) => $q->where('worker_type', $request->input('worker_type')));
+        $sort = $request->input('sort', 'name_asc');
+        $sortColumn = in_array($sort, ['email_asc', 'email_desc'], true) ? 'email' : 'name';
+        $query->orderBy($sortColumn, str_ends_with($sort, '_desc') ? 'desc' : 'asc');
+        $paginator = $query->paginate(min(max((int) $request->input('per_page', 10), 1), 100), ['id','name','email','role_id','employee_id','worker_type','external_party_name','contract_reference','is_active','must_change_password']);
+        return response()->json(['success' => true, 'data' => collect($paginator->items())->map(fn (User $user) => [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
@@ -69,7 +85,7 @@ class UserSecurityController extends Controller
             'contract_reference' => $user->contract_reference,
             'is_active' => $user->is_active,
             'must_change_password' => $user->must_change_password,
-        ])]);
+        ]), 'meta' => ['current_page' => $paginator->currentPage(), 'per_page' => $paginator->perPage(), 'total' => $paginator->total(), 'last_page' => $paginator->lastPage()]]);
     }
 
     public function updateClassification(Request $request, User $user): JsonResponse
