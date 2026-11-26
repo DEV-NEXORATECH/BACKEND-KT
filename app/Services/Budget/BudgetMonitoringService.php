@@ -5,6 +5,7 @@ namespace App\Services\Budget;
 use App\Models\Accounting\JournalLine;
 use App\Models\Budget\BudgetCommitment;
 use App\Models\Master\BudgetLine;
+use App\Models\Master\GrantAgreement;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -121,6 +122,12 @@ class BudgetMonitoringService
             $variancePercent = $approved > 0 ? round(($variance / $approved) * 100, 2) : 0;
 
             $effectiveGrant = $line->grantAgreement ?: $line->project?->grantAgreement;
+            if (! $effectiveGrant) {
+                $relationNo = $line->relation_no ?: $line->project?->relation_no;
+                $effectiveGrant = $relationNo
+                    ? GrantAgreement::withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo)->first()
+                    : null;
+            }
             $effectiveCurrency = $line->currency ?: $effectiveGrant?->currency ?: $line->project?->budgetCurrency;
             $fiscalYearId = $line->fiscal_year_id ?: ($line->project?->fiscalYears?->first()?->id ?: $effectiveGrant?->fiscal_year_id);
             $fiscalYearYear = $line->fiscalYear?->year ?: ($line->project?->fiscalYears?->first()?->year ?: ($effectiveGrant?->fiscalYear?->year ?: null));
