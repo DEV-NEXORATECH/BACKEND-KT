@@ -123,6 +123,30 @@ class GrantDisbursementRequestController extends Controller
         ]);
     }
 
+    public function relations(Request $request)
+    {
+        $query = BudgetLine::query()->withoutGlobalScopes()
+            ->selectRaw('COALESCE(NULLIF(relation_no, ""), CONCAT("BUDGET-", id)) as relation')
+            ->selectRaw('COUNT(*) as budget_lines')
+            ->selectRaw('MAX(grant_agreement_id) as grant_agreement_id')
+            ->selectRaw('MAX(project_id) as project_id')
+            ->when($request->filled('fiscal_year_id'), fn ($q) => $q->where('fiscal_year_id', $request->integer('fiscal_year_id')))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $term = '%'.trim((string) $request->query('search')).'%';
+                $q->where(fn ($inner) => $inner->where('relation_no', 'like', $term)->orWhere('line_code', 'like', $term)->orWhere('description', 'like', $term));
+            })->groupBy('relation')->orderBy('relation');
+        $page = $query->paginate(min(max((int) $request->query('per_page', 10), 1), 100));
+        $items = collect($page->items());
+        $grants = GrantAgreement::query()->withoutGlobalScope('fiscal_year_context')->with('donor')->whereIn('id', $items->pluck('grant_agreement_id')->filter())->get()->keyBy('id');
+        $projects = Project::query()->withoutGlobalScope('fiscal_year_context')->whereIn('id', $items->pluck('project_id')->filter())->get()->keyBy('id');
+        return response()->json(['success' => true, 'data' => $items->map(fn ($item) => [
+            'relation' => $item->relation,
+            'grant' => optional($grants->get($item->grant_agreement_id))->grant_no ?: '-',
+            'project' => optional($projects->get($item->project_id))->name ?: '-',
+            'budgetLines' => (int) $item->budget_lines,
+        ])->values(), 'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()]]);
+    }
+
     /**
      * Generate baseline quarterly forecast lines from BudgetLines & historical expenses
      */

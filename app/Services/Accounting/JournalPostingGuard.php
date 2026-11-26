@@ -15,7 +15,7 @@ class JournalPostingGuard
         $query = Journal::withoutGlobalScope('fiscal_year_context')->whereKey($journal->id);
         app(DataScopeService::class)->applyScope($query, $user, 'created_by', null, null, ['accounting.journal.post']);
         abort_unless($query->exists(), 403, 'Tidak boleh mengubah journal ini.');
-        if ($journal->status !== 'reviewed') throw ValidationException::withMessages(['status' => 'Journal harus reviewed sebelum approval/posting.']);
+        if (in_array($journal->status, ['posted', 'reversed'], true)) throw ValidationException::withMessages(['status' => 'Journal sudah tidak dapat diposting ulang.']);
         $year = app(JournalFiscalYearService::class)->resolve($journal->journal_date->toDateString(), $journal->fiscal_year_id);
         $lines = $journal->lines()->get();
         if ($lines->count() < 2 || round((float)$lines->sum('debit'), 2) !== round((float)$lines->sum('credit'), 2)) {

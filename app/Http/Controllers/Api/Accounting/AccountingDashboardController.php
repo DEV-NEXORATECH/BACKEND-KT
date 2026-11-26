@@ -97,7 +97,7 @@ class AccountingDashboardController extends Controller
         $ap = SupplierInvoice::query()->with('vendor:id,name')->whereNotIn('status', ['paid', 'cancelled'])->latest('due_date')->get()->map(fn ($invoice) => ['id' => $invoice->id, 'invoice_number' => $invoice->invoice_number, 'vendor' => $invoice->vendor?->name, 'due_date' => $invoice->due_date?->toDateString(), 'status' => $invoice->status, 'outstanding_amount' => round((float) $invoice->total_amount - (float) $invoice->paid_amount, 2)])->values();
         $ar = CustomerInvoice::query()->with('customer:id,name')->whereNotIn('status', ['received', 'cancelled'])->latest('due_date')->get()->map(fn ($invoice) => ['id' => $invoice->id, 'invoice_number' => $invoice->invoice_number, 'customer' => $invoice->customer?->name, 'due_date' => $invoice->due_date?->toDateString(), 'status' => $invoice->status, 'outstanding_amount' => round((float) $invoice->total_amount - (float) $invoice->received_amount, 2)])->values();
         $unreconciled = BankTransaction::query()->with('bankAccount:id,bank_name,account_number')->whereHas('bankAccount')->whereNotIn('status', ['reconciled', 'excluded'])->latest('transaction_date')->limit(10)->get()->map(fn ($item) => ['id' => $item->id, 'date' => $item->transaction_date?->toDateString(), 'reference' => $item->reference, 'description' => $item->description, 'amount' => round((float) $item->debit + (float) $item->credit, 2), 'status' => $item->status, 'bank_account' => $item->bankAccount?->account_number])->values();
-        $pending = Journal::query()->whereIn('status', ['submitted', 'reviewed'])->latest('journal_date')->limit(10)->get()->map(fn ($journal) => ['id' => $journal->id, 'journal_number' => $journal->journal_number, 'date' => $journal->journal_date?->toDateString(), 'status' => $journal->status, 'description' => $journal->description, 'total' => (float) $journal->lines()->sum('debit')])->values();
+        $pending = collect();
 
         $recent = Journal::query()->with([
             'lines.project:id,code,name',
@@ -216,7 +216,7 @@ class AccountingDashboardController extends Controller
             'accounts_payable' => ['total_outstanding' => round((float) $ap->sum('outstanding_amount'), 2), 'items' => $ap],
             'accounts_receivable' => ['total_outstanding' => round((float) $ar->sum('outstanding_amount'), 2), 'items' => $ar],
             'unreconciled_bank_transactions' => ['count' => BankTransaction::query()->whereNotIn('status', ['reconciled', 'excluded'])->count(), 'items' => $unreconciled],
-            'pending_journals' => ['count' => Journal::query()->whereIn('status', ['submitted', 'reviewed'])->count(), 'items' => $pending],
+            'pending_journals' => ['count' => 0, 'items' => $pending],
             'budget_vs_actual' => $budgetPage,
             'budget_vs_actual_meta' => $budgetMeta,
             'recent_transactions' => $recentPage,

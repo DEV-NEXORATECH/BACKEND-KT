@@ -723,22 +723,14 @@ class JournalController extends Controller
         });
     }
 
-    public function post(Request $request, Journal $journal, ApprovalWorkflowService $workflow): JsonResponse
+    public function post(Request $request, Journal $journal): JsonResponse
     {
-        return DB::transaction(function () use ($request, $journal, $workflow) {
+        return DB::transaction(function () use ($request, $journal) {
             $journal = Journal::withoutGlobalScope('fiscal_year_context')->lockForUpdate()->findOrFail($journal->id);
             $yearId = app(\App\Services\Accounting\JournalPostingGuard::class)->assertReady($journal, $request->user());
             $journal->fiscal_year_id = $yearId;
-            $amount = (float) $journal->lines()->sum('debit');
-            $approval = $workflow->approve('journal', $journal, $request->user(), $request->input('notes'));
-            if (!$approval['managed'] && $workflow->requiresApproval('journal', $journal, $amount)) {
-                throw ValidationException::withMessages(['approval' => 'The journal must be submitted to the Approval Matrix before posting.']);
-            }
-            if (!$approval['completed']) {
-                return response()->json(['success' => true, 'message' => "Approval tahap selesai. Menunggu persetujuan tahap {$approval['next_level']}.", 'data' => $this->formatJournal($journal->fresh($this->with))]);
-            }
             $journal->fiscal_year_id = $yearId;
-            return $this->transition($journal, 'reviewed', 'posted', [
+            return $this->transition($journal, $journal->status, 'posted', [
                 'fiscal_year_id' => $yearId,
                 'posted_by' => $request->user()->id,
                 'posted_at' => now(),
@@ -1021,7 +1013,7 @@ class JournalController extends Controller
             'currency_code' => $journal->currency?->code,
             'exchange_rate' => $journal->exchange_rate,
             'status' => $journal->status,
-            'approval_progress' => app(\App\Services\Approval\ApprovalWorkflowService::class)->progressFor('journal', $journal, request()->user()),
+            'approval_progress' => null,
             'total_debit' => $journal->total_debit,
             'total_credit' => $journal->total_credit,
             'bank_transactions' => $journal->bankTransactions->map(fn ($transaction) => [

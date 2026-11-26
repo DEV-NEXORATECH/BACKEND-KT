@@ -238,6 +238,7 @@ class AdvancedProcurementController extends Controller
         }
         $data = $request->validate([
             'analysis_date' => ['required', 'date'],
+            'selected_vendor_id' => ['nullable', 'integer', 'exists:vendors,id'],
             'selected_quotation_id' => ['required', 'integer', 'exists:vendor_quotations,id'],
             'selection_reason' => ['required', 'string'],
             'remarks' => ['nullable', 'string'],
@@ -319,7 +320,7 @@ class AdvancedProcurementController extends Controller
 
         $cba = ComparativeBidAnalysis::updateOrCreate(
             ['purchase_request_id' => $purchaseRequest->id, 'rfq_id' => null],
-            [...$data, 'cba_number' => $this->nextCbaNumber(), 'status' => 'draft', 'created_by' => $request->user()->id],
+            [...$data, 'selected_vendor_id' => $data['selected_vendor_id'] ?? null, 'cba_number' => $this->nextCbaNumber(), 'status' => 'draft', 'created_by' => $request->user()->id],
         );
 
         return response()->json(['success' => true, 'message' => 'CBA berhasil dibuat dari PR. RFQ dapat diproses paralel.', 'data' => $this->formatCba($cba->load('purchaseRequest'))], Response::HTTP_CREATED);
@@ -358,8 +359,14 @@ class AdvancedProcurementController extends Controller
             'terms' => ['nullable', 'string'],
         ]);
 
-        $cba->load(['rfq.purchaseRequest.lines']);
-        $pr = $cba->rfq->purchaseRequest;
+        $cba->load(['rfq.purchaseRequest.lines', 'purchaseRequest.lines']);
+        $pr = $cba->rfq?->purchaseRequest ?? $cba->purchaseRequest;
+        if (! $pr) {
+            throw ValidationException::withMessages(['purchase_request' => 'CBA belum terhubung ke Purchase Request.']);
+        }
+        if (! $cba->selected_vendor_id) {
+            throw ValidationException::withMessages(['vendor' => 'Vendor wajib dipilih sebelum PO dibuat dari CBA langsung.']);
+        }
 
         $po = DB::transaction(function () use ($cba, $pr, $data) {
             $po = PurchaseOrder::create([

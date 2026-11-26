@@ -95,6 +95,27 @@ class BudgetLineController extends BaseMasterController
         return parent::index($request);
     }
 
+    public function relations(Request $request): JsonResponse
+    {
+        $query = BudgetLine::query()->withoutGlobalScopes()
+            ->selectRaw('COALESCE(NULLIF(relation_no, ""), "Tanpa Nomor Relasi") as relation')
+            ->selectRaw('COUNT(*) as item_count, SUM(base_amount) as total_amount, MAX(project_id) as project_id, MAX(grant_agreement_id) as grant_agreement_id')
+            ->when($request->filled('fiscal_year_id'), fn ($q) => $q->where('fiscal_year_id', $request->integer('fiscal_year_id')))
+            ->when($request->filled('search'), fn ($q) => $q->where(function ($inner) use ($request) {
+                $term = '%'.trim((string) $request->query('search')).'%';
+                $inner->where('relation_no', 'like', $term)->orWhere('line_code', 'like', $term)->orWhere('description', 'like', $term);
+            }))
+            ->groupBy('relation')->orderBy('relation');
+        $page = $query->paginate(min(max((int) $request->query('per_page', 10), 1), 100));
+        return response()->json(['success' => true, 'data' => collect($page->items())->map(fn ($item) => [
+            'relation_no' => $item->relation,
+            'item_count' => (int) $item->item_count,
+            'total_amount' => (float) $item->total_amount,
+            'project_id' => $item->project_id,
+            'grant_agreement_id' => $item->grant_agreement_id,
+        ])->values(), 'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()]]);
+    }
+
     public function template(Request $request, MasterExportService $exportService)
     {
         $format = (string) $request->query('format', 'xlsx');

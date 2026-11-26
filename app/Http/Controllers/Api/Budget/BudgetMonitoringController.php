@@ -16,6 +16,25 @@ use Illuminate\Http\Request;
 
 class BudgetMonitoringController extends Controller
 {
+    public function bva(Request $request, BudgetMonitoringService $service): JsonResponse
+    {
+        $request->validate(['fiscal_year_id' => ['nullable', 'integer', 'exists:fiscal_years,id'], 'page' => ['nullable', 'integer', 'min:1'], 'per_page' => ['nullable', 'integer', 'min:1', 'max:100'], 'search' => ['nullable', 'string', 'max:150'], 'grant_agreement_id' => ['nullable', 'integer']]);
+        $filters = ['fiscal_year_id' => $request->query('fiscal_year_id'), 'grant_agreement_id' => $request->query('grant_agreement_id')];
+        $items = $service->summary($filters);
+        $rows = $items->filter(fn ($item) => ! empty($item['project']['id']))->groupBy(fn ($item) => $item['project']['id'])->map(function ($group) {
+            $first = $group->first();
+            $budget = round($group->sum('approved_budget'), 2);
+            $actual = round($group->sum('actual'), 2);
+            $committed = round($group->sum('committed'), 2);
+            return ['id' => $first['project']['id'], 'project' => $first['project']['name'] ?? $first['project']['code'] ?? '-', 'grant' => $first['grant_agreement']['code'] ?? $first['grant_agreement']['name'] ?? '-', 'budget' => $budget, 'actual' => $actual, 'committed' => $committed, 'variance' => round($budget - $actual, 2), 'utilization' => $budget > 0 ? round((($actual + $committed) / $budget) * 100, 2) : 0];
+        })->values();
+        if ($request->filled('search')) $rows = $rows->filter(fn ($row) => str_contains(strtolower($row['project'].' '.$row['grant']), strtolower(trim($request->query('search')))))->values();
+        $perPage = min(max((int) $request->query('per_page', 10), 1), 100);
+        $page = max((int) $request->query('page', 1), 1);
+        $slice = $rows->forPage($page, $perPage)->values();
+        return response()->json(['success' => true, 'data' => $slice, 'meta' => ['current_page' => $page, 'last_page' => max(1, (int) ceil($rows->count() / $perPage)), 'per_page' => $perPage, 'total' => $rows->count()]]);
+    }
+
     public function index(Request $request, BudgetMonitoringService $service): JsonResponse
     {
         $filters = $request->only([
