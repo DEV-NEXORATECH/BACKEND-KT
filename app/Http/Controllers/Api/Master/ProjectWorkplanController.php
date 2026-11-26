@@ -36,7 +36,7 @@ class ProjectWorkplanController extends Controller
             'logframe' => fn ($logframeQuery) => $logframeQuery->withoutGlobalScope('fiscal_year_context')->select(['id', 'project_id', 'relation_no', 'level', 'code', 'description']),
         ];
 
-        $rows = ProjectWorkplan::with($workplanRelations)
+        $query = ProjectWorkplan::with($workplanRelations)
             ->when($filters['project_id'] ?? null, fn ($q, $projectId) => $q->where('project_id', $projectId))
             ->when($relationNo !== '', function ($query) use ($relationNo) {
                 $query->where(function ($scope) use ($relationNo) {
