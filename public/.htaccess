@@ -1,10 +1,15 @@
 <IfModule mod_headers.c>
-    # Use an explicit production origin so shared-hosting preflight responses
-    # do not depend on SetEnvIf variable expansion.
-    Header always set Access-Control-Allow-Origin "https://kaoemtelapak.nexora-technology.id"
-    Header always set Access-Control-Allow-Credentials "true"
+    # Reflect only approved origins; CORS cannot return a comma-separated list
+    # when credentials are enabled.
+    SetEnvIf Origin "^https://kaoemtelapak\.nexora-technology\.id$" CORS_ORIGIN=$0
+    SetEnvIf Origin "^http://localhost(:\d+)?$" CORS_ORIGIN=$0
+    SetEnvIf Origin "^http://127\.0\.0\.1(:\d+)?$" CORS_ORIGIN=$0
+    Header always set Access-Control-Allow-Origin "%{CORS_ORIGIN}e" env=CORS_ORIGIN
+    Header always set Access-Control-Allow-Credentials "true" env=CORS_ORIGIN
     Header always set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-Client-Platform, X-Fiscal-Year-Id"
+    Header always set Vary "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    Header always set Cache-Control "no-store"
 </IfModule>
 
 <IfModule mod_rewrite.c>
