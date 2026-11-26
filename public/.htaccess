@@ -1,10 +1,10 @@
 <IfModule mod_headers.c>
-    # Dynamic CORS origin reflection for all Hostinger subdomains & local dev
-    SetEnvIf Origin "^(https://kaoemtelapak\.nexora-technology\.id|https?://.*\.hostingersite\.com|http://localhost:\d+|http://127\.0\.0\.1:\d+)$" CORS_ORIGIN=$0
-    Header always set Access-Control-Allow-Origin "%{CORS_ORIGIN}e" env=CORS_ORIGIN
-    Header always set Access-Control-Allow-Credentials "true" env=CORS_ORIGIN
+    # Use an explicit production origin so shared-hosting preflight responses
+    # do not depend on SetEnvIf variable expansion.
+    Header always set Access-Control-Allow-Origin "https://kaoemtelapak.nexora-technology.id"
+    Header always set Access-Control-Allow-Credentials "true"
     Header always set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-Client-Platform"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-Client-Platform, X-Fiscal-Year-Id"
 </IfModule>
 
 <IfModule mod_rewrite.c>
