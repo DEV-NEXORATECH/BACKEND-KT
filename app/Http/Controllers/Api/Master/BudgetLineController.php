@@ -8,6 +8,7 @@ use App\Http\Requests\Master\UpdateBudgetLineRequest;
 use App\Http\Resources\Master\BudgetLineResource;
 use App\Models\Master\GrantAgreement;
 use App\Models\Master\Project;
+use App\Models\Master\FiscalYear;
 use App\Services\Budget\BudgetLineImportService;
 use App\Services\Master\MasterExportService;
 use Illuminate\Http\JsonResponse;
@@ -99,7 +100,7 @@ class BudgetLineController extends BaseMasterController
     {
         $query = BudgetLine::query()->withoutGlobalScopes()
             ->selectRaw('COALESCE(NULLIF(relation_no, ""), "Tanpa Nomor Relasi") as relation')
-            ->selectRaw('COUNT(*) as item_count, SUM(base_amount) as total_amount, MAX(project_id) as project_id, MAX(grant_agreement_id) as grant_agreement_id')
+            ->selectRaw('COUNT(*) as item_count, SUM(base_amount) as total_amount, MAX(project_id) as project_id, MAX(grant_agreement_id) as grant_agreement_id, MAX(fiscal_year_id) as fiscal_year_id')
             ->when($request->filled('fiscal_year_id'), fn ($q) => $q->where('fiscal_year_id', $request->integer('fiscal_year_id')))
             ->when($request->filled('search'), fn ($q) => $q->where(function ($inner) use ($request) {
                 $term = '%'.trim((string) $request->query('search')).'%';
@@ -108,17 +109,21 @@ class BudgetLineController extends BaseMasterController
             ->groupBy('relation')->orderBy('relation');
         $page = $query->paginate(min(max((int) $request->query('per_page', 10), 1), 100));
         return response()->json(['success' => true, 'data' => collect($page->items())->map(function ($item) {
-            $project = $item->project_id ? Project::withoutGlobalScopes()->with('grantAgreement.donor')->find($item->project_id) : null;
+            $project = $item->project_id ? Project::withoutGlobalScopes()->with(['grantAgreement.donor', 'fiscalYears'])->find($item->project_id) : null;
             $grant = $item->grant_agreement_id
                 ? GrantAgreement::withoutGlobalScopes()->with('donor')->find($item->grant_agreement_id)
                 : $project?->grantAgreement;
             $donor = $grant?->donor;
+            $fiscalYearId = $item->fiscal_year_id ?: ($grant?->fiscal_year_id ?: $project?->fiscalYears?->first()?->id);
+            $fiscalYear = $fiscalYearId ? FiscalYear::query()->find($fiscalYearId) : null;
             return [
             'relation_no' => $item->relation,
             'item_count' => (int) $item->item_count,
             'total_amount' => (float) $item->total_amount,
             'project_id' => $item->project_id,
             'grant_agreement_id' => $item->grant_agreement_id,
+            'fiscal_year_id' => $fiscalYearId,
+            'fiscal_year' => $fiscalYear ? ['id' => $fiscalYear->id, 'year' => $fiscalYear->year, 'name' => $fiscalYear->name] : null,
             'donor' => $donor ? ['id' => $donor->id, 'code' => $donor->code, 'name' => $donor->name] : null,
             'grant_agreement' => $grant ? ['id' => $grant->id, 'grant_no' => $grant->grant_no, 'agreement_name' => $grant->agreement_name, 'status' => $grant->status] : null,
             'is_active' => $grant ? (bool) $grant->is_active : true,
