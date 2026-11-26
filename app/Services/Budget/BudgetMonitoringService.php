@@ -123,10 +123,12 @@ class BudgetMonitoringService
 
             $effectiveGrant = $line->grantAgreement ?: $line->project?->grantAgreement;
             if (! $effectiveGrant) {
+                $grantId = $line->grant_agreement_id ?: $line->project?->grant_agreement_id;
                 $relationNo = $line->relation_no ?: $line->project?->relation_no;
-                $effectiveGrant = $relationNo
-                    ? GrantAgreement::withoutGlobalScope('fiscal_year_context')->where('relation_no', $relationNo)->first()
-                    : null;
+                $effectiveGrant = GrantAgreement::withoutGlobalScope('fiscal_year_context')
+                    ->when($grantId, fn ($query) => $query->whereKey($grantId))
+                    ->when(! $grantId && $relationNo, fn ($query) => $query->where('relation_no', $relationNo))
+                    ->first();
             }
             $effectiveCurrency = $line->currency ?: $effectiveGrant?->currency ?: $line->project?->budgetCurrency;
             $fiscalYearId = $line->fiscal_year_id ?: ($line->project?->fiscalYears?->first()?->id ?: $effectiveGrant?->fiscal_year_id);
