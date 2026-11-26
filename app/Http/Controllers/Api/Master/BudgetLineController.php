@@ -107,13 +107,23 @@ class BudgetLineController extends BaseMasterController
             }))
             ->groupBy('relation')->orderBy('relation');
         $page = $query->paginate(min(max((int) $request->query('per_page', 10), 1), 100));
-        return response()->json(['success' => true, 'data' => collect($page->items())->map(fn ($item) => [
+        return response()->json(['success' => true, 'data' => collect($page->items())->map(function ($item) {
+            $project = $item->project_id ? Project::withoutGlobalScopes()->with('grantAgreement.donor')->find($item->project_id) : null;
+            $grant = $item->grant_agreement_id
+                ? GrantAgreement::withoutGlobalScopes()->with('donor')->find($item->grant_agreement_id)
+                : $project?->grantAgreement;
+            $donor = $grant?->donor;
+            return [
             'relation_no' => $item->relation,
             'item_count' => (int) $item->item_count,
             'total_amount' => (float) $item->total_amount,
             'project_id' => $item->project_id,
             'grant_agreement_id' => $item->grant_agreement_id,
-        ])->values(), 'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()]]);
+            'donor' => $donor ? ['id' => $donor->id, 'code' => $donor->code, 'name' => $donor->name] : null,
+            'grant_agreement' => $grant ? ['id' => $grant->id, 'grant_no' => $grant->grant_no, 'agreement_name' => $grant->agreement_name, 'status' => $grant->status] : null,
+            'is_active' => $grant ? (bool) $grant->is_active : true,
+        ];
+        })->values(), 'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()]]);
     }
 
     public function template(Request $request, MasterExportService $exportService)
