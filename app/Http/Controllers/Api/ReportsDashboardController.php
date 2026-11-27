@@ -470,7 +470,7 @@ class ReportsDashboardController extends Controller
                 'approval_status' => $this->approvalStatusBreakdown(),
             ],
             'pending_actions' => $this->pendingActions(),
-            'recent_transactions' => $recentTransactions,
+            'recent_transactions' => $recentTransactions['data'] ?? [],
         ]);
     }
 
