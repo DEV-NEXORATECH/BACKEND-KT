@@ -1923,7 +1923,18 @@ class ReportsDashboardController extends Controller
     private function recentTransactions(?CarbonInterface $start, ?CarbonInterface $end, ?Request $request = null): array
     {
         $query = Journal::query()
-            ->with(['lines.account:id,code,name,account_type', 'lines.project:id,code,name,relation_no', 'lines.grantAgreement:id,relation_no', 'lines.budgetLine:id,relation_no,project_id', 'lines.budgetLine.project:id,code,name,relation_no'])
+            ->with([
+                'lines.account:id,code,name,account_type',
+                'lines.project:id,code,name,relation_no,grant_agreement_id',
+                'lines.project.grantAgreement:id,grant_no,agreement_name,relation_no,donor_id',
+                'lines.project.grantAgreement.donor:id,code,name',
+                'lines.grantAgreement:id,grant_no,agreement_name,relation_no,donor_id',
+                'lines.grantAgreement.donor:id,code,name',
+                'lines.budgetLine:id,relation_no,project_id,grant_agreement_id',
+                'lines.budgetLine.project:id,code,name,relation_no,grant_agreement_id',
+                'lines.budgetLine.project.grantAgreement:id,grant_no,agreement_name,relation_no,donor_id',
+                'lines.budgetLine.project.grantAgreement.donor:id,code,name',
+            ])
             // The dashboard's Recent Transactions list is an activity feed,
             // so it must also show journals waiting for approval/posting.
             // Exclude only terminal invalidated records.
@@ -1966,11 +1977,19 @@ class ReportsDashboardController extends Controller
                     ->filter()
                     ->unique('id')
                     ->values();
+                $grants = $journal->lines
+                    ->map(fn (JournalLine $line) => $line->grantAgreement ?: $line->project?->grantAgreement ?: $line->budgetLine?->project?->grantAgreement)
+                    ->filter()
+                    ->unique('id')
+                    ->values();
+                $fundNames = $grants->map(fn ($grant) => $grant->donor?->name ?: $grant->agreement_name ?: $grant->grant_no)->filter()->unique()->values();
 
                 return [
                     'date' => $journal->journal_date?->toDateString(),
                     'reference' => $journal->reference ?: $journal->journal_number,
                     'description' => $journal->description,
+                    'fund_name' => $fundNames->join(', ') ?: null,
+                    'fund_grant' => $grants->map(fn ($grant) => $grant->grant_no ?: $grant->agreement_name)->filter()->unique()->join(', ') ?: null,
                     'status' => $journal->status,
                     'amount' => round($expense ?: $debit, 2),
                     'direction' => $expense > 0 ? 'out' : 'neutral',

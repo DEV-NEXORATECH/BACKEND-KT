@@ -73,7 +73,7 @@ class AdvancedProcurementController extends Controller
 
     private function rfqListingQuery(Request $request)
     {
-        return Rfq::with(['purchaseRequest.lines', 'vendors:id,code,name,address', 'quotations.vendor:id,code,name,address', 'cba.selectedVendor:id,code,name,address'])
+        return Rfq::with(['purchaseRequest.lines', 'purchaseRequest.project:id,name', 'purchaseRequest.vendor:id,code,name', 'vendors:id,code,name,address', 'quotations.vendor:id,code,name,address', 'cba.selectedVendor:id,code,name,address'])
             ->when($request->filled('fiscal_year_id'), fn ($query) => $query->where('fiscal_year_id', (int) $request->query('fiscal_year_id')));
     }
 
@@ -471,6 +471,10 @@ class AdvancedProcurementController extends Controller
             'rfq_number' => $rfq->rfq_number,
             'pr_number' => $rfq->purchaseRequest?->pr_number,
             'purchase_request_id' => $rfq->purchase_request_id,
+            'project_name' => $rfq->purchaseRequest?->project?->name,
+            'donor_name' => $rfq->purchaseRequest?->donor_name,
+            'vendor_name' => $rfq->purchaseRequest?->vendor?->name,
+            'total_amount' => $rfq->purchaseRequest?->total_amount,
             'rfq_date' => $rfq->rfq_date?->toDateString(),
             'submission_deadline' => $rfq->submission_deadline?->toDateString(),
             'required_delivery_date' => $rfq->required_delivery_date?->toDateString(),
