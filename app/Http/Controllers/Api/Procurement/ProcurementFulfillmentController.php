@@ -228,7 +228,9 @@ class ProcurementFulfillmentController extends Controller
             'lines',
             'goodsReceipts.lines',
         ]);
-        app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
+        if (! $request->user()->can('procurement.po.approve')) {
+            app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
+        }
         $query->when($request->filled('search'), function ($q) use ($request) {
             $search = '%'.trim((string) $request->input('search')).'%';
             $q->where(function ($scope) use ($search) {
