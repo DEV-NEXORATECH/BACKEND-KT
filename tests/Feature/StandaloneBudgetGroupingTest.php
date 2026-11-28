@@ -79,6 +79,7 @@ class StandaloneBudgetGroupingTest extends TestCase
 
         $this->assertSame(2, BudgetLine::query()->count());
     }
+$p='C:\Users\raulm\Downloads\Frontend-KT\src\modules\budgeting\pages\FundingBudgetPage.jsx'; $c=[IO.File]::ReadAllText($p); $old='          label: `B${idx + 1}`,'; $new="          label: ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][idx],"; if(-not $c.Contains($old)){throw 'Target label tidak ditemukan'}; [IO.File]::WriteAllText($p,$c.Replace($old,$new),[Text.UTF8Encoding]::new($false))
 
     public function test_budget_overview_hides_orphans_and_placeholder_relation_does_not_query_them(): void
     {
