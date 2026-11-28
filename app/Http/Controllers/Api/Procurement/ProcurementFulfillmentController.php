@@ -10,6 +10,7 @@ use App\Models\Procurement\SupplierInvoice;
 use App\Models\Finance\Payment;
 use App\Models\Procurement\PoAmendment;
 use App\Models\Procurement\VendorEvaluation;
+use App\Models\ApprovalWorkflowRun;
 use App\Models\Master\Vendor;
 use App\Services\Rbac\DataScopeService;
 use App\Services\Approval\ApprovalWorkflowService;
@@ -424,6 +425,20 @@ class ProcurementFulfillmentController extends Controller
     {
         if ($purchaseOrder->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'Hanya PO draft yang dapat diapprove.']);
+        }
+
+        // Older POs may have been created before the approval workflow was
+        // started. Super Admin could still approve them because it bypasses
+        // requiresApproval(), while normal approvers received a misleading
+        // "must be submitted" error. Initialise the missing run here so the
+        // actual approver can approve the existing PO without recreating it.
+        $runExists = ApprovalWorkflowRun::query()
+            ->where('module', 'po')
+            ->where('approvable_type', $purchaseOrder::class)
+            ->where('approvable_id', $purchaseOrder->id)
+            ->exists();
+        if (! $runExists) {
+            $workflow->start('po', $purchaseOrder, (float) $purchaseOrder->total_amount, $request->user()->id);
         }
 
         $approval = $workflow->approve('po', $purchaseOrder, $request->user(), $request->input('notes'));
