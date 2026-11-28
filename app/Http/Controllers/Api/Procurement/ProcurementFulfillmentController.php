@@ -228,9 +228,9 @@ class ProcurementFulfillmentController extends Controller
             'lines',
             'goodsReceipts.lines',
         ]);
-        if (! $request->user()->can('procurement.po.approve')) {
-            app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
-        }
+        // PO visibility is controlled by the route permission (procurement.po.view).
+        // Do not apply the project-owner scope here: approvers and procurement users
+        // must be able to see all POs, while action permissions still protect approve/cancel.
         $query->when($request->filled('search'), function ($q) use ($request) {
             $search = '%'.trim((string) $request->input('search')).'%';
             $q->where(function ($scope) use ($search) {
