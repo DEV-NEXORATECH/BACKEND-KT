@@ -144,7 +144,7 @@ class PurchaseRequestController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, ApprovalWorkflowService $workflow): JsonResponse
     {
         $payload = $this->hydrateTemplateFields($this->validatePayload($request));
         $isProcurement = $this->isProcurementStaff($request);
@@ -171,9 +171,21 @@ class PurchaseRequestController extends Controller
             return $purchaseRequest->load($this->with);
         });
 
+        // A saved PR is immediately submitted; the requester still cannot approve their own PR.
+        $workflowRequesterId = $purchaseRequest->requester_id
+            ?: $purchaseRequest->created_by
+            ?: $request->user()->id;
+        $workflow->start('procurement', $purchaseRequest, (float) $purchaseRequest->total_amount, $workflowRequesterId);
+        $purchaseRequest->forceFill([
+            'status' => 'submitted',
+            'submitted_by' => $request->user()->id,
+            'submitted_at' => now(),
+        ])->save();
+        $purchaseRequest->load($this->with);
+
         return response()->json([
             'success' => true,
-            'message' => 'Purchase request berhasil dibuat.',
+            'message' => 'Purchase request berhasil dibuat dan diajukan ke Approval Matrix.',
             'data' => $this->format($purchaseRequest),
         ], Response::HTTP_CREATED);
     }
@@ -257,7 +269,11 @@ class PurchaseRequestController extends Controller
     {
         $this->authorizeScope($request, $purchaseRequest);
 
-        $workflow->start('procurement', $purchaseRequest, (float) $purchaseRequest->total_amount, $request->user()->id);
+        $workflowRequesterId = $purchaseRequest->requester_id
+            ?: $purchaseRequest->created_by
+            ?: $request->user()->id;
+
+        $workflow->start('procurement', $purchaseRequest, (float) $purchaseRequest->total_amount, $workflowRequesterId);
         return $this->transition($purchaseRequest, 'draft', 'submitted', [
             'submitted_by' => request()->user()->id,
             'submitted_at' => now(),

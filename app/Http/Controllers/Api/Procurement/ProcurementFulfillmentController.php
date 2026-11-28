@@ -417,7 +417,10 @@ class ProcurementFulfillmentController extends Controller
     public function submitPo(Request $request, PurchaseOrder $purchaseOrder, ApprovalWorkflowService $workflow): JsonResponse
     {
         if ($purchaseOrder->status !== 'draft') throw ValidationException::withMessages(['status' => 'Hanya PO draft yang dapat diajukan approval.']);
-        $run = $workflow->start('po', $purchaseOrder, (float) $purchaseOrder->total_amount, $request->user()->id);
+        // The requester is the PO creator, not the approver submitting the
+        // action. Using the current approver here can remove their own matrix
+        // stage through the anti-self-approval rule and leave no workflow.
+        $run = $workflow->start('po', $purchaseOrder, (float) $purchaseOrder->total_amount, $purchaseOrder->created_by);
         return response()->json(['success' => true, 'workflow_managed' => (bool) $run, 'message' => $run ? 'PO diajukan ke Approval Matrix.' : 'Tidak ada Approval Matrix PO aktif; PO siap diapprove.', 'data' => $this->formatPo($purchaseOrder->fresh(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']))]);
     }
 
@@ -438,7 +441,7 @@ class ProcurementFulfillmentController extends Controller
             ->where('approvable_id', $purchaseOrder->id)
             ->exists();
         if (! $runExists) {
-            $workflow->start('po', $purchaseOrder, (float) $purchaseOrder->total_amount, $request->user()->id);
+            $workflow->start('po', $purchaseOrder, (float) $purchaseOrder->total_amount, $purchaseOrder->created_by);
         }
 
         $approval = $workflow->approve('po', $purchaseOrder, $request->user(), $request->input('notes'));
