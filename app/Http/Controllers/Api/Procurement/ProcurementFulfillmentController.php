@@ -226,6 +226,7 @@ class ProcurementFulfillmentController extends Controller
             'purchaseRequest.project.grantAgreement.donor:id,code,name',
             'vendor:id,code,name',
             'lines',
+            'goodsReceipts.lines',
         ]);
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
         $query->when($request->filled('search'), function ($q) use ($request) {
@@ -235,7 +236,8 @@ class ProcurementFulfillmentController extends Controller
                     ->orWhereHas('purchaseRequest', fn ($pr) => $pr->where('pr_number', 'like', $search));
             });
         })->when($request->input('status') === 'completed', fn ($q) => $q->whereIn('status', ['completed', 'received', 'approved']))
-            ->when($request->input('status') === 'pending', fn ($q) => $q->whereNotIn('status', ['completed', 'received', 'approved']));
+            ->when($request->input('status') === 'pending', fn ($q) => $q->whereNotIn('status', ['completed', 'received', 'approved']))
+            ->when($request->filled('purchase_request_id'), fn ($q) => $q->where('purchase_request_id', $request->integer('purchase_request_id')));
         $sort = $request->input('sort', 'newest');
         $rows = $query->orderBy($sort === 'oldest' ? 'po_date' : 'id', $sort === 'oldest' ? 'asc' : 'desc')
             ->when($request->has('page') || $request->has('per_page'), fn ($q) => $q->paginate(min(100, max(1, (int) $request->query('per_page', 10)))), fn ($q) => $q->get());
@@ -310,6 +312,15 @@ class ProcurementFulfillmentController extends Controller
             throw ValidationException::withMessages(['status' => 'PR di atas Rp10.000.000 wajib melalui RFQ, quotation, dan CBA sebelum PO/Contract.']);
         }
 
+        $existingPo = $purchaseRequest->purchaseOrders()
+            ->where('status', '!=', 'cancelled')
+            ->latest('id')
+            ->with(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines'])
+            ->first();
+        if ($existingPo) {
+            return response()->json(['success' => true, 'message' => 'PO untuk PR ini sudah tersedia.', 'data' => $this->formatPo($existingPo)]);
+        }
+
         $data = $request->validate([
             'po_number' => ['nullable', 'string', 'max:80', 'unique:purchase_orders,po_number'],
             'po_date' => ['required', 'date'],
@@ -364,6 +375,8 @@ class ProcurementFulfillmentController extends Controller
                 'supplier_address' => $data['supplier_address'] ?? $vendor?->address,
                 'terms' => $data['terms'] ?? null,
                 'status' => 'draft',
+                'approved_by' => null,
+                'approved_at' => null,
                 'created_by' => request()->user()->id,
             ]);
 
@@ -705,7 +718,9 @@ class ProcurementFulfillmentController extends Controller
             'total_amount' => $po->total_amount,
             'approved_by_name' => $po->approvedBy?->name,
             'approved_at' => $po->approved_at?->toISOString(),
-            'lines' => $po->lines->map(fn ($line) => [
+            'lines' => $po->lines->map(function ($line) use ($po) {
+                $received = $po->goodsReceipts->where('status', '!=', 'cancelled')->sum(fn ($grn) => (float) $grn->lines->where('purchase_order_line_id', $line->id)->sum('received_quantity'));
+                return [
                 'id' => $line->id,
                 'purchase_request_line_id' => $line->purchase_request_line_id,
                 'budget_line_id' => $line->budget_line_id,
@@ -718,11 +733,14 @@ class ProcurementFulfillmentController extends Controller
                 'item_description' => $line->item_description,
                 'unit' => $line->unit ?: $line->purchaseRequestLine?->unit,
                 'quantity' => $line->quantity,
+                'received_quantity' => $received,
+                'remaining_quantity' => max(0, (float) $line->quantity - $received),
                 'currency' => $line->currency ?: ($line->purchaseRequestLine?->currency ?: $line->budgetLine?->currency?->code),
                 'unit_price' => $line->unit_price,
                 'total_amount' => $line->total_amount,
                 'line_order' => $line->line_order,
-            ])->values(),
+                ];
+            })->values(),
         ];
     }
 

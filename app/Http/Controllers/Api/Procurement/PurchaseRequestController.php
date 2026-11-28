@@ -651,6 +651,13 @@ class PurchaseRequestController extends Controller
                 'cba_id' => $rfq->cba?->id,
                 'cba_status' => $rfq->cba?->status,
             ])->values(),
+            'purchase_orders' => $purchaseRequest->purchaseOrders->map(fn ($po) => [
+                'id' => $po->id,
+                'purchase_request_id' => $po->purchase_request_id,
+                'po_number' => $po->po_number,
+                'status' => $po->status,
+                'approved_at' => $po->approved_at?->toISOString(),
+            ])->values(),
             'supplier_invoices' => $purchaseRequest->supplierInvoices->map(fn ($invoice) => [
                 'id' => $invoice->id,
                 'invoice_number' => $invoice->invoice_number,
