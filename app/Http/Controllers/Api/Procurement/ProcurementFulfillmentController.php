@@ -10,6 +10,7 @@ use App\Models\Procurement\SupplierInvoice;
 use App\Models\Finance\Payment;
 use App\Models\Procurement\PoAmendment;
 use App\Models\Procurement\VendorEvaluation;
+use App\Models\Master\Vendor;
 use App\Services\Rbac\DataScopeService;
 use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +21,28 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ProcurementFulfillmentController extends Controller
 {
+    public function quickVendor(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:180'],
+            'contact_person' => ['nullable', 'string', 'max:120'],
+            'email' => ['nullable', 'email', 'max:160'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'address' => ['nullable', 'string', 'max:500'],
+            'bank_name' => ['nullable', 'string', 'max:120'],
+            'bank_account_number' => ['nullable', 'string', 'max:80'],
+        ]);
+        $duplicate = Vendor::withoutGlobalScopes()->where(function ($query) use ($data) {
+            $query->whereRaw('LOWER(name) = ?', [mb_strtolower(trim($data['name']))]);
+            if (!empty($data['email'])) $query->orWhereRaw('LOWER(email) = ?', [mb_strtolower(trim($data['email']))]);
+            if (!empty($data['phone'])) $query->orWhere('phone', trim($data['phone']));
+        })->first();
+        if ($duplicate) {
+            return response()->json(['success' => false, 'message' => 'Vendor dengan nama, email, atau nomor telepon tersebut sudah terdaftar.', 'data' => $duplicate], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+        $vendor = Vendor::create([...$data, 'is_active' => false, 'created_by' => $request->user()->id]);
+        return response()->json(['success' => true, 'message' => 'Vendor dibuat dan menunggu verifikasi.', 'data' => $vendor], Response::HTTP_CREATED);
+    }
     public function amendments(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
     {
         $this->ensureRelatedScope($request, PurchaseOrder::class, $purchaseOrder->id, 'created_by', 'purchaseRequest');
@@ -195,7 +218,15 @@ class ProcurementFulfillmentController extends Controller
 
     public function purchaseOrders(Request $request): JsonResponse
     {
-        $query = PurchaseOrder::with(['purchaseRequest:id,pr_number', 'vendor:id,code,name', 'lines']);
+        $query = PurchaseOrder::with([
+            'purchaseRequest:id,pr_number,project_id,donor_name,requester_program,justification',
+            'purchaseRequest.project:id,code,name,program_id,grant_agreement_id,relation_no',
+            'purchaseRequest.project.program:id,code,name',
+            'purchaseRequest.project.grantAgreement:id,grant_no,agreement_name,donor_id,relation_no',
+            'purchaseRequest.project.grantAgreement.donor:id,code,name',
+            'vendor:id,code,name',
+            'lines',
+        ]);
         app(DataScopeService::class)->applyRelatedProjectScope($query, $request->user(), 'created_by', 'purchaseRequest');
         $query->when($request->filled('search'), function ($q) use ($request) {
             $search = '%'.trim((string) $request->input('search')).'%';

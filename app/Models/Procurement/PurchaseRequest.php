@@ -100,6 +100,16 @@ class PurchaseRequest extends Model
         return $this->hasMany(SupplierInvoice::class);
     }
 
+    public function purchaseOrders(): HasMany
+    {
+        return $this->hasMany(PurchaseOrder::class);
+    }
+
+    public function scns(): HasMany
+    {
+        return $this->hasMany(SupplierContractNotification::class);
+    }
+
     public function submittedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'submitted_by');

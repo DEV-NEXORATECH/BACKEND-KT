@@ -14,6 +14,7 @@ use App\Services\Settings\SystemPolicyService;
 use App\Services\Approval\ApprovalWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
@@ -41,6 +42,8 @@ class PurchaseRequestController extends Controller
         'rfqs.quotations:id,rfq_id',
         'rfqs.cba:id,rfq_id,status',
         'supplierInvoices:id,purchase_request_id,invoice_number,status,match_status,total_amount',
+        'purchaseOrders:id,purchase_request_id,po_number,status,approved_at',
+        'scns:id,purchase_request_id,scn_number,status,issued_at',
     ];
 
     public function pdf(Request $request, PurchaseRequest $purchaseRequest)
@@ -94,11 +97,12 @@ class PurchaseRequestController extends Controller
     {
         $perPage = (int) $request->query('per_page', 10);
         $perPage = $perPage < 1 || $perPage > 100 ? 10 : $perPage;
+        $approvalOnly = filter_var($request->query('approval_only', false), FILTER_VALIDATE_BOOLEAN);
 
-        $requests = PurchaseRequest::query()
+        $query = PurchaseRequest::query()
             ->with($this->with)
             ->when($request->filled('fiscal_year_id'), fn ($query) => $query->where('fiscal_year_id', (int) $request->query('fiscal_year_id')))
-            ->when(! $this->canAccessAll($request), fn ($query) => $query->where('requester_id', $request->user()->id))
+            ->when(! $this->canAccessAll($request) && ! $approvalOnly, fn ($query) => $query->where('requester_id', $request->user()->id))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->query('status')))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->query('search');
@@ -108,8 +112,24 @@ class PurchaseRequestController extends Controller
                 });
             })
             ->latest('request_date')
-            ->latest('id')
-            ->paginate($perPage);
+            ->latest('id');
+
+        if ($approvalOnly) {
+            $workflow = app(ApprovalWorkflowService::class);
+            $all = $query->get()->filter(function (PurchaseRequest $purchaseRequest) use ($workflow, $request) {
+                return (bool) ($workflow->progressFor('procurement', $purchaseRequest, $request->user())['can_approve'] ?? false);
+            })->values();
+            $page = LengthAwarePaginator::resolveCurrentPage();
+            $requests = new LengthAwarePaginator(
+                $all->forPage($page, $perPage)->values(),
+                $all->count(),
+                $perPage,
+                $page,
+                ['path' => LengthAwarePaginator::resolveCurrentPath(), 'query' => $request->query()]
+            );
+        } else {
+            $requests = $query->paginate($perPage);
+        }
 
         return response()->json([
             'success' => true,

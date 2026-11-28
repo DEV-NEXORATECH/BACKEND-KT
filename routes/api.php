@@ -239,6 +239,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1/procurement')->group(function () {
+        Route::post('vendors/quick', [ProcurementFulfillmentController::class, 'quickVendor'])->middleware('permission:procurement.pr.create');
         Route::get('processes/options', [ProcurementFulfillmentController::class, 'processOptions'])->middleware('permission:procurement.po.view');
         Route::get('workflow-review', [ProcurementFulfillmentController::class, 'workflowReview'])->middleware('permission:procurement.po.view');
         Route::get('goods-receipts', [ProcurementFulfillmentController::class, 'goodsReceipts'])->middleware('permission:procurement.grn.view');
