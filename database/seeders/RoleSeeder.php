@@ -372,6 +372,7 @@ class RoleSeeder extends Seeder
                     'budget.view', 'budget.manage', 'budget.validate',
                     'expenses-approvals.view', 'expenses.approve', 'expense.view', 'expense.create', 'expense.submit', 'expense.approve',
                     'procurement.pr.view', 'procurement.pr.create', 'procurement.pr.update', 'procurement.pr.submit', 'procurement.pr.approve',
+                    'procurement.po.view', 'procurement.po.approve',
                     'timesheet.view', 'timesheet.team.view', 'timesheet.create', 'timesheet.update', 'timesheet.submit', 'timesheet.approve',
                     'reports.view',
                 ],
