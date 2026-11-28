@@ -218,7 +218,11 @@ class ProcurementFulfillmentController extends Controller
 
     public function purchaseOrders(Request $request): JsonResponse
     {
-        $query = PurchaseOrder::with([
+        // Listing is an operational procurement view. Do not let the model's
+        // implicit fiscal-year context hide existing POs when the client did
+        // not explicitly choose a year (this was returning an empty list for
+        // users whose active-year context differed from the PO's stored year).
+        $query = PurchaseOrder::withoutGlobalScope('fiscal_year_context')->with([
             'purchaseRequest:id,pr_number,project_id,donor_name,requester_program,justification',
             'purchaseRequest.project:id,code,name,program_id,grant_agreement_id,relation_no',
             'purchaseRequest.project.program:id,code,name',
@@ -228,6 +232,10 @@ class ProcurementFulfillmentController extends Controller
             'lines',
             'goodsReceipts.lines',
         ]);
+        // Apply a year filter only when the caller explicitly asks for one.
+        $query->when($request->filled('fiscal_year_id'), function ($q) use ($request) {
+            $q->where('fiscal_year_id', $request->integer('fiscal_year_id'));
+        });
         // PO visibility is controlled by the route permission (procurement.po.view).
         // Do not apply the project-owner scope here: approvers and procurement users
         // must be able to see all POs, while action permissions still protect approve/cancel.
